@@ -1,20 +1,20 @@
 import { useState, useCallback, useRef } from 'react'
 import { parseEdgeTXLog } from './utils/parseLog'
+import { parseBlackbox, isBlackboxBuffer } from './utils/parseBlackbox'
 import Dashboard from './components/Dashboard'
 
-function modelName(filename) {
-  return filename.replace(/\.csv$/i, '').replace(/-\d{4}-\d{2}-\d{2}-\d{6}$/, '')
-}
-
 function shortName(filename) {
+  // EdgeTX CSV: "ModelName-YYYY-MM-DD-HHMMSS.csv" → "ModelName HH:MM"
   const base = filename.replace(/\.csv$/i, '')
   const parts = base.split('-')
-  // last 2 parts are date + time, skip them; format as "model HH:MM"
-  const time = parts[parts.length - 1]
-  const hh = time.slice(0, 2)
-  const mm = time.slice(2, 4)
-  const name = parts.slice(0, -2).join('-')
-  return `${name} ${hh}:${mm}`
+  if (parts.length >= 3) {
+    const time = parts[parts.length - 1]
+    const hh = time.slice(0, 2), mm = time.slice(2, 4)
+    const name = parts.slice(0, -2).join('-')
+    if (/^\d{6}$/.test(time)) return `${name} ${hh}:${mm}`
+  }
+  // Blackbox / generic: trim to 30 chars
+  return filename.replace(/\.[^.]+$/, '').slice(0, 30)
 }
 
 export default function App() {
@@ -28,11 +28,24 @@ export default function App() {
     setError(null)
     const results = []
     for (const file of files) {
-      if (!file.name.toLowerCase().endsWith('.csv')) continue
+      const name = file.name.toLowerCase()
       try {
-        const text = await file.text()
-        const log = parseEdgeTXLog(text, file.name)
-        results.push(log)
+        if (name.endsWith('.csv')) {
+          const text = await file.text()
+          results.push(parseEdgeTXLog(text, file.name))
+        } else if (name.endsWith('.bbl') || name.endsWith('.bfl') || name.endsWith('.txt')) {
+          const arrayBuf = await file.arrayBuffer()
+          const buf = new Uint8Array(arrayBuf)
+          if (!isBlackboxBuffer(buf)) {
+            // .txt that's not blackbox — try CSV
+            const text = new TextDecoder().decode(buf)
+            results.push(parseEdgeTXLog(text, file.name))
+          } else {
+            const logs = parseBlackbox(buf, file.name)
+            if (!logs.length) throw new Error('No valid flight data found')
+            results.push(...logs)
+          }
+        }
       } catch (e) {
         setError(`Failed to parse ${file.name}: ${e.message}`)
       }
@@ -110,7 +123,7 @@ export default function App() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.bbl,.bfl,.txt"
           multiple
           style={{ display: 'none' }}
           onChange={onFileInput}
@@ -144,13 +157,13 @@ export default function App() {
           <div className="drop-icon">✈</div>
           <div className="drop-title">EdgeTX Log Viewer</div>
           <div className="drop-sub">
-            Drop EdgeTX CSV log files here, or click to browse
+            Drop EdgeTX CSV or Blackbox BBL/TXT log files here, or click to browse
           </div>
           <button className="drop-btn" onClick={() => fileInputRef.current.click()}>
             Open log files
           </button>
           <div style={{ marginTop: 8, color: 'var(--text3)', fontSize: 11 }}>
-            Supports iNAV · Betaflight · Basic receiver logs
+            Supports EdgeTX CSV · iNAV Blackbox · Betaflight Blackbox
           </div>
         </div>
       )}
