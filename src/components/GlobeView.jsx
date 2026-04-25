@@ -4,7 +4,9 @@ import * as THREE from 'three'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 
-Cesium.Ion.defaultAccessToken = ''
+// Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
+// renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
+Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_TOKEN || ''
 
 const FM_COLORS = {
   ANGL: '#9ece6a', RTH: '#f7768e', CRUZ: '#7dcfff',

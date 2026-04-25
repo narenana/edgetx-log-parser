@@ -1,6 +1,6 @@
 # EdgeTX Log Parser
 
-A desktop flight log visualiser for EdgeTX RC aircraft. Load a CSV log from your transmitter's SD card and replay the entire flight in 3D — satellite map, live attitude, synced charts.
+A flight log visualiser for EdgeTX RC aircraft. Load a CSV log from your transmitter's SD card and replay the entire flight in 3D — satellite map, live attitude, synced charts.
 
 [![EdgeTX Log Parser — video walkthrough](https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg)](https://youtu.be/6MLQCoG5t2w)
 
@@ -8,9 +8,19 @@ A desktop flight log visualiser for EdgeTX RC aircraft. Load a CSV log from your
 
 ---
 
-## Downloads
+## Two ways to use it
 
-Grab the latest build from [**Releases**](https://github.com/narenana/edgetx-log-parser/releases):
+**🌐 Web app** — open in any modern browser, drop a log, done. Logs never leave your machine; parsing and rendering all happen client-side. Best for one-off viewing or sharing a quick look on someone else's computer.
+
+**💻 Desktop app (Windows)** — installer / portable build with the full Electron shell. Same UI, file-association support, and works offline. Best for regular use.
+
+### Web
+
+Visit the hosted version *(domain coming soon)*. No install, no upload — your CSV is parsed in-browser with PapaParse, drawn with Cesium / Three.js / Leaflet, and discarded when you close the tab.
+
+### Desktop downloads
+
+Grab the latest Windows build from [**Releases**](https://github.com/narenana/edgetx-log-parser/releases):
 
 | File | Description |
 |------|-------------|
@@ -147,15 +157,28 @@ git clone https://github.com/narenana/edgetx-log-parser.git
 cd edgetx-log-parser
 npm install
 
-# Start dev server + Electron with hot reload
-npm run dev
-
-# Production build (Vite)
-npm run build
-
-# Package Windows installer + portable exe
-npm run dist
+# Optional: copy .env.example to .env.local and fill in tokens
+cp .env.example .env.local
 ```
+
+The codebase builds two targets from one source. `VITE_BUILD_TARGET` (set via `cross-env` in the npm scripts) is exposed at runtime as `import.meta.env.VITE_BUILD_TARGET` so web-only features (analytics, install prompts) can be gated cleanly.
+
+```bash
+# ── Web target (browser, hosted on Cloudflare Pages) ─────────────────────
+npm run dev:web        # Vite dev server only — http://localhost:5173
+npm run build          # cross-env VITE_BUILD_TARGET=web vite build
+
+# ── Desktop target (Electron) ────────────────────────────────────────────
+npm run dev            # Vite + Electron with hot reload
+npm run build:desktop  # cross-env VITE_BUILD_TARGET=desktop vite build
+npm run dist           # build:desktop + electron-builder (NSIS + portable)
+```
+
+Both targets share `base: './'`, so the same `dist/` works for `file://` (Electron) and for path-prefix hosting (a Cloudflare Worker on the customer site strips `/log-viewer/` and forwards to Pages).
+
+**Env vars** — `.env.example` lists them. All `VITE_*` vars are inlined into the client bundle at build time:
+- `VITE_CESIUM_TOKEN` — Cesium Ion access token (optional; falls back to ephemeral key)
+- `VITE_GA_ID` — GA4 measurement ID (web build only; empty disables analytics)
 
 **Stack:** Electron 31 · Vite 5 · React 18 · CesiumJS · Three.js · Leaflet · Chart.js · PapaParse
 

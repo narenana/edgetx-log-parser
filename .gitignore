@@ -7,3 +7,6 @@ release/
 .claude/
 *.tmp.*
 debug_bbl*.mjs
+.env
+.env.local
+.env.*.local
