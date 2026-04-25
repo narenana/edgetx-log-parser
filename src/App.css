@@ -118,6 +118,13 @@ body {
 .drop-icon { font-size: 48px; opacity: 0.4; }
 .drop-title { font-size: 20px; font-weight: 600; color: var(--text); }
 .drop-sub { font-size: 13px; color: var(--text3); }
+.drop-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
 .drop-btn {
   padding: 10px 24px;
   background: var(--blue);
@@ -127,9 +134,18 @@ body {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  margin-top: 8px;
 }
 .drop-btn:hover { opacity: 0.85; }
+.drop-btn:disabled { opacity: 0.5; cursor: wait; }
+.drop-btn-secondary {
+  background: transparent;
+  color: var(--blue);
+  border: 1px solid var(--blue);
+}
+.drop-btn-secondary:hover {
+  background: rgba(122, 162, 247, 0.1);
+  opacity: 1;
+}
 
 /* ── View mode toggle ── */
 .view-toggle-bar {

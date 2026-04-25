@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { parseEdgeTXLog } from './utils/parseLog'
+import { loadLogFromUrl } from './utils/loadLogFromUrl'
 import Dashboard from './components/Dashboard'
 
 function modelName(filename) {
@@ -22,7 +23,16 @@ export default function App() {
   const [activeIndex, setActiveIndex] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState(null)
+  const [loadingSample, setLoadingSample] = useState(false)
   const fileInputRef = useRef(null)
+
+  const appendLog = useCallback(log => {
+    setLogs(prev => {
+      const next = [...prev, log]
+      setActiveIndex(next.length - 1)
+      return next
+    })
+  }, [])
 
   const loadFiles = useCallback(async files => {
     setError(null)
@@ -45,6 +55,30 @@ export default function App() {
       })
     }
   }, [])
+
+  const loadSample = useCallback(async () => {
+    setError(null)
+    setLoadingSample(true)
+    try {
+      const log = await loadLogFromUrl('./sample-log.csv', { displayName: 'sample-flight.csv' })
+      appendLog(log)
+    } catch (e) {
+      setError(`Failed to load sample: ${e.message}`)
+    } finally {
+      setLoadingSample(false)
+    }
+  }, [appendLog])
+
+  // Phase-2 share hook: ?log=<url> auto-loads a remote CSV on mount.
+  // Disabled by default until we ship a backend; the parser stays the same.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const remote = params.get('log')
+    if (!remote) return
+    loadLogFromUrl(remote)
+      .then(appendLog)
+      .catch(e => setError(`Failed to load shared log: ${e.message}`))
+  }, [appendLog])
 
   const onDrop = useCallback(
     e => {
@@ -146,11 +180,23 @@ export default function App() {
           <div className="drop-sub">
             Drop EdgeTX CSV log files here, or click to browse
           </div>
-          <button className="drop-btn" onClick={() => fileInputRef.current.click()}>
-            Open log files
-          </button>
+          <div className="drop-actions">
+            <button className="drop-btn" onClick={() => fileInputRef.current.click()}>
+              Open log files
+            </button>
+            <button
+              className="drop-btn drop-btn-secondary"
+              onClick={loadSample}
+              disabled={loadingSample}
+            >
+              {loadingSample ? 'Loading…' : 'Try a sample flight'}
+            </button>
+          </div>
           <div style={{ marginTop: 8, color: 'var(--text3)', fontSize: 11 }}>
             Supports iNAV · Betaflight · Basic receiver logs
+          </div>
+          <div style={{ marginTop: 4, color: 'var(--text3)', fontSize: 11, opacity: 0.7 }}>
+            Logs are parsed in your browser — nothing is uploaded.
           </div>
         </div>
       )}

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#0e1117"/>
+  <!-- Stylised paper plane -->
+  <path d="M10 32 L54 14 L40 50 L33 38 Z"
+        fill="#7aa2f7" stroke="#bb9af7" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M33 38 L54 14"
+        stroke="#1a1d29" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+</svg>
