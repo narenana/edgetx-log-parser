@@ -1,4 +1,4 @@
-name: Build macOS Releases
+name: Build Releases
 
 on:
   push:
@@ -93,8 +93,48 @@ jobs:
           path: release/*.exe
           if-no-files-found: error
 
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop assets
+        run: npm run build:desktop
+        env:
+          VITE_BUILD_TARGET: desktop
+
+      - name: Package Linux tar.gz
+        run: npx electron-builder --linux tar.gz --x64
+        env:
+          ELECTRON_BUILDER_PUBLISH: never
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up blockmap and yml files
+        run: |
+          rm -f release/*.blockmap release/*.yml release/*.yaml
+          echo "Release contents:"
+          ls -lh release/
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: release/*.tar.gz
+          if-no-files-found: error
+
   create-release:
-    needs: [build-mac, build-windows]
+    needs: [build-mac, build-windows, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -112,6 +152,7 @@ jobs:
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.exe
+            artifacts/**/*.tar.gz
           generate_release_notes: false
           body: |
             ## EdgeTX Log Parser v3.0.0
@@ -131,32 +172,52 @@ jobs:
             #### macOS
             | File | Description |
             |------|-------------|
-            | `EdgeTX-Log-Parser-3.0.0-universal.dmg` | Universal binary — Intel & Apple Silicon (M1/M2/M3/M4) |
+            | `*-universal.dmg` | Universal binary — Intel & Apple Silicon (M1/M2/M3/M4) |
 
             > **First launch:** macOS will show "unidentified developer" since the app is not notarized. To open: **right-click → Open → Open**. You only need to do this once.
 
             #### Windows
             | File | Description |
             |------|-------------|
-            | `EdgeTX-Log-Parser-3.0.0-Portable.exe` | Portable — no install required, run from anywhere |
+            | `*-Portable.exe` | Portable — no install required, run from anywhere |
+
+            #### Linux
+            | File | Description |
+            |------|-------------|
+            | `*.tar.gz` | Linux x64 tar archive — extract and run the included binary |
 
             ---
 
-            ### 🔧 What's new in this fork (vs. upstream)
+            ### 🔧 What's new in this fork (vs. upstream v2.1.0)
 
-            #### macOS support
-            - **Universal DMG build** — single installer that runs natively on both Intel and Apple Silicon, built on GitHub Actions `macos-latest` runners
-            - **Clean releases** — blockmap and auto-update yml files are stripped before upload so only the DMG appears in the release assets
+            #### App improvements (carried from upstream v3.0.0)
+            - **PWA support** — installable from the browser, works offline after first visit
+            - **GA4 analytics** with privacy-first Consent Mode v2
+            - **Code splitting** — Dashboard, GlobeView and AltitudeAttitudeView load on demand for faster startup
+            - **Responsive layout** — breakpoints for tablet and mobile
+            - **Landing page**, sample flight demo, and share-URL hook (`?log=`)
+            - **Dual-target build** — single source tree produces both the web app and the desktop app
 
-            #### Windows support
-            - **Portable executable** — single file, no install needed, run from anywhere
+            #### macOS releases (new in this fork)
+            - **Universal DMG** — single installer that runs natively on both Intel and Apple Silicon
+            - **Ad-hoc code signing** (`CSC_NAME="-"`) applied during packaging — prevents Gatekeeper "app is damaged" error on download
+            - Built on GitHub Actions `macos-latest` runners — no local Mac needed to produce releases
 
-            #### GitHub Pages web app
-            - Deployed the existing web build target (`VITE_BUILD_TARGET=web`) to GitHub Pages via a dedicated Actions workflow
-            - Auto-deploys on every push to `master` — always up to date with the latest code
-            - Full PWA support: installable from the browser, works offline after first visit
+            #### Windows releases (restored + simplified)
+            - **Portable executable** — single `.exe`, no installer, no registry changes, run from anywhere
+            - Built on GitHub Actions `windows-latest` runners
 
-            #### CI / build infrastructure
-            - All builds run entirely on GitHub Actions — no local toolchain required to produce releases
-            - Mac and Windows jobs run in parallel; release is created only after both succeed
-            - Triggered automatically on `v*` tags, or manually via `workflow_dispatch`
+            #### Linux releases (restored from upstream)
+            - **tar.gz archive** for x64 — extract and run, same as upstream v2.1.0
+            - Built on GitHub Actions `ubuntu-latest` runners
+
+            #### GitHub Pages web app (new in this fork)
+            - The existing web build target deployed to GitHub Pages at **https://Cr4zySh4rk.github.io/edgetx-log-parser/**
+            - Auto-deploys on every push to `master`
+            - Full PWA: installable from the browser, offline-capable after first visit
+
+            #### CI / build infrastructure (new in this fork)
+            - All three platform builds (macOS, Windows, Linux) run in parallel on GitHub Actions
+            - Release is created automatically only after all three jobs succeed
+            - Triggered on `v*` tags or manually via `workflow_dispatch`
+            - Clean release assets — blockmap and auto-update yml files stripped before upload
