@@ -129,23 +129,55 @@ jobs:
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.exe
-          generate_release_notes: true
+          generate_release_notes: false
           body: |
-            ## EdgeTX Log Parser – Release
+            ## EdgeTX Log Parser v3.0.0
 
-            ### macOS
+            Parse and replay your EdgeTX transmitter flight logs — interactive 3D globe, synced charts, attitude visualiser, and flight event detection. Available as a native desktop app or instantly in the browser.
+
+            ---
+
+            ### 🌐 Web App
+            No download needed — open it straight in your browser:
+            **https://Cr4zySh4rk.github.io/edgetx-log-parser/**
+
+            ---
+
+            ### 💾 Downloads
+
+            #### macOS
             | File | Description |
             |------|-------------|
-            | `*-universal.dmg` | Universal – runs natively on both Intel and Apple Silicon Macs |
+            | `EdgeTX-Log-Parser-3.0.0-universal.dmg` | Universal binary — Intel & Apple Silicon (M1/M2/M3/M4) |
 
-            > **First launch on macOS:** right-click the app → **Open** → **Open** to bypass the unidentified developer warning (once only).
+            > **First launch:** macOS will show "unidentified developer" since the app is not notarized with a paid Apple Developer certificate. To open: **right-click → Open → Open**. You only need to do this once.
 
-            ### Windows
+            #### Windows
             | File | Description |
             |------|-------------|
-            | `*-Setup.exe` | NSIS installer (recommended) |
-            | `*-Portable.exe` | Portable – no install needed, run anywhere |
+            | `EdgeTX-Log-Parser-3.0.0-Setup.exe` | NSIS installer — installs to Program Files, adds Start Menu shortcut |
+            | `EdgeTX-Log-Parser-3.0.0-Portable.exe` | Portable — no install required, run from anywhere |
 
-            ### Web App
-            No install needed — use the live web app:
-            https://Cr4zySh4rk.github.io/edgetx-log-parser/
+            ---
+
+            ### 🔧 What's new in this fork (vs. upstream)
+
+            #### macOS support
+            - **Universal DMG build** — single installer that runs natively on both Intel and Apple Silicon, built on GitHub Actions `macos-latest` runners
+            - **Ad-hoc code signing** — signs the `.app` bundle with a local identity so macOS Gatekeeper doesn't show the "app is damaged" error on download
+            - **Clean releases** — blockmap and auto-update yml files are stripped before upload so only the DMG appears in the release assets
+
+            #### Windows support (restored from upstream)
+            - **NSIS installer** (`*-Setup.exe`) — standard installer with Start Menu integration and uninstaller, custom install directory support
+            - **Portable executable** (`*-Portable.exe`) — single file, no install needed
+
+            #### GitHub Pages web app
+            - Deployed the existing web build target (`VITE_BUILD_TARGET=web`) to GitHub Pages via a dedicated Actions workflow
+            - Auto-deploys on every push to `master` — always up to date with the latest code
+            - Full PWA support: installable from the browser, works offline after first visit
+            - Repository "About" homepage set to the Pages URL
+
+            #### CI / build infrastructure
+            - All builds run entirely on GitHub Actions — no local toolchain required to produce releases
+            - Mac and Windows jobs run in parallel; release is created only after both succeed
+            - Triggered automatically on `v*` tags, or manually via `workflow_dispatch`
