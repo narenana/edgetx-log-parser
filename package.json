@@ -60,12 +60,16 @@
         }
       ],
       "category": "public.app-category.utilities",
-      "identity": null
+      "identity": null,
+      "generateUpdatesFilesForAllChannels": false,
+      "forceCodeSigning": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "generateUpdatesFilesForAllChannels": false,
+    "publish": null
   },
   "dependencies": {
     "cesium": "^1.140.0",
