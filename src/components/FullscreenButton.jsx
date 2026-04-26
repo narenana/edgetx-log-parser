@@ -9,13 +9,30 @@ import { useEffect, useRef, useState } from 'react'
  * inside Electron's BrowserWindow without further plumbing. Listens for the
  * `fullscreenchange` event so the button icon flips when the user exits via
  * the Esc key or the OS chrome.
+ *
+ * On `fullscreenchange` we also dispatch a window `resize` event after a
+ * tick. Cesium, Leaflet and Three.js all listen on window resize to recompute
+ * their backing buffers. Without this nudge, exiting fullscreen leaves the
+ * canvas at its fullscreen pixel dimensions even though the CSS height has
+ * shrunk back — visually it looks like the visualisation didn't collapse.
  */
 export default function FullscreenButton({ targetClass }) {
   const btnRef = useRef(null)
   const [isFs, setIsFs] = useState(false)
 
   useEffect(() => {
-    const onChange = () => setIsFs(!!document.fullscreenElement)
+    const onChange = () => {
+      setIsFs(!!document.fullscreenElement)
+      // Tell canvas-based renderers (Cesium, Leaflet, Three.js, Chart.js)
+      // to recompute their dimensions. Layout reflow happens on the next
+      // frame after fullscreenchange fires, so wait a tick before measuring.
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'))
+        // Some libs only re-measure after a second tick once the wrap's
+        // computed height has actually settled.
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 100)
+      })
+    }
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])

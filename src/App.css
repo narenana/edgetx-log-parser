@@ -915,11 +915,14 @@ body {
 
   /* Speed picker collapses to a single chip on phones — see .speed-picker
      below. The full pill row stays in the DOM for screen-reader access; CSS
-     hides it until the user taps the chip. */
-  .speed-picker .speed-current { display: inline-flex; }
-  .speed-picker .speed-pills { display: none; }
+     hides it until the user taps the chip. !important is needed because the
+     desktop default styles (.speed-picker block further down) have equal
+     specificity but later source order, so they would otherwise win at
+     narrow viewports. */
+  .speed-picker .speed-current { display: inline-flex !important; }
+  .speed-picker .speed-pills { display: none !important; }
   .speed-picker.expanded .speed-pills {
-    display: flex;
+    display: flex !important;
     position: absolute;
     bottom: calc(100% + 6px);
     left: 0;
@@ -948,10 +951,11 @@ body {
   .stat-value { font-size: 12px; }
 
   /* Stats panel collapses on phones to recover ~80–100px of vertical room
-     above the charts. Toggle button is visible only at this width. */
-  .stats-panel-wrap .stats-toggle { display: flex; }
-  .stats-panel-wrap .stats-panel { display: none; }
-  .stats-panel-wrap.expanded .stats-panel { display: flex; }
+     above the charts. Toggle button is visible only at this width.
+     !important for the same source-order reason as .speed-picker above. */
+  .stats-panel-wrap .stats-toggle { display: flex !important; }
+  .stats-panel-wrap .stats-panel { display: none !important; }
+  .stats-panel-wrap.expanded .stats-panel { display: flex !important; }
 
   /* Empty state: tighten copy, stack buttons full-width. */
   .drop-overlay { gap: 12px; padding: 0 24px; }
@@ -1033,14 +1037,18 @@ body {
   border-top: none;       /* outer wrap already provides one */
 }
 
-/* ── Fullscreen toggle on globe/map ─────────────────────────────────────── */
+/* ── Fullscreen toggle on globe/map ─────────────────────────────────────────
+ * Sits at TOP-LEFT to stay clear of the AUTO/MANUAL camera toggle and the
+ * Google-Earth-style nav widget on the right side of the globe. Variable
+ * AUTO/MANUAL button width made right-side placement collide.
+ * ─────────────────────────────────────────────────────────────────────────── */
 .fullscreen-btn {
   position: absolute;
   top: 10px;
-  right: 56px;            /* sit to the left of .globe-auto-btn */
+  left: 10px;
   z-index: 4;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -1049,7 +1057,8 @@ body {
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--text2);
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -1061,14 +1070,13 @@ body {
   border-color: var(--cyan);
   background: rgba(125, 207, 255, 0.08);
 }
-/* When the wrap is the fullscreen target, position the button conservatively. */
 .globe-wrap:fullscreen, .map-wrap:fullscreen {
   background: var(--bg);
 }
 .globe-wrap:fullscreen .fullscreen-btn,
 .map-wrap:fullscreen .fullscreen-btn {
   top: max(10px, env(safe-area-inset-top));
-  right: 56px;
+  left: max(10px, env(safe-area-inset-left));
 }
 /* In fullscreen on mobile the sticky dock is no longer "fixed to viewport" —
    it's fixed to the fullscreened element. Browser handles this correctly
