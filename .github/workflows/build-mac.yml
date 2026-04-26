@@ -39,26 +39,10 @@ jobs:
           ELECTRON_BUILDER_PUBLISH: never
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Ad-hoc sign the .app inside the DMG
-        # DMG filenames contain spaces — use find with -print0 / xargs -0 to
-        # handle them safely, and quote all variables throughout.
+      - name: Clean up blockmap and yml files
         run: |
-          while IFS= read -r -d '' DMG; do
-            echo "Processing: $DMG"
-            MOUNT=$(hdiutil attach "$DMG" -nobrowse -noautoopen | tail -1 | awk '{print $NF}')
-            APP=$(find "$MOUNT" -maxdepth 1 -name "*.app" | head -1)
-            if [ -n "$APP" ]; then
-              echo "Ad-hoc signing: $APP"
-              codesign --force --deep --sign "-" "$APP"
-            fi
-            hdiutil detach "$MOUNT" -quiet
-          done < <(find release -name "*.dmg" -print0)
-
-      - name: Remove macOS quarantine attribute and clean up
-        run: |
-          find release -name "*.dmg" -print0 | xargs -0 xattr -cr
           rm -f release/*.blockmap release/*.yml release/*.yaml
-          echo "Final release contents:"
+          echo "Release contents:"
           ls -lh release/
 
       - name: Upload DMG artifact
@@ -163,7 +147,6 @@ jobs:
 
             #### macOS support
             - **Universal DMG build** — single installer that runs natively on both Intel and Apple Silicon, built on GitHub Actions `macos-latest` runners
-            - **Ad-hoc code signing** — signs the `.app` bundle so macOS Gatekeeper doesn't show the "app is damaged" error on download
             - **Clean releases** — blockmap and auto-update yml files are stripped before upload so only the DMG appears in the release assets
 
             #### Windows support (restored from upstream)
