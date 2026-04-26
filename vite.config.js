@@ -47,16 +47,22 @@ export default defineConfig(() => {
       start_url: '.',
       scope: '.',
       orientation: 'any',
-      // SVG icon with `any maskable` purpose works on Chrome, Edge, Firefox,
-      // and Safari 15.4+. iOS install also picks up the apple-touch-icon
-      // <link> in index.html (also SVG). PNG fallbacks deferred until we
-      // hit a device that needs them.
+      // Primary icon is the narenana brand mark (200x200 JPEG from the YouTube
+      // channel). The SVG paper-plane stays as a secondary entry for renderers
+      // that prefer vector or maskable. iOS install also picks up the
+      // apple-touch-icon <link> in index.html.
       icons: [
+        {
+          src: 'narenana.jpg',
+          sizes: '200x200',
+          type: 'image/jpeg',
+          purpose: 'any',
+        },
         {
           src: 'favicon.svg',
           sizes: 'any',
           type: 'image/svg+xml',
-          purpose: 'any maskable',
+          purpose: 'maskable',
         },
       ],
     },

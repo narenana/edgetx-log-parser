@@ -849,7 +849,7 @@ body {
 
 @media (max-width: 960px) {
   body { overflow: auto; height: auto; min-height: 100vh; }
-  .app { height: auto; min-height: 100vh; }
+  .app { height: auto; min-height: 100vh; padding-bottom: 180px; }
 
   /* Stack left + right vertically so the globe + charts are full-width. */
   .dashboard-main { flex-direction: column; overflow: visible; }
@@ -879,7 +879,21 @@ body {
      longer a flex-grow container with a viewport-scaled height. */
   .chart-panel { min-height: 160px; }
 
-  .dashboard-bottom { padding: 8px 10px 10px; }
+  /* Sticky playback dock — always reachable while scrolling charts. The
+     `app` padding-bottom above reserves space so charts aren't hidden. */
+  .dashboard-bottom {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom)) 10px;
+    background: rgba(22, 33, 62, 0.94);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.45);
+  }
 
   .drop-actions { flex-direction: column; align-items: stretch; max-width: 280px; }
 }
@@ -897,12 +911,32 @@ body {
   .view-toggle-btn { padding: 4px 10px; font-size: 11px; min-height: 28px; }
 
   /* Larger touch targets for playback. */
-  .play-btn { width: 36px; height: 32px; font-size: 16px; }
-  .speed-btn { padding: 4px 8px; font-size: 11px; min-height: 28px; }
-  .speed-btns { flex-wrap: wrap; }
+  .play-btn { width: 40px; height: 36px; font-size: 16px; }
 
-  /* Thicker scrubber for fingers. */
-  .timeline-scrubber { height: 8px; }
+  /* Speed picker collapses to a single chip on phones — see .speed-picker
+     below. The full pill row stays in the DOM for screen-reader access; CSS
+     hides it until the user taps the chip. */
+  .speed-picker .speed-current { display: inline-flex; }
+  .speed-picker .speed-pills { display: none; }
+  .speed-picker.expanded .speed-pills {
+    display: flex;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    overflow-x: auto;
+    padding: 8px 10px;
+    background: rgba(22, 33, 62, 0.96);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    gap: 6px;
+    box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.5);
+    -webkit-overflow-scrolling: touch;
+  }
+  .speed-picker.expanded .speed-pills .speed-btn { flex: 0 0 auto; min-height: 36px; }
+
+  /* Thicker scrubber for fingers + brighter knob. */
+  .timeline-scrubber { height: 10px; }
 
   /* Cursor info wraps under controls instead of squashing them. */
   .playback-row { flex-wrap: wrap; }
@@ -912,6 +946,12 @@ body {
   .stat-item:nth-child(3n) { border-right: 1px solid var(--border); }
   .stat-item:nth-child(2n) { border-right: none; }
   .stat-value { font-size: 12px; }
+
+  /* Stats panel collapses on phones to recover ~80–100px of vertical room
+     above the charts. Toggle button is visible only at this width. */
+  .stats-panel-wrap .stats-toggle { display: flex; }
+  .stats-panel-wrap .stats-panel { display: none; }
+  .stats-panel-wrap.expanded .stats-panel { display: flex; }
 
   /* Empty state: tighten copy, stack buttons full-width. */
   .drop-overlay { gap: 12px; padding: 0 24px; }
@@ -926,4 +966,110 @@ body {
 
   .fm-legend { gap: 6px; }
   .fm-legend-item { font-size: 9px; }
+
+  /* Bigger touch targets on event markers — invisible padding. */
+  .fm-event { padding: 6px 8px; margin-left: -8px; }
+  .fm-events-row { height: 38px; }
 }
+
+/* ── Speed picker (mobile-collapsible) ──────────────────────────────────────
+ * On desktop the pill row is visible inline (current behaviour). On phones,
+ * the row is hidden by default and revealed as a popover above the play row
+ * when the user taps the .speed-current chip. See the @media (max-width: 640px)
+ * block above for the mobile rules.
+ * ─────────────────────────────────────────────────────────────────────────── */
+.speed-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.speed-picker .speed-current {
+  display: none;          /* desktop: hidden */
+  align-items: center;
+  padding: 4px 10px;
+  height: 32px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 52px;
+  justify-content: center;
+}
+.speed-picker .speed-current:hover { background: #2d3149; }
+.speed-picker .speed-pills {
+  display: flex;          /* desktop: always visible */
+  gap: 2px;
+}
+
+/* ── Stats toggle (mobile-collapsible) ──────────────────────────────────── */
+.stats-panel-wrap {
+  flex: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg2);
+}
+.stats-panel-wrap .stats-toggle {
+  display: none;          /* desktop: hidden */
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.stats-panel-wrap .stats-toggle:hover { color: var(--text2); }
+.stats-panel-wrap .stats-panel {
+  display: flex;          /* desktop: always visible */
+  border-top: none;       /* outer wrap already provides one */
+}
+
+/* ── Fullscreen toggle on globe/map ─────────────────────────────────────── */
+.fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 56px;            /* sit to the left of .globe-auto-btn */
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(22, 33, 62, 0.75);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text2);
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: all 0.15s;
+}
+.fullscreen-btn:hover { color: var(--text); border-color: var(--text3); }
+.fullscreen-btn.active {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  background: rgba(125, 207, 255, 0.08);
+}
+/* When the wrap is the fullscreen target, position the button conservatively. */
+.globe-wrap:fullscreen, .map-wrap:fullscreen {
+  background: var(--bg);
+}
+.globe-wrap:fullscreen .fullscreen-btn,
+.map-wrap:fullscreen .fullscreen-btn {
+  top: max(10px, env(safe-area-inset-top));
+  right: 56px;
+}
+/* In fullscreen on mobile the sticky dock is no longer "fixed to viewport" —
+   it's fixed to the fullscreened element. Browser handles this correctly
+   because position:fixed in a :fullscreen element anchors to that element. */

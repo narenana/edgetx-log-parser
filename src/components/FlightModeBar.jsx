@@ -92,16 +92,18 @@ export default function FlightModeBar({
             title={`${seg.mode} — ${seg.end - seg.start + 1}s`}
           />
         ))}
-        {/* cursor tick */}
+        {/* cursor tick — bright + slight glow so it's easy to spot on a busy bar */}
         <div
           style={{
             position: 'absolute',
             left: `${(cursorIndex / total) * 100}%`,
-            top: 0,
-            bottom: 0,
-            width: 2,
+            top: -1,
+            bottom: -1,
+            width: 3,
+            marginLeft: -1.5,
             background: '#fff',
-            opacity: 0.8,
+            opacity: 0.95,
+            boxShadow: '0 0 6px rgba(255, 255, 255, 0.7), 0 0 2px rgba(255, 255, 255, 0.9)',
             pointerEvents: 'none',
           }}
         />

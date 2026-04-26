@@ -3,6 +3,7 @@ import FlightMap from './FlightMap'
 import SyncedChart from './SyncedChart'
 import FlightModeBar from './FlightModeBar'
 import StatsPanel from './StatsPanel'
+import FullscreenButton from './FullscreenButton'
 import { track } from '../utils/analytics'
 
 // GlobeView pulls in Cesium (external via vite-plugin-cesium) and the
@@ -34,6 +35,7 @@ export default function Dashboard({ log }) {
   const [cursorIndex, setCursorIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
+  const [speedExpanded, setSpeedExpanded] = useState(false)
   const speedRef = useRef(speed)
   const virtualTimeRef = useRef(0)
   useEffect(() => { speedRef.current = speed }, [speed])
@@ -202,6 +204,7 @@ export default function Dashboard({ log }) {
             /* ── 3D Globe view ── */
             log.hasGPS ? (
               <div className="globe-wrap">
+                <FullscreenButton targetClass="globe-wrap" />
                 <Suspense fallback={<div className="lazy-fallback">Loading 3D globe…</div>}>
                   <GlobeView key={log.filename} rows={rows} cursorIndex={cursorIndex} virtualTimeRef={virtualTimeRef} />
                 </Suspense>
@@ -213,6 +216,7 @@ export default function Dashboard({ log }) {
             /* ── Classic: 2D map + attitude ── */
             <>
               <div className="map-wrap">
+                <FullscreenButton targetClass="map-wrap" />
                 {log.hasGPS ? (
                   <FlightMap rows={rows} cursorIndex={cursorIndex} />
                 ) : (
@@ -254,22 +258,39 @@ export default function Dashboard({ log }) {
           >
             {playing ? '⏸' : '▶'}
           </button>
-          <div className="speed-btns">
-            {SPEEDS.map(s => (
-              <button
-                key={s}
-                className={`speed-btn${speed === s ? ' active' : ''}`}
-                onClick={() => {
-                  if (s !== speed) {
-                    setSpeed(s)
-                    track('playback_speed_changed', { speed: s })
-                  }
-                }}
-              >
-                {s}×
-              </button>
-            ))}
+
+          {/* Speed picker — full row of pills on desktop, single chip
+              that opens a popover scroller on mobile (CSS handles the swap). */}
+          <div className={`speed-picker${speedExpanded ? ' expanded' : ''}`}>
+            <button
+              type="button"
+              className="speed-current"
+              onClick={() => setSpeedExpanded(e => !e)}
+              aria-expanded={speedExpanded}
+              aria-label={`Playback speed ${speed}×, tap to change`}
+            >
+              {speed}×
+            </button>
+            <div className="speed-pills">
+              {SPEEDS.map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  className={`speed-btn${speed === s ? ' active' : ''}`}
+                  onClick={() => {
+                    if (s !== speed) {
+                      setSpeed(s)
+                      track('playback_speed_changed', { speed: s })
+                    }
+                    setSpeedExpanded(false)
+                  }}
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
           </div>
+
           <div className="cursor-info" style={{ marginLeft: 'auto' }}>{tStr}</div>
         </div>
 
