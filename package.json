@@ -26,12 +26,6 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
           "target": "portable",
           "arch": [
             "x64"
@@ -63,10 +57,6 @@
       "identity": null,
       "generateUpdatesFilesForAllChannels": false,
       "forceCodeSigning": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
     },
     "generateUpdatesFilesForAllChannels": false,
     "publish": null

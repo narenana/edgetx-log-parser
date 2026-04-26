@@ -74,7 +74,7 @@ jobs:
           VITE_BUILD_TARGET: desktop
 
       - name: Package Windows (installer + portable)
-        run: npx electron-builder --win nsis portable --x64
+        run: npx electron-builder --win portable --x64
         env:
           ELECTRON_BUILDER_PUBLISH: never
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -138,8 +138,7 @@ jobs:
             #### Windows
             | File | Description |
             |------|-------------|
-            | `EdgeTX-Log-Parser-3.0.0-Setup.exe` | NSIS installer — installs to Program Files, adds Start Menu shortcut |
-            | `EdgeTX-Log-Parser-3.0.0-Portable.exe` | Portable — no install required, run from anywhere |
+| `EdgeTX-Log-Parser-3.0.0-Portable.exe` | Portable executable — no install required, run from anywhere |
 
             ---
 
