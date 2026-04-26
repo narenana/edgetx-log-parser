@@ -18,6 +18,8 @@ A flight log visualiser for EdgeTX RC aircraft. Load a CSV log from your transmi
 
 Visit the hosted version *(domain coming soon)*. No install, no upload — your CSV is parsed in-browser with PapaParse, drawn with Cesium / Three.js / Leaflet, and discarded when you close the tab.
 
+The web build is a PWA — on supported browsers (Chrome, Edge, modern Safari) the address bar shows an install icon. Once installed, the app shell and Cesium runtime are cached, so the viewer works fully offline thereafter. Updates show a small "Refresh / Later" prompt — they never reload mid-session.
+
 ### Desktop downloads
 
 Grab the latest Windows build from [**Releases**](https://github.com/narenana/edgetx-log-parser/releases):

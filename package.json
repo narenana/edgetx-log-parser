@@ -1,6 +1,6 @@
 {
   "name": "edgetx-log-parser",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "EdgeTX flight log visualizer for RC aircraft",
   "main": "electron/main.js",
   "author": "narenana",
@@ -88,6 +88,7 @@
     "electron-builder": "^24.13.3",
     "electron-reload": "^2.0.0-alpha.1",
     "vite": "^5.4.0",
+    "vite-plugin-pwa": "^1.2.0",
     "wait-on": "^8.0.0"
   }
 }
