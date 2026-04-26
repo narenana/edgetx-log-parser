@@ -15,8 +15,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - arch: x64
-            label: Intel (x64)
           - arch: arm64
             label: Apple Silicon (arm64)
           - arch: universal
@@ -40,21 +38,19 @@ jobs:
         env:
           VITE_BUILD_TARGET: desktop
 
-      - name: Package macOS app (${{ matrix.label }})
-        run: npx electron-builder --mac zip --${{ matrix.arch }}
+      - name: Package macOS DMG (${{ matrix.label }})
+        run: npx electron-builder --mac dmg --${{ matrix.arch }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: List release artifacts
         run: ls -lh release/
 
-      - name: Upload release artifacts
+      - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: mac-${{ matrix.arch }}
-          path: |
-            release/*.zip
-            release/*.dmg
+          path: release/*.dmg
           if-no-files-found: warn
 
   create-release:
@@ -70,17 +66,17 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: artifacts/**/*.dmg
           generate_release_notes: true
           body: |
             ## EdgeTX Log Parser – macOS Release
 
             ### Downloads
-            | Variant | Description |
-            |---------|-------------|
-            | `*-mac-universal.zip` | Universal binary – runs natively on both Intel and Apple Silicon Macs |
-            | `*-arm64-mac.zip` | Apple Silicon (M1/M2/M3) – native arm64 build |
-            | `*-x64-mac.zip` | Intel (x64) – for older Intel Macs |
+            | File | Description |
+            |------|-------------|
+            | `*-universal.dmg` | Universal – runs natively on both Intel and Apple Silicon Macs |
+            | `*-arm64.dmg` | Apple Silicon (M1/M2/M3/M4) – native arm64 build |
 
             ### Web App
-            The web version is always available at: https://Cr4zySh4rk.github.io/edgetx-log-parser/
+            No install needed — use the live web app:
+            https://Cr4zySh4rk.github.io/edgetx-log-parser/
