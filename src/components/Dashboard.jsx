@@ -4,6 +4,7 @@ import SyncedChart from './SyncedChart'
 import FlightModeBar from './FlightModeBar'
 import StatsPanel from './StatsPanel'
 import FullscreenButton from './FullscreenButton'
+import FlightSummaryModal from './FlightSummaryModal'
 import { track } from '../utils/analytics'
 
 // GlobeView pulls in Cesium (external via vite-plugin-cesium) and the
@@ -30,7 +31,13 @@ function ds(label, data, color, extra = {}) {
   }
 }
 
-export default function Dashboard({ log, theme = 'light' }) {
+export default function Dashboard({
+  log,
+  theme = 'light',
+  summaryDismissed = false,
+  onDismissSummary = () => {},
+  onCloseLog = () => {},
+}) {
   const [viewMode, setViewMode] = useState(2) // 1 = classic, 2 = 3D globe
   const [cursorIndex, setCursorIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -169,6 +176,18 @@ export default function Dashboard({ log, theme = 'light' }) {
 
   return (
     <div className="dashboard">
+      {/* Pre-flight summary — gates the user into the viewer with a single
+          deliberate click, or offers a graceful exit on empty-data logs.
+          Dismissed-state lives in App.jsx (keyed by filename) so the modal
+          only shows once per loaded log even when tabbing between logs. */}
+      {!summaryDismissed && (
+        <FlightSummaryModal
+          log={log}
+          onProceed={onDismissSummary}
+          onCloseLog={onCloseLog}
+        />
+      )}
+
       {/* View mode toggle */}
       <div className="view-toggle-bar">
         <span className="view-toggle-label">View</span>

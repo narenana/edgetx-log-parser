@@ -1242,3 +1242,270 @@ body {
 /* In fullscreen on mobile the sticky dock is no longer "fixed to viewport" —
    it's fixed to the fullscreened element. Browser handles this correctly
    because position:fixed in a :fullscreen element anchors to that element. */
+
+/* ── Pre-flight summary modal ─────────────────────────────────────────────
+   Shown immediately after a log is loaded. Forces engagement with the
+   headline numbers and gates the user into the dashboard with one
+   deliberate click. Empty-data branch lets bad logs exit gracefully.
+   All colors come from theme tokens so the modal flips with the theme. */
+
+.summary-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--shadow-overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: summary-fade-in 0.18s ease-out;
+}
+
+.summary-modal-card {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 28px 24px;
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-shadow: 0 16px 48px var(--shadow-overlay);
+  animation: summary-scale-in 0.22s ease-out;
+}
+
+.summary-modal-header {
+  margin-bottom: 20px;
+}
+
+.summary-modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+
+.summary-modal-subtitle {
+  font-size: 13px;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.summary-tile {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.summary-tile-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+
+.summary-tile-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  line-height: 1.15;
+}
+
+.summary-tile-unit {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  margin-left: 2px;
+}
+
+.summary-cta {
+  width: 100%;
+  background: var(--blue);
+  color: var(--on-blue-text);
+  border: none;
+  border-radius: 8px;
+  padding: 13px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--shadow-card);
+  transition: filter 0.15s, transform 0.05s, box-shadow 0.15s;
+}
+
+.summary-cta:hover { filter: brightness(1.1); box-shadow: 0 4px 14px var(--shadow-card); }
+.summary-cta:active { transform: translateY(1px); }
+.summary-cta:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+.summary-cta-secondary {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.summary-cta-secondary:hover {
+  background: var(--hover-bg);
+  filter: none;
+  box-shadow: none;
+}
+
+.summary-empty {
+  text-align: center;
+  padding: 8px 0 22px;
+}
+.summary-empty-icon {
+  font-size: 46px;
+  opacity: 0.7;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+.summary-empty-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.summary-empty-msg {
+  font-size: 13px;
+  color: var(--text2);
+  max-width: 360px;
+  margin: 0 auto;
+  line-height: 1.45;
+}
+
+@keyframes summary-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes summary-scale-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Processing phase ───────────────────────────────────────────────────
+   Theatrical preamble. Walks through three "we're working" steps before
+   the actual summary numbers reveal. Pure animation — parsing has
+   already finished by the time the modal mounts. */
+
+.summary-processing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 24px 0 26px;
+  min-height: 220px;          /* keep card height stable through phase swap */
+  justify-content: center;
+}
+
+.summary-processing-spinner {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--blue);
+  animation: summary-spin 0.85s linear infinite;
+}
+
+.summary-processing-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.summary-processing-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text3);
+  transition: color 0.2s;
+}
+
+.summary-processing-step.active {
+  color: var(--text);
+}
+.summary-processing-step.done {
+  color: var(--text2);
+}
+
+.summary-processing-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text3);
+  flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.summary-processing-step.active .summary-processing-mark {
+  border-color: var(--blue);
+  color: var(--blue);
+  animation: summary-pulse 0.85s ease-in-out infinite;
+}
+
+.summary-processing-step.done .summary-processing-mark {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--on-blue-text);
+}
+
+@keyframes summary-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes summary-pulse {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%      { transform: scale(1.18); opacity: 0.7; }
+}
+
+/* Fade in summary content as it replaces the processing animation. */
+.summary-grid,
+.summary-empty {
+  animation: summary-fade-in 0.28s ease-out;
+}
+
+/* Tighter spacing on small viewports — tiles still readable, less room
+   wasted on padding. */
+@media (max-width: 600px) {
+  .summary-modal-card {
+    padding: 22px 18px 18px;
+    border-radius: 10px;
+  }
+  .summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .summary-tile {
+    padding: 10px 12px;
+  }
+  .summary-tile-value {
+    font-size: 18px;
+  }
+  .summary-modal-title {
+    font-size: 18px;
+  }
+}
