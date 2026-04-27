@@ -30,7 +30,7 @@ function ds(label, data, color, extra = {}) {
   }
 }
 
-export default function Dashboard({ log }) {
+export default function Dashboard({ log, theme = 'light' }) {
   const [viewMode, setViewMode] = useState(2) // 1 = classic, 2 = 3D globe
   const [cursorIndex, setCursorIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -232,13 +232,13 @@ export default function Dashboard({ log }) {
         </div>
 
         <div className="dashboard-right">
-          <SyncedChart title="Attitude" datasets={attitudeDatasets} labels={labels} yLabel="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} />
-          <SyncedChart title="Altitude & Vertical Speed" datasets={altDatasets} labels={labels} yLabel="m" y1Label="m/s" cursorIndex={cursorIndex} onCursorChange={handleCursor} />
-          <SyncedChart title="Speed & Heading" datasets={speedDatasets} labels={labels} yLabel="km/h" y1Label="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} />
+          <SyncedChart title="Attitude" datasets={attitudeDatasets} labels={labels} yLabel="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
+          <SyncedChart title="Altitude & Vertical Speed" datasets={altDatasets} labels={labels} yLabel="m" y1Label="m/s" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
+          <SyncedChart title="Speed & Heading" datasets={speedDatasets} labels={labels} yLabel="km/h" y1Label="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
           {batteryDatasets.length > 0 && (
-            <SyncedChart title="Battery" datasets={batteryDatasets} labels={labels} yLabel="V" y1Label="A" cursorIndex={cursorIndex} onCursorChange={handleCursor} />
+            <SyncedChart title="Battery" datasets={batteryDatasets} labels={labels} yLabel="V" y1Label="A" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
           )}
-          <SyncedChart title="Signal" datasets={signalDatasets} labels={labels} yLabel="dBm" y1Label="%" cursorIndex={cursorIndex} onCursorChange={handleCursor} />
+          <SyncedChart title="Signal" datasets={signalDatasets} labels={labels} yLabel="dBm" y1Label="%" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
         </div>
       </div>
 

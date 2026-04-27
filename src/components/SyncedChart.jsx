@@ -37,6 +37,33 @@ const crosshairPlugin = {
 
 ChartJS.register(crosshairPlugin)
 
+// Theme-specific chart palette. Chart.js doesn't read CSS vars at draw time,
+// so we hand-pick values that match the App.css palette for each theme.
+const CHART_COLORS = {
+  dark: {
+    title:        '#ffffff',
+    legend:       '#d6dcef',
+    tickStrong:   '#d6dcef',
+    tickDim:      '#8893b6',
+    grid:         'rgba(75, 91, 120, 0.28)',
+    tooltipBg:    'rgba(28, 35, 51, 0.96)',
+    tooltipText:  '#ffffff',
+    tooltipBody:  '#d6dcef',
+    tooltipBorder:'#4b5b78',
+  },
+  light: {
+    title:        '#0f1a2c',
+    legend:       '#2c3e5c',
+    tickStrong:   '#2c3e5c',
+    tickDim:      '#6478a0',
+    grid:         'rgba(120, 130, 150, 0.20)',
+    tooltipBg:    'rgba(255, 255, 255, 0.97)',
+    tooltipText:  '#0f1a2c',
+    tooltipBody:  '#2c3e5c',
+    tooltipBorder:'#c5cdd9',
+  },
+}
+
 export default function SyncedChart({
   title,
   datasets,
@@ -45,6 +72,7 @@ export default function SyncedChart({
   y1Label,
   cursorIndex,
   onCursorChange,
+  theme = 'light',
   height = 160,
 }) {
   const chartRef = useRef(null)
@@ -63,82 +91,85 @@ export default function SyncedChart({
 
   const hasDualAxis = datasets.some(d => d.yAxisID === 'y1')
 
-  const options = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    interaction: { mode: 'index', intersect: false, axis: 'x' },
-    plugins: {
-      legend: {
-        position: 'top',
-        align: 'start',
-        labels: {
-          color: '#a9b1d6',
-          boxWidth: 10,
-          boxHeight: 2,
-          padding: 8,
-          font: { size: 11 },
+  const options = useMemo(() => {
+    const c = CHART_COLORS[theme] || CHART_COLORS.light
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'start',
+          labels: {
+            color: c.legend,
+            boxWidth: 10,
+            boxHeight: 2,
+            padding: 8,
+            font: { size: 11 },
+          },
         },
-      },
-      title: {
-        display: !!title,
-        text: title,
-        color: '#c0caf5',
-        font: { size: 12, weight: '600' },
-        padding: { top: 2, bottom: 6 },
-      },
-      tooltip: {
-        mode: 'index',
-        intersect: false,
-        backgroundColor: 'rgba(36, 40, 59, 0.96)',
-        titleColor: '#c0caf5',
-        bodyColor: '#a9b1d6',
-        borderColor: '#414868',
-        borderWidth: 1,
-        padding: 8,
-      },
-    },
-    onHover: (_event, elements) => {
-      if (elements.length > 0) {
-        onCursorRef.current?.(elements[0].index)
-      }
-    },
-    scales: {
-      x: {
-        ticks: {
-          color: '#565f89',
-          maxTicksLimit: 12,
-          maxRotation: 0,
-          font: { size: 10 },
-        },
-        grid: { color: 'rgba(65, 72, 104, 0.25)' },
-      },
-      y: {
-        position: 'left',
         title: {
-          display: !!yLabel,
-          text: yLabel,
-          color: '#565f89',
-          font: { size: 10 },
+          display: !!title,
+          text: title,
+          color: c.title,
+          font: { size: 12, weight: '600' },
+          padding: { top: 2, bottom: 6 },
         },
-        ticks: { color: '#565f89', font: { size: 10 } },
-        grid: { color: 'rgba(65, 72, 104, 0.25)' },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          backgroundColor: c.tooltipBg,
+          titleColor: c.tooltipText,
+          bodyColor: c.tooltipBody,
+          borderColor: c.tooltipBorder,
+          borderWidth: 1,
+          padding: 8,
+        },
       },
-      ...(hasDualAxis && {
-        y1: {
-          position: 'right',
-          title: {
-            display: !!y1Label,
-            text: y1Label,
-            color: '#565f89',
+      onHover: (_event, elements) => {
+        if (elements.length > 0) {
+          onCursorRef.current?.(elements[0].index)
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: c.tickDim,
+            maxTicksLimit: 12,
+            maxRotation: 0,
             font: { size: 10 },
           },
-          ticks: { color: '#565f89', font: { size: 10 } },
-          grid: { drawOnChartArea: false },
+          grid: { color: c.grid },
         },
-      }),
-    },
-  }), [title, yLabel, y1Label, hasDualAxis])
+        y: {
+          position: 'left',
+          title: {
+            display: !!yLabel,
+            text: yLabel,
+            color: c.tickDim,
+            font: { size: 10 },
+          },
+          ticks: { color: c.tickDim, font: { size: 10 } },
+          grid: { color: c.grid },
+        },
+        ...(hasDualAxis && {
+          y1: {
+            position: 'right',
+            title: {
+              display: !!y1Label,
+              text: y1Label,
+              color: c.tickDim,
+              font: { size: 10 },
+            },
+            ticks: { color: c.tickDim, font: { size: 10 } },
+            grid: { drawOnChartArea: false },
+          },
+        }),
+      },
+    }
+  }, [title, yLabel, y1Label, hasDualAxis, theme])
 
   return (
     <div className="chart-panel">

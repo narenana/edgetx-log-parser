@@ -36,6 +36,21 @@
     <meta name="twitter:image:alt" content="EdgeTX Log Viewer — 3D flight replay" />
   </head>
   <body>
+    <!-- Apply the saved theme BEFORE React mounts so there's no flash of
+         wrong theme on first paint. Falls back to light mode for first
+         visitors. App.jsx still owns the running state and persistence. -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('theme')
+          var theme = saved === 'dark' || saved === 'light' ? saved : 'light'
+          document.documentElement.dataset.theme = theme
+        } catch (_) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
+
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
