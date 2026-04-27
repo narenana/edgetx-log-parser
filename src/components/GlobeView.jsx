@@ -68,6 +68,55 @@ function lerpHdg(from, to, t) {
   return from + diff * t
 }
 
+// Strobe pulse — returns 0..1 over a 1.1 s cycle. Sharp 70 ms peak with a
+// short fade tail, then a 0.35 baseline (steady-on position light glow).
+// `phaseMs` shifts the cycle so port and starboard can alternate.
+function strobeBrightness(phaseMs = 0) {
+  const t = (((Date.now() + phaseMs) % 1100) + 1100) % 1100 / 1100
+  if (t < 0.06) return 1.0
+  if (t < 0.16) return 1.0 - ((t - 0.06) / 0.10) * 0.65
+  return 0.35
+}
+
+// Add a point primitive at a wing-tip offset that tracks the aircraft's pose
+// and flashes like a real anti-collision light.
+function addWingtipStrobe(viewer, getAircraftEntity, localOffset, color, phaseMs) {
+  const reusableMatrix = new Cesium.Matrix3()
+  const reusableDelta = new Cesium.Cartesian3()
+  const reusableResult = new Cesium.Cartesian3()
+
+  return viewer.entities.add({
+    position: new Cesium.CallbackProperty((time, result) => {
+      const ac = getAircraftEntity()
+      if (!ac) return undefined
+      const pos = ac.position?.getValue?.(time)
+      const ori = ac.orientation?.getValue?.(time)
+      if (!pos || !ori) return undefined
+      const rot = Cesium.Matrix3.fromQuaternion(ori, reusableMatrix)
+      const dW = Cesium.Matrix3.multiplyByVector(rot, localOffset, reusableDelta)
+      return Cesium.Cartesian3.add(pos, dW, result || reusableResult)
+    }, false),
+    point: {
+      pixelSize: new Cesium.CallbackProperty(
+        () => 5 + strobeBrightness(phaseMs) * 18,
+        false,
+      ),
+      color: new Cesium.CallbackProperty(
+        () => color.withAlpha(0.4 + strobeBrightness(phaseMs) * 0.6),
+        false,
+      ),
+      outlineColor: new Cesium.CallbackProperty(
+        () => color.withAlpha(strobeBrightness(phaseMs) * 0.6),
+        false,
+      ),
+      outlineWidth: 4,
+      // Render through terrain — the lights stay visible even when the
+      // wing tip would otherwise be occluded by a hill at low altitude.
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+  })
+}
+
 // ── Build Three.js aircraft scene for GLB export ───────────────────────────────
 // Nose along -Z (glTF/Cesium "forward"), up +Y, wings span X
 // At Cesium HPR(0,0,0), glTF -Z maps to North, so nose points North → heading is straight compass
@@ -84,8 +133,20 @@ function buildAircraftScene() {
   const matWing  = mat(0xffffff, 0.55, 0.10)   // white wings
   const matDark  = mat(0x1a1a1a, 0.50, 0.30)   // black tail / wing tips
   const matGlass = mat(0x162236, 0.05, 0.65)   // very dark blue canopy
-  const matRed   = mat(0xff2020, 0.25, 0.30)   // bright red port nav light
-  const matGrn   = mat(0x20ff60, 0.25, 0.30)   // bright green stbd nav light
+
+  // Nav lights — emissive so they glow within the GLB even after the
+  // Three.js scene loses its lighting context (Cesium renders the model
+  // with its own scene lights). Cesium-side strobe primitives (added in
+  // the useEffect after the model loads) flash on top of these for the
+  // anti-collision effect.
+  const matRed = new THREE.MeshStandardMaterial({
+    color: 0xff2020, roughness: 0.25, metalness: 0.30,
+    emissive: 0xff2020, emissiveIntensity: 0.9,
+  })
+  const matGrn = new THREE.MeshStandardMaterial({
+    color: 0x20ff60, roughness: 0.25, metalness: 0.30,
+    emissive: 0x20ff60, emissiveIntensity: 0.9,
+  })
 
   const g = new THREE.Group()
 
@@ -270,6 +331,20 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           maximumScale: 8000,
         },
       })
+
+      // ── Wingtip strobes — Cesium point primitives that flash like real
+      // anti-collision lights. Position is derived from the aircraft's
+      // current pose each frame; color + size are modulated by a strobe
+      // pulse with a 0.35 baseline (steady-on position light) and a sharp
+      // spike to 1.0 every 1.1 s. Port and starboard are 250 ms out of
+      // phase so the flashes alternate.
+      const LEFT_WT  = new Cesium.Cartesian3(-4.85, 0.30, -0.4)
+      const RIGHT_WT = new Cesium.Cartesian3( 4.85, 0.30, -0.4)
+      const navAircraftEntityGetter = () => aircraftEntity
+      addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
+                       Cesium.Color.fromCssColorString('#ff2020'), 0)
+      addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
+                       Cesium.Color.fromCssColorString('#20ff60'), 250)
     }).catch(err => console.error('aircraft GLB build failed:', err))
 
     // Altitude stem

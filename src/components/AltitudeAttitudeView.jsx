@@ -51,10 +51,16 @@ function buildPlane() {
   const matBody  = new THREE.MeshPhongMaterial({ color: 0xff7a00, shininess: 90,  specular: 0xffae40 })
   const matDark  = new THREE.MeshPhongMaterial({ color: 0x1a1a1a, shininess: 35 })
   const matWing  = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 60,  specular: 0xeef0ff })
+  // Nav lights — separate material instance per side so emissive can be
+  // strobed independently in the animate loop.
   const matGlass = new THREE.MeshPhongMaterial({ color: 0x4a6e99, shininess: 200, specular: 0xaaddff,
                                                   transparent: true, opacity: 0.72 })
-  const matRed   = new THREE.MeshPhongMaterial({ color: 0xff3333, shininess: 100 })
-  const matGreen = new THREE.MeshPhongMaterial({ color: 0x33ff77, shininess: 100 })
+  const matRed = new THREE.MeshPhongMaterial({
+    color: 0xff2020, shininess: 100, emissive: 0xff2020, emissiveIntensity: 0.4,
+  })
+  const matGreen = new THREE.MeshPhongMaterial({
+    color: 0x20ff60, shininess: 100, emissive: 0x20ff60, emissiveIntensity: 0.4,
+  })
   const matProp  = new THREE.MeshPhongMaterial({ color: 0x5a6a7a, shininess: 140 })
 
   const cast = mesh => { mesh.castShadow = true; return mesh }
@@ -103,14 +109,22 @@ function buildPlane() {
     tip.position.set(side * 4.45, 0.33, 0.38)
     g.add(tip)
 
-    // Nav light
+    // Nav light — emissive sphere + a real PointLight that spills onto
+    // the wing and fuselage. Strobed in the animate loop.
     const navMat = side < 0 ? matRed : matGreen
-    const nav = cast(new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), navMat))
+    const navColor = side < 0 ? 0xff2020 : 0x20ff60
+    const nav = cast(new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), navMat))
     nav.position.set(side * 4.5, 0.32, 0.38)
+    nav.userData.role = side < 0 ? 'navLeft' : 'navRight'
     g.add(nav)
+
+    const navLight = new THREE.PointLight(navColor, 0.0, 2.6, 1.6)
+    navLight.position.set(side * 4.5, 0.32, 0.38)
+    navLight.userData.role = side < 0 ? 'lightLeft' : 'lightRight'
+    g.add(navLight)
   }
-  addWingHalf(-1)   // left
-  addWingHalf(+1)   // right
+  addWingHalf(-1)   // left  (port,    red)
+  addWingHalf(+1)   // right (starboard, green)
 
   // ── Horizontal stabilisers
   const addHStab = (side) => {
@@ -352,10 +366,40 @@ export default function AltitudeAttitudeView({ rows, cursorIndex, virtualTimeRef
 
     sceneRef.current = { renderer, scene, camera, controls, plane, propGroup, pole, shadowCircle }
 
+    // Look up the nav-light meshes + point lights once. Each is tagged
+    // via `userData.role` in the plane builder so we can find them
+    // without depending on traversal order.
+    let navLeft = null, navRight = null, lightLeft = null, lightRight = null
+    plane.traverse(o => {
+      if (o.userData.role === 'navLeft')  navLeft = o
+      if (o.userData.role === 'navRight') navRight = o
+      if (o.userData.role === 'lightLeft')  lightLeft = o
+      if (o.userData.role === 'lightRight') lightRight = o
+    })
+
+    // Strobe pulse — same shape as GlobeView. 1.1 s cycle, 70 ms peak,
+    // 0.35 baseline. Port and starboard 250 ms out of phase so the
+    // flashes alternate.
+    const strobe = (phaseMs = 0) => {
+      const t = (((Date.now() + phaseMs) % 1100) + 1100) % 1100 / 1100
+      if (t < 0.06) return 1.0
+      if (t < 0.16) return 1.0 - ((t - 0.06) / 0.10) * 0.65
+      return 0.35
+    }
+
     let raf
     const animate = () => {
       raf = requestAnimationFrame(animate)
       propGroup.rotation.z += 0.18
+
+      // Strobe nav lights — modulate emissive intensity on the spheres
+      // and intensity on the matching PointLight (real light spill).
+      const lvlL = strobe(0)
+      const lvlR = strobe(250)
+      if (navLeft)   navLeft.material.emissiveIntensity  = 0.3 + lvlL * 1.7
+      if (navRight)  navRight.material.emissiveIntensity = 0.3 + lvlR * 1.7
+      if (lightLeft)  lightLeft.intensity  = lvlL * 1.6
+      if (lightRight) lightRight.intensity = lvlR * 1.6
 
       const vt  = virtualTimeRef?.current ?? rows[0]._tSec
       const row = interpRows(rows, vt)
