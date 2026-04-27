@@ -393,10 +393,35 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     stateRef.current = { viewer, smooth, getAircraftEntity: () => aircraftEntity }
     curRowRef.current = gpsRows[0]
 
+    // Force Cesium to recompute its canvas backing buffer when the wrap
+    // changes size — most importantly when entering or exiting fullscreen.
+    // Cesium's internal observer doesn't always fire fast enough on exit,
+    // which leaves the canvas at fullscreen pixel dimensions even though
+    // the wrap CSS has shrunk back. Calling viewer.resize() forces it.
+    const wrap = el.closest('.globe-wrap')
+    const onFsChange = () => {
+      requestAnimationFrame(() => {
+        try { viewer.resize() } catch (_) {}
+        // A second tick once the layout has settled.
+        setTimeout(() => { try { viewer.resize() } catch (_) {} }, 120)
+      })
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+
+    let resizeObserver = null
+    if (wrap && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        try { viewer.resize() } catch (_) {}
+      })
+      resizeObserver.observe(wrap)
+    }
+
     return () => {
       cancelled = true
       el.removeEventListener('mousedown', releaseAuto)
       el.removeEventListener('wheel', releaseAuto)
+      document.removeEventListener('fullscreenchange', onFsChange)
+      resizeObserver?.disconnect()
       stateRef.current = null
       if (glbUrlRef.current) { URL.revokeObjectURL(glbUrlRef.current); glbUrlRef.current = null }
       try { viewer.destroy() } catch (_) {}
