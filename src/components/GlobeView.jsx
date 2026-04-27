@@ -76,12 +76,16 @@ function buildAircraftScene() {
   const mat = (hex, rough = 0.55, metal = 0.25) =>
     new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: metal })
 
-  const matBody  = mat(0xcdd1e4)
-  const matWing  = mat(0xb4b8cc, 0.6, 0.15)
-  const matDark  = mat(0x353b55, 0.7, 0.1)
-  const matGlass = mat(0x4a6e99, 0.05, 0.6)
-  const matRed   = mat(0xff3333, 0.3, 0.1)
-  const matGrn   = mat(0x33ff77, 0.3, 0.1)
+  // High-vis paint scheme — safety orange body with white wings + black
+  // accents reads cleanly against any satellite backdrop (forest, water,
+  // snow, urban). Black canopy and tip stripes give a dark anchor for
+  // light backgrounds; orange + white pop on dark backgrounds.
+  const matBody  = mat(0xff7a00, 0.45, 0.25)   // safety orange fuselage
+  const matWing  = mat(0xffffff, 0.55, 0.10)   // white wings
+  const matDark  = mat(0x1a1a1a, 0.50, 0.30)   // black tail / wing tips
+  const matGlass = mat(0x162236, 0.05, 0.65)   // very dark blue canopy
+  const matRed   = mat(0xff2020, 0.25, 0.30)   // bright red port nav light
+  const matGrn   = mat(0x20ff60, 0.25, 0.30)   // bright green stbd nav light
 
   const g = new THREE.Group()
 

@@ -47,9 +47,10 @@ function buildPlane() {
   const g = new THREE.Group()
   g.rotation.order = 'YXZ'   // heading → pitch → roll
 
-  const matBody  = new THREE.MeshPhongMaterial({ color: 0xcdd1e4, shininess: 80,  specular: 0x4455aa })
-  const matDark  = new THREE.MeshPhongMaterial({ color: 0x353b55, shininess: 30 })
-  const matWing  = new THREE.MeshPhongMaterial({ color: 0xb4b8cc, shininess: 55,  specular: 0x334466 })
+  // High-vis paint — see comment in GlobeView buildAircraftScene().
+  const matBody  = new THREE.MeshPhongMaterial({ color: 0xff7a00, shininess: 90,  specular: 0xffae40 })
+  const matDark  = new THREE.MeshPhongMaterial({ color: 0x1a1a1a, shininess: 35 })
+  const matWing  = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 60,  specular: 0xeef0ff })
   const matGlass = new THREE.MeshPhongMaterial({ color: 0x4a6e99, shininess: 200, specular: 0xaaddff,
                                                   transparent: true, opacity: 0.72 })
   const matRed   = new THREE.MeshPhongMaterial({ color: 0xff3333, shininess: 100 })

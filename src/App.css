@@ -1,19 +1,28 @@
 :root {
-  --bg: #1a1b26;
-  --bg2: #16213e;
-  --bg3: #24283b;
-  --border: #414868;
-  --text: #c0caf5;
-  --text2: #a9b1d6;
-  --text3: #565f89;
-  --green: #9ece6a;
-  --red: #f7768e;
-  --blue: #7aa2f7;
-  --cyan: #7dcfff;
-  --orange: #ff9e64;
-  --yellow: #e0af68;
-  --purple: #bb9af7;
-  --pink: #ff79c6;
+  /* Background tier — kept dark so the satellite imagery + chart canvases
+     pop, but bumped a touch lighter than Tokyo Night so the chrome doesn't
+     feel like a black hole. */
+  --bg: #11151c;
+  --bg2: #1c2333;
+  --bg3: #2a3447;
+  --border: #4b5b78;        /* much more visible than the old #414868 */
+  --border-bright: #6b7fa3; /* secondary accent for hover states */
+
+  /* Text tier — pushed brighter for legibility on dark backgrounds. */
+  --text:  #ffffff;          /* primary, was #c0caf5 */
+  --text2: #d6dcef;          /* secondary, was #a9b1d6 */
+  --text3: #8893b6;          /* muted but still readable, was #565f89 */
+
+  /* Accent tier — saturated punchy hues, still close to the original
+     palette identity but with more chroma so charts and chips pop. */
+  --green:  #a6e36a;
+  --red:    #ff5f7d;
+  --blue:   #59b1ff;
+  --cyan:   #4ddcff;
+  --orange: #ffb04a;
+  --yellow: #ffd966;
+  --purple: #c98bff;
+  --pink:   #ff7fc8;
 }
 
 * {
@@ -43,9 +52,9 @@ body {
 .header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 14px;
-  height: 48px;
+  gap: 14px;
+  padding: 0 18px;
+  height: 56px;
   flex: none;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
@@ -53,7 +62,7 @@ body {
 
 .header-logo {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--blue);
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -61,7 +70,7 @@ body {
 
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
   overflow-x: auto;
   scrollbar-width: none;
@@ -69,82 +78,98 @@ body {
 .tabs::-webkit-scrollbar { display: none; }
 
 .tab {
-  padding: 5px 12px;
-  border-radius: 4px;
+  padding: 7px 14px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
-  color: var(--text3);
+  color: var(--text2);
   background: transparent;
   border: 1px solid transparent;
   transition: all 0.15s;
 }
-.tab:hover { color: var(--text2); background: var(--bg3); }
-.tab.active { color: var(--text); background: var(--bg3); border-color: var(--border); }
+.tab:hover { color: var(--text); background: var(--bg3); }
+.tab.active { color: var(--text); background: var(--bg3); border-color: var(--border-bright); }
 .tab-close {
-  margin-left: 6px;
-  opacity: 0.5;
-  font-size: 11px;
+  margin-left: 8px;
+  opacity: 0.6;
+  font-size: 12px;
 }
 .tab:hover .tab-close { opacity: 1; }
 
 .open-btn {
-  padding: 6px 12px;
+  padding: 9px 18px;
   background: var(--blue);
-  color: #1a1b26;
+  color: #06192e;
   border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(89, 177, 255, 0.25);
+  transition: all 0.15s;
 }
-.open-btn:hover { opacity: 0.85; }
+.open-btn:hover { background: #7ec0ff; box-shadow: 0 3px 10px rgba(89, 177, 255, 0.4); }
 
 /* ── Drop overlay ── */
 .drop-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(26, 27, 38, 0.96);
+  background: rgba(17, 21, 28, 0.96);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 20px;
   z-index: 100;
   border: 2px dashed var(--border);
 }
-.drop-overlay.drag-over { border-color: var(--blue); background: rgba(122, 162, 247, 0.05); }
-.drop-icon { font-size: 48px; opacity: 0.4; }
-.drop-title { font-size: 20px; font-weight: 600; color: var(--text); }
-.drop-sub { font-size: 13px; color: var(--text3); }
+.drop-overlay.drag-over {
+  border-color: var(--blue);
+  background: rgba(89, 177, 255, 0.08);
+  box-shadow: inset 0 0 80px rgba(89, 177, 255, 0.15);
+}
+.drop-icon { font-size: 56px; opacity: 0.55; color: var(--blue); }
+.drop-title { font-size: 24px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+.drop-sub { font-size: 14px; color: var(--text2); }
 .drop-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 12px;
+  margin-top: 12px;
   flex-wrap: wrap;
   justify-content: center;
 }
 .drop-btn {
-  padding: 10px 24px;
+  padding: 14px 28px;
   background: var(--blue);
-  color: #1a1b26;
+  color: #06192e;
   border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(89, 177, 255, 0.3);
+  transition: all 0.18s;
 }
-.drop-btn:hover { opacity: 0.85; }
-.drop-btn:disabled { opacity: 0.5; cursor: wait; }
+.drop-btn:hover {
+  background: #7ec0ff;
+  box-shadow: 0 6px 18px rgba(89, 177, 255, 0.45);
+  transform: translateY(-1px);
+}
+.drop-btn:disabled { opacity: 0.55; cursor: wait; transform: none; }
 .drop-btn-secondary {
   background: transparent;
   color: var(--blue);
-  border: 1px solid var(--blue);
+  border: 2px solid var(--blue);
+  box-shadow: none;
 }
 .drop-btn-secondary:hover {
-  background: rgba(122, 162, 247, 0.1);
-  opacity: 1;
+  background: rgba(89, 177, 255, 0.12);
+  box-shadow: 0 4px 14px rgba(89, 177, 255, 0.25);
+  color: var(--text);
 }
 
 /* ── View mode toggle ── */
@@ -152,34 +177,36 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
+  gap: 6px;
+  padding: 6px 16px;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
 }
 .view-toggle-label {
-  font-size: 10px;
-  color: var(--text3);
+  font-size: 11px;
+  color: var(--text2);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-right: 4px;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+  margin-right: 6px;
 }
 .view-toggle-btn {
-  padding: 3px 12px;
+  padding: 7px 16px;
   background: var(--bg3);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text3);
-  font-size: 11px;
+  border-radius: 6px;
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
 }
-.view-toggle-btn:hover { color: var(--text2); }
+.view-toggle-btn:hover { color: var(--text); border-color: var(--border-bright); }
 .view-toggle-btn.active {
   background: var(--bg);
   border-color: var(--blue);
   color: var(--blue);
-  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--blue), 0 2px 8px rgba(89, 177, 255, 0.25);
 }
 
 /* ── Dashboard layout ── */
@@ -564,16 +591,17 @@ body {
 .stat-item:last-child { border-right: none; }
 
 .stat-label {
-  font-size: 10px;
-  color: var(--text3);
+  font-size: 11px;
+  color: var(--text2);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
+  font-weight: 600;
 }
 .stat-value {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text);
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 /* ── Chart panels ── */
@@ -656,18 +684,18 @@ body {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .play-btn {
-  width: 30px;
-  height: 24px;
+  width: 44px;
+  height: 36px;
   background: var(--bg3);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--text);
-  font-size: 13px;
+  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -675,25 +703,36 @@ body {
   transition: background 0.1s;
   flex: none;
 }
-.play-btn:hover { background: #2d3149; }
-.play-btn.active { background: var(--blue); border-color: var(--blue); color: #1a1b26; }
+.play-btn:hover { background: #344058; border-color: var(--border-bright); }
+.play-btn.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #06192e;
+  box-shadow: 0 2px 10px rgba(89, 177, 255, 0.35);
+}
 
 .speed-btns {
   display: flex;
-  gap: 2px;
+  gap: 4px;
 }
 .speed-btn {
-  padding: 2px 7px;
+  padding: 5px 11px;
   background: var(--bg3);
   border: 1px solid var(--border);
-  border-radius: 3px;
-  color: var(--text3);
-  font-size: 11px;
+  border-radius: 5px;
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.1s;
+  transition: all 0.12s;
 }
-.speed-btn:hover { color: var(--text); }
-.speed-btn.active { background: var(--bg); border-color: var(--blue); color: var(--blue); }
+.speed-btn:hover { color: var(--text); border-color: var(--border-bright); }
+.speed-btn.active {
+  background: var(--bg);
+  border-color: var(--blue);
+  color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue);
+}
 
 /* ── Altitude/Attitude 3D view ── */
 .attitude-view {
