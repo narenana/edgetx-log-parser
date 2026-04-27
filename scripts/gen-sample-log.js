@@ -2,15 +2,16 @@
  * Generate a synthetic EdgeTX CSV log for the demo flights.
  *
  * IMPORTANT: This is fully fabricated data. The GPS coordinates are
- * over central Iowa farmland (visibly checkerboard farms on satellite
- * imagery). Same approximate location for both flights so users see
- * familiar terrain when switching between samples.
+ * over central Iowa farmland (Calhoun County, near Lake City — visibly
+ * checkerboard farms on satellite imagery). Same approximate location
+ * for both flights so users see familiar terrain when switching.
+ *
+ * Both flights start AND END at their respective takeoff points (closed
+ * loops) so the touchdown lands the user back at the spawn marker.
  *
  * Usage:
  *   node scripts/gen-sample-log.js fixed-wing > public/sample-fixed-wing.csv
  *   node scripts/gen-sample-log.js quad       > public/sample-quad.csv
- *
- * Defaults to fixed-wing if no arg given.
  */
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
@@ -26,8 +27,6 @@ const HEADER = [
   'Rud', 'Ele', 'Thr', 'Ail',
 ]
 
-// Iowa farmland — Calhoun County, near Lake City. Visible field grid on
-// satellite imagery, no recognisable real flying field, fully fabricated.
 const HOME_LAT = 42.067
 const HOME_LON = -94.85
 const HOME_ALT = 0
@@ -49,177 +48,183 @@ function offsetToLatLon(eastM, northM, lat0 = HOME_LAT, lon0 = HOME_LON) {
   return [lat0 + dLat, lon0 + dLon]
 }
 
-// Smooth ease in/out — used for natural turn transitions.
 function easeInOut(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 }
 
+function lerp(a, b, t) {
+  return a + (b - a) * t
+}
+
+// Arc segment helper. Takes a center, radius, and start/end angles measured
+// CLOCKWISE FROM NORTH (so 0=north, 90=east, 180=south, 270=west). For a
+// left-traffic turn (banked left), phi DECREASES as the aircraft moves
+// (counterclockwise from above). Returns position + compass heading + roll.
+function arcPoint(centerE, centerN, R, startPhi, endPhi, u, leftTurn = true) {
+  const phi = lerp(startPhi, endPhi, u) // degrees
+  const phiRad = phi * D2R
+  const E = centerE + R * Math.sin(phiRad)
+  const N = centerN + R * Math.cos(phiRad)
+  // Tangent direction (heading): for left turn, perpendicular pointing
+  // 90° clockwise from outward radial. Outward radial direction = phi.
+  // → heading_compass = phi - 90 (mod 360) for left turn.
+  // For a right turn it'd be phi + 90.
+  const hdg = ((leftTurn ? phi - 90 : phi + 90) + 360) % 360
+  return { E, N, hdg }
+}
+
 // ── Fixed-wing flight ──────────────────────────────────────────────────────
 //
-// Standard rectangular circuit pattern with rounded turns and a final-approach
-// landing. ~4 minutes. Bank angles ~30° in turns, climbs at +10° pitch, glides
-// at -5°. Cruise speed ~65 km/h. Cruise altitude ~80 m AGL.
+// Standard left-traffic rectangular circuit with rounded turns.
+// Closes the loop — touchdown at the same coordinates as takeoff.
+//
+// Geometry (looking down from above, north up, east right):
+//
+//       (-380, 450) ←————— downwind ←————— (380, 450)
+//            ╱                                    ╲
+//   base   ╱                                       ╲   crosswind
+//        ╱                                          ╲
+//   (-430, 50)                                  (430, 50)
+//        ╲                                          ╱
+//      ╱                                          ╱
+//   (-380, 0)←—— final ——←—— ────────► takeoff ╱
+//                      ↓
+//                 ↘ touchdown at (0, 0) ↗
 
 function buildFixedWingFlight() {
-  const TOTAL = 240
+  const TOTAL = 240 // s — close enough to a real circuit, easy to follow
   const start = new Date('2024-09-15T14:23:00Z').getTime()
   const out = []
 
-  // State carried between phases
-  let east = 0
-  let north = 0
-  let alt = HOME_ALT
-  let hdg = 90       // takeoff heading: due east
-  let gspd = 0
-  let pitch = 0      // radians
-  let roll = 0
-  let cap = 0
-  let prevAlt = HOME_ALT
+  // ── Phase table — each phase has its own evaluator ──
+  // duration | mode | type | params...
+  // Sum of durations = TOTAL.
 
-  // Circuit geometry
+  // Tweakable dims
   const CRUISE_ALT = 80
   const CRUISE_SPD = 65
-  const RUNWAY_HDG = 90    // east takeoff/west landing
-  const APPROACH_HDG = 270 // west landing direction (from east)
+  const TURN_R = 50
+  // Climb / descent end-altitudes
+  const CLIMB_END = 80
+  const APPROACH_START = 30
+
+  // Path waypoints (E, N, alt, gspd) at phase boundaries:
+  //   W0  takeoff start  (0, 0, 0)            heading 90
+  //   W1  rotation       (40, 0, 0)
+  //   W2  end climb-out  (380, 0, 80)
+  //   W3  end CW turn    (430, 50, 80)        heading 0  (north)
+  //   W4  end x-wind leg (430, 450, 80)
+  //   W5  end DW turn    (380, 500, 80)       heading 270 (west)
+  //   W6  end downwind   (-380, 500, 80)
+  //   W7  end base turn  (-430, 450, 75)      heading 180 (south)
+  //   W8  end base leg   (-430, 50, 50)
+  //   W9  end final turn (-380, 0, 35)        heading 90 (east, lined up)
+  //   W10 touchdown      (0, 0, 0)
+  //
+  // Turn geometry: each rounded corner uses a quarter-circle arc with
+  // radius TURN_R = 50m centred so it tangents both the incoming and
+  // outgoing legs. For example, the crosswind turn from (380,0) heading
+  // east to (430,50) heading north has its centre at (380, 50).
+
+  const phases = [
+    // 0–8  pre-takeoff hold
+    { dur: 8,  mode: 'MANU', kind: 'static', E: 0, N: 0, alt: 0, gspd: 0, hdg: 90, pitch: 0, roll: 0 },
+
+    // 8–13  takeoff roll, ground accel
+    { dur: 5,  mode: 'ANGL', kind: 'line',
+      fromE: 0, fromN: 0, toE: 40, toN: 0,
+      fromAlt: 0, toAlt: 0, fromGspd: 0, toGspd: 50, hdg: 90, pitch: 0.05, roll: 0 },
+
+    // 13–37  climb-out east, alt 0→80
+    { dur: 24, mode: 'ANGL', kind: 'line',
+      fromE: 40, fromN: 0, toE: 380, toN: 0,
+      fromAlt: 0, toAlt: CLIMB_END, fromGspd: 50, toGspd: CRUISE_SPD, hdg: 90,
+      pitch: 0.18, roll: 0 },
+
+    // 37–47  crosswind turn (90°→0°), banked left
+    { dur: 10, mode: 'ANGL', kind: 'arc',
+      centerE: 380, centerN: 50, R: TURN_R, startPhi: 180, endPhi: 90,
+      alt: CRUISE_ALT, gspd: 60, pitch: 0.04, roll: -0.42 },
+
+    // 47–66  crosswind leg (north)
+    { dur: 19, mode: 'CRUZ', kind: 'line',
+      fromE: 430, fromN: 50, toE: 430, toN: 450,
+      alt: CRUISE_ALT, fromGspd: 60, toGspd: CRUISE_SPD, hdg: 0, pitch: 0.02, roll: 0 },
+
+    // 66–76  downwind turn (0°→270°)
+    { dur: 10, mode: 'CRUZ', kind: 'arc',
+      centerE: 380, centerN: 450, R: TURN_R, startPhi: 90, endPhi: 0,
+      alt: CRUISE_ALT, gspd: 60, pitch: 0.02, roll: -0.42 },
+
+    // 76–116  downwind leg (west)
+    { dur: 40, mode: 'CRUZ', kind: 'line',
+      fromE: 380, fromN: 500, toE: -380, toN: 500,
+      alt: CRUISE_ALT, gspd: CRUISE_SPD, hdg: 270, pitch: 0.02, roll: 0 },
+
+    // 116–126  base turn (270°→180°), starting descent
+    { dur: 10, mode: 'CRUZ', kind: 'arc',
+      centerE: -380, centerN: 450, R: TURN_R, startPhi: 0, endPhi: 270,
+      fromAlt: CRUISE_ALT, toAlt: CRUISE_ALT - 5, gspd: 60, pitch: -0.02, roll: -0.40 },
+
+    // 126–146  base leg (south, descending)
+    { dur: 20, mode: 'CRUZ', kind: 'line',
+      fromE: -430, fromN: 450, toE: -430, toN: 50,
+      fromAlt: CRUISE_ALT - 5, toAlt: 50,
+      fromGspd: 60, toGspd: 55, hdg: 180, pitch: -0.05, roll: 0 },
+
+    // 146–158  final turn (180°→90°), continuing descent
+    { dur: 12, mode: 'ANGL', kind: 'arc',
+      centerE: -380, centerN: 50, R: TURN_R, startPhi: 270, endPhi: 180,
+      fromAlt: 50, toAlt: APPROACH_START, gspd: 50, pitch: -0.05, roll: -0.30 },
+
+    // 158–215  final approach (east), descending to flare height. Slight
+    // crosstrack offset (+3 N) so the landing isn't pixel-perfectly aligned
+    // with the takeoff line — feels more like a real flight.
+    { dur: 57, mode: 'ANGL', kind: 'line',
+      fromE: -380, fromN: 0, toE: -25, toN: 2,
+      fromAlt: APPROACH_START, toAlt: 3,
+      fromGspd: 50, toGspd: 42, hdg: 90, pitch: -0.07, roll: 0 },
+
+    // 215–225  flare + touchdown a few metres past the takeoff line
+    { dur: 10, mode: 'LAND', kind: 'line',
+      fromE: -25, fromN: 2, toE: 12, toN: 3,
+      fromAlt: 3, toAlt: 0,
+      fromGspd: 42, toGspd: 22, hdg: 90, pitch: 0.04, roll: 0 },
+
+    // 225–240  ground roll, decel to stop ~35 m east of takeoff start
+    { dur: 15, mode: 'LAND', kind: 'line',
+      fromE: 12, fromN: 3, toE: 35, toN: 3,
+      alt: 0, fromGspd: 22, toGspd: 0, hdg: 90, pitch: 0, roll: 0 },
+  ]
+
+  // Sanity check: durations sum to TOTAL
+  const sumDur = phases.reduce((a, p) => a + p.dur, 0)
+  if (sumDur !== TOTAL) throw new Error(`fixed-wing phases sum=${sumDur}, expected ${TOTAL}`)
+
+  let prevAlt = 0
+  let cap = 0
 
   for (let t = 0; t <= TOTAL; t++) {
-    let mode
-
-    if (t < 8) {
-      // ── Holding short / pre-takeoff
-      gspd = 0; alt = HOME_ALT; pitch = 0; roll = 0
-      mode = 'MANU'
-    } else if (t < 14) {
-      // ── Takeoff roll, accelerating to rotation speed
-      const f = (t - 8) / 6
-      gspd = f * 50          // 0 → 50 km/h
-      alt = HOME_ALT
-      pitch = 0; roll = 0
-      hdg = RUNWAY_HDG
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'ANGL'
-    } else if (t < 35) {
-      // ── Climb-out at +10° pitch, holding runway heading
-      const f = (t - 14) / 21
-      gspd = 50 + f * 15     // 50 → 65 km/h
-      alt = easeInOut(f) * CRUISE_ALT
-      pitch = 0.18 - f * 0.05
-      roll = 0
-      hdg = RUNWAY_HDG
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'ANGL'
-    } else if (t < 55) {
-      // ── Crosswind turn — rounded left bank from 090° to 360° (=0°)
-      const f = easeInOut((t - 35) / 20)
-      hdg = 90 + (360 - 90) * f
-      gspd = CRUISE_SPD
-      alt = CRUISE_ALT + Math.sin(f * Math.PI) * 4
-      roll = -0.42 * Math.sin(f * Math.PI)
-      pitch = 0.04
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      hdg = hdg % 360
-      mode = 'ANGL'
-    } else if (t < 90) {
-      // ── Downwind leg — heading 360° (north), straight and level
-      hdg = 0
-      gspd = CRUISE_SPD + Math.sin(t * 0.4) * 2
-      alt = CRUISE_ALT
-      roll = 0
-      pitch = 0.02
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'CRUZ'
-    } else if (t < 110) {
-      // ── Base turn — rounded left from 360° to 270° (west)
-      const f = easeInOut((t - 90) / 20)
-      hdg = (360 + (270 - 360) * f + 360) % 360
-      gspd = CRUISE_SPD
-      alt = CRUISE_ALT + Math.sin(f * Math.PI) * 3 - f * 5
-      roll = -0.40 * Math.sin(f * Math.PI)
-      pitch = -0.02
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'CRUZ'
-    } else if (t < 145) {
-      // ── Base leg / start descent towards approach
-      hdg = 270
-      const f = (t - 110) / 35
-      gspd = CRUISE_SPD - f * 5
-      alt = CRUISE_ALT - 5 - f * 25       // 75 → 50 m
-      roll = 0
-      pitch = -0.04
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'CRUZ'
-    } else if (t < 165) {
-      // ── Final-approach turn — rounded left from 270° to 270° (already
-      // aligned, but lose another 100m of crosstrack via gentle turn to align
-      // with runway). Heading actually swings 270° → 270° via brief 250° dip.
-      const f = easeInOut((t - 145) / 20)
-      hdg = 270 - Math.sin(f * Math.PI) * 20
-      gspd = 60 - f * 5
-      alt = 50 - f * 15                    // 50 → 35 m
-      roll = -0.18 * Math.sin(f * Math.PI)
-      pitch = -0.06
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'ANGL'
-    } else if (t < 210) {
-      // ── Final approach — slow glide, descending to round-out altitude
-      const f = (t - 165) / 45
-      hdg = APPROACH_HDG
-      gspd = 55 - f * 10                    // 55 → 45 km/h
-      alt = 35 - f * 32                     // 35 → 3 m
-      roll = 0
-      pitch = -0.08 + f * 0.04
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'ANGL'
-    } else if (t < 225) {
-      // ── Flare and touchdown
-      const f = (t - 210) / 15
-      hdg = APPROACH_HDG
-      gspd = Math.max(45 - f * 25, 18)      // 45 → 20 km/h
-      alt = Math.max(3 - f * 3, HOME_ALT)
-      roll = 0
-      pitch = 0.06 * (1 - f)
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = f < 0.5 ? 'ANGL' : 'LAND'
-    } else {
-      // ── Ground roll, decelerating
-      const f = (t - 225) / 15
-      hdg = APPROACH_HDG
-      gspd = Math.max(20 - f * 18, 0)
-      alt = HOME_ALT
-      roll = 0
-      pitch = 0
-      east += (gspd / 3.6) * Math.sin(hdg * D2R)
-      north += (gspd / 3.6) * Math.cos(hdg * D2R)
-      mode = 'LAND'
-    }
+    const sample = sampleAt(phases, t)
+    const { E, N, alt, gspd, hdg, pitch, roll, mode } = sample
 
     const yaw = hdg * D2R
 
     const vspd = alt - prevAlt
     prevAlt = alt
 
-    // Battery sag — 12.6V → 11.0V over flight, ripple under load
+    // 12.6V → 11.0V over flight, ripple under load
     const battF = t / TOTAL
     const rxBt = 12.6 - battF * 1.5 + Math.sin(t * 0.6) * 0.05
     const curr = 7 + (gspd / 60) * 12 + (alt > 5 ? Math.sin(t * 0.4) * 1.5 : 0)
     cap += (curr * 1000) / 3600
 
-    // Signal — strong link at moderate distance
-    const distM = Math.sqrt(east * east + north * north)
-    const rssi1 = -(45 + Math.sin(t * 0.3) * 3 + distM / 60)
-    const rssi2 = -(48 + Math.cos(t * 0.4) * 3 + distM / 60)
-    const rqly = Math.max(85, 100 - distM / 40)
+    const distM = Math.sqrt(E * E + N * N)
+    const rssi1 = -(45 + Math.sin(t * 0.3) * 3 + distM / 50)
+    const rssi2 = -(48 + Math.cos(t * 0.4) * 3 + distM / 50)
+    const rqly = Math.max(85, 100 - distM / 30)
 
-    const [lat, lon] = offsetToLatLon(east, north)
+    const [lat, lon] = offsetToLatLon(E, N)
 
     out.push(rowOf({
       start, t,
@@ -233,204 +238,106 @@ function buildFixedWingFlight() {
   return out
 }
 
+// Walk the phase table to find which phase contains time t (in seconds), and
+// produce a fully resolved sample point at that time.
+function sampleAt(phases, t) {
+  let phaseStart = 0
+  for (const p of phases) {
+    if (t >= phaseStart && t <= phaseStart + p.dur) {
+      const u = p.dur > 0 ? (t - phaseStart) / p.dur : 0
+      return resolvePhase(p, u)
+    }
+    phaseStart += p.dur
+  }
+  // After the last phase — clamp to its end
+  const last = phases[phases.length - 1]
+  return resolvePhase(last, 1)
+}
+
+function resolvePhase(p, u) {
+  if (p.kind === 'static') {
+    return {
+      E: p.E,
+      N: p.N,
+      alt: p.alt,
+      gspd: p.fromGspd != null ? lerp(p.fromGspd, p.toGspd, u) : p.gspd,
+      hdg: p.hdg,
+      pitch: p.pitch,
+      roll: p.roll,
+      mode: p.mode,
+    }
+  }
+  if (p.kind === 'line') {
+    return {
+      E: lerp(p.fromE, p.toE, u),
+      N: lerp(p.fromN, p.toN, u),
+      alt: p.fromAlt != null ? lerp(p.fromAlt, p.toAlt, u) : p.alt,
+      gspd: p.fromGspd != null ? lerp(p.fromGspd, p.toGspd, u) : p.gspd,
+      hdg: p.hdg,
+      pitch: p.pitch,
+      roll: p.roll,
+      mode: p.mode,
+    }
+  }
+  if (p.kind === 'arc') {
+    const eu = easeInOut(u)
+    const a = arcPoint(p.centerE, p.centerN, p.R, p.startPhi, p.endPhi, eu, true)
+    return {
+      E: a.E,
+      N: a.N,
+      alt: p.fromAlt != null ? lerp(p.fromAlt, p.toAlt, u) : p.alt,
+      gspd: p.gspd,
+      hdg: a.hdg,
+      pitch: p.pitch,
+      roll: p.roll * Math.sin(u * Math.PI), // bank in/out smoothly across the arc
+      mode: p.mode,
+    }
+  }
+  throw new Error(`unknown kind: ${p.kind}`)
+}
+
 // ── 5" freestyle quad flight ───────────────────────────────────────────────
 //
-// 2-minute freestyle session: punch out, power loops, rolls, dives, rip line,
-// orbit, land. Tight area (~150m radius). High pitch / roll values, fast
-// speed transitions. 4S 1500mAh LiPo at high amperage.
+// Acrobatic session ~2 minutes that stays close to home and explicitly
+// returns to the takeoff point for landing.
+//
+// All maneuvers are anchored relative to (homeE, homeN) so the quad never
+// drifts off — sprints go OUT and BACK using sin curves, the orbit centres
+// on home, and the touchdown is forced at home.
 
 function buildQuadFlight() {
   const TOTAL = 130
-  const start = new Date('2024-09-15T15:10:00Z').getTime()  // 47 minutes after the fixed wing
+  const start = new Date('2024-09-15T15:10:00Z').getTime()
   const out = []
 
-  // Quad starts slightly offset from the fixed-wing pad — same farm, different corner
-  const homeOffsetE = 60
-  const homeOffsetN = -40
+  // Quad spawn — same general patch of farmland, 50m southeast of the
+  // fixed-wing spawn so users see both flights cleanly side by side.
+  const homeE = 60
+  const homeN = -40
 
-  let east = homeOffsetE
-  let north = homeOffsetN
-  let alt = HOME_ALT
-  let hdg = 0
-  let gspd = 0
-  let pitch = 0
-  let roll = 0
-  let yaw = 0
+  let prevAlt = 0
   let cap = 0
-  let prevAlt = HOME_ALT
 
   for (let t = 0; t <= TOTAL; t++) {
-    let mode = 'ACRO'
-
-    if (t < 3) {
-      // Arm + brief low hover
-      alt = HOME_ALT + Math.min(t * 1.0, 2)
-      gspd = 1
-      pitch = 0; roll = 0
-    } else if (t < 8) {
-      // ── Punch out — vertical climb to 30m
-      const f = (t - 3) / 5
-      alt = 2 + easeInOut(f) * 28        // 2 → 30
-      gspd = 5 + f * 25
-      pitch = 0.05                       // mild forward lean
-      roll = 0
-      hdg = 0
-    } else if (t < 16) {
-      // ── Power loop — pitch swings -90° → -180° → -270° → -360° (full loop)
-      const f = (t - 8) / 8
-      const phase = f * 2 * Math.PI       // 0 → 2π
-      pitch = -Math.sin(phase) * 1.6      // ±90° peak
-      // Loop centred on takeoff zone, radius ~15m
-      const loopY = 30 + Math.sin(phase + Math.PI / 2) * 12 - 12
-      alt = Math.max(loopY, 5)
-      gspd = 60 + Math.cos(phase) * 30
-      roll = Math.sin(phase * 2) * 0.1    // slight wobble
-      east += Math.sin(hdg * D2R) * (gspd / 3.6) * 0.4
-      north += Math.cos(hdg * D2R) * (gspd / 3.6) * 0.4
-    } else if (t < 22) {
-      // ── Power dive — diving forward fast
-      const f = (t - 16) / 6
-      pitch = 0.6 + f * 0.4                 // nose-down
-      alt = Math.max(45 - f * 30, 8)        // 45 → 15 m
-      gspd = 70 + f * 40                    // 70 → 110 km/h
-      hdg = 90                              // dive east
-      east += Math.sin(hdg * D2R) * (gspd / 3.6)
-      north += Math.cos(hdg * D2R) * (gspd / 3.6)
-      roll = 0
-    } else if (t < 28) {
-      // ── Roll left × 2 (720°) while flying east
-      const f = (t - 22) / 6
-      roll = -((f * 4 * Math.PI) % (2 * Math.PI)) + Math.PI
-      // Normalize roll to ±π
-      if (roll > Math.PI) roll -= 2 * Math.PI
-      pitch = 0.05
-      gspd = 90
-      alt = 15 + f * 8
-      hdg = 90
-      east += Math.sin(hdg * D2R) * (gspd / 3.6)
-      north += Math.cos(hdg * D2R) * (gspd / 3.6)
-    } else if (t < 38) {
-      // ── Loose horizontal arc carving back toward home
-      const f = (t - 28) / 10
-      hdg = (90 + f * 180) % 360            // 90° → 270°, big arc
-      roll = -0.6
-      pitch = 0.1
-      gspd = 75 - f * 10
-      alt = 23 - f * 3
-      east += Math.sin(hdg * D2R) * (gspd / 3.6)
-      north += Math.cos(hdg * D2R) * (gspd / 3.6)
-    } else if (t < 48) {
-      // ── Split-S — half-roll then pull through into a dive
-      const f = (t - 38) / 10
-      if (f < 0.4) {
-        // Half-roll to inverted
-        roll = (f / 0.4) * Math.PI
-        pitch = 0.0
-      } else {
-        // Pull through — pitch swings from 0 down to π
-        const g = (f - 0.4) / 0.6
-        roll = Math.PI - g * Math.PI         // back to 0
-        pitch = g * 1.4
-      }
-      gspd = 60 + f * 30
-      alt = Math.max(20 - f * 8, 8)
-      hdg = (270 + f * 60) % 360
-      east += Math.sin(hdg * D2R) * (gspd / 3.6)
-      north += Math.cos(hdg * D2R) * (gspd / 3.6)
-    } else if (t < 58) {
-      // ── Second power loop — bigger this time
-      const f = (t - 48) / 10
-      const phase = f * 2 * Math.PI
-      pitch = -Math.sin(phase) * 1.7
-      const loopY = 25 + Math.sin(phase + Math.PI / 2) * 18 - 18
-      alt = Math.max(loopY, 4)
-      gspd = 70 + Math.cos(phase) * 35
-      roll = Math.sin(phase * 1.3) * 0.15
-      east += Math.sin(hdg * D2R) * (gspd / 3.6) * 0.3
-      north += Math.cos(hdg * D2R) * (gspd / 3.6) * 0.3
-    } else if (t < 75) {
-      // ── Yaw orbit around an imaginary tree to the south — rotating heading
-      // while keeping a 25 m radius
-      const f = (t - 58) / 17
-      const orbitPhase = f * 2 * Math.PI
-      const orbitR = 25
-      const orbitCx = homeOffsetE + 0
-      const orbitCy = homeOffsetN - 35
-      east = orbitCx + Math.sin(orbitPhase) * orbitR
-      north = orbitCy + Math.cos(orbitPhase) * orbitR
-      hdg = ((orbitPhase * 180) / Math.PI + 90 + 360) % 360
-      gspd = 55
-      alt = 18
-      roll = -0.7
-      pitch = 0.15
-    } else if (t < 90) {
-      // ── Rip line — fast low pass heading west
-      const f = (t - 75) / 15
-      hdg = 270
-      gspd = 80 + f * 50                    // up to 130 km/h
-      alt = 6 + Math.sin(f * 4) * 1.5       // skimming low
-      pitch = 0.4
-      roll = Math.sin(f * 6) * 0.1          // subtle wobble
-      east += Math.sin(hdg * D2R) * (gspd / 3.6)
-      north += Math.cos(hdg * D2R) * (gspd / 3.6)
-    } else if (t < 105) {
-      // ── Pitch up and chandelle — gain altitude turning back toward home
-      const f = (t - 90) / 15
-      pitch = -0.6
-      const turnPhase = f * Math.PI
-      hdg = (270 + Math.sin(turnPhase) * 120 + 360) % 360
-      roll = -0.8 * Math.sin(turnPhase)
-      gspd = 80 - f * 30
-      alt = 6 + easeInOut(f) * 30           // 6 → 36 m
-      east += Math.sin(hdg * D2R) * (gspd / 3.6)
-      north += Math.cos(hdg * D2R) * (gspd / 3.6)
-    } else if (t < 118) {
-      // ── Float back toward takeoff, slowing
-      const f = (t - 105) / 13
-      const dist = Math.max(Math.sqrt((east - homeOffsetE) ** 2 + (north - homeOffsetN) ** 2), 0.1)
-      const homeHdg = (Math.atan2(homeOffsetE - east, homeOffsetN - north) * 180) / Math.PI
-      hdg = (homeHdg + 360) % 360
-      const step = (gspd / 3.6) * 1
-      east -= ((east - homeOffsetE) / dist) * step
-      north -= ((north - homeOffsetN) / dist) * step
-      gspd = 35 - f * 20
-      alt = 36 - f * 26                      // 36 → 10 m
-      pitch = 0.05
-      roll = -0.1
-    } else if (t < 126) {
-      // ── Hover descent
-      const f = (t - 118) / 8
-      gspd = 8 - f * 7
-      alt = Math.max(10 - f * 9, 1)
-      pitch = 0
-      roll = 0
-    } else {
-      // ── Touchdown / disarm
-      gspd = 0
-      alt = HOME_ALT
-      pitch = 0
-      roll = 0
-    }
-
-    yaw = hdg * D2R
+    const s = quadSampleAt(t, homeE, homeN)
+    const { E, N, alt, gspd, hdg, pitch, roll, mode } = s
+    const yaw = hdg * D2R
 
     const vspd = alt - prevAlt
     prevAlt = alt
 
-    // 4S 1500 mAh LiPo: 16.8V full → 13.5V at landing
     const battF = t / TOTAL
     const rxBt = 16.8 - battF * 3.3 + Math.sin(t * 0.9) * 0.08 - (gspd / 130) * 0.4
     const curr = 12 + (gspd / 50) * 25 + (alt > 1 ? 8 : 0) + Math.abs(pitch) * 6
     cap += (curr * 1000) / 3600
 
-    const distM = Math.sqrt(east * east + north * north)
-    const rssi1 = -(40 + Math.sin(t * 0.3) * 3 + distM / 80)
-    const rssi2 = -(43 + Math.cos(t * 0.4) * 3 + distM / 80)
-    const rqly = Math.max(80, 100 - distM / 30)
+    const distFromHome = Math.sqrt((E - homeE) ** 2 + (N - homeN) ** 2)
+    const rssi1 = -(40 + Math.sin(t * 0.3) * 3 + distFromHome / 60)
+    const rssi2 = -(43 + Math.cos(t * 0.4) * 3 + distFromHome / 60)
+    const rqly = Math.max(80, 100 - distFromHome / 25)
 
-    const [lat, lon] = offsetToLatLon(east, north)
+    const [lat, lon] = offsetToLatLon(E, N)
 
-    // Quad sticks: high throttle, lots of pitch/roll input
     const thrStick = Math.max(-1024, Math.min(1024, Math.round(gspd * 8 + (alt > 1 ? 200 : 0))))
     const eleStick = Math.round(pitch * 600)
     const ailStick = Math.round(roll * 600)
@@ -446,6 +353,151 @@ function buildQuadFlight() {
   }
 
   return out
+}
+
+function quadSampleAt(t, homeE, homeN) {
+  // All maneuvers below produce E, N, alt, gspd, hdg, pitch, roll. They're
+  // anchored to home so deviation is bounded and the flight closes.
+  let E = homeE, N = homeN
+  let alt = 0, gspd = 0
+  let hdg = 0, pitch = 0, roll = 0
+  let mode = 'ACRO'
+
+  if (t < 3) {
+    // arm + brief hover
+    alt = Math.min(t * 1.0, 2)
+    gspd = 1
+  } else if (t < 8) {
+    // punch out — vertical
+    const u = (t - 3) / 5
+    alt = 2 + easeInOut(u) * 28
+    gspd = 5 + u * 25
+    pitch = 0.05
+  } else if (t < 18) {
+    // first power loop, anchored to home (lateral drift stays inside ±15m)
+    const u = (t - 8) / 10
+    const phase = u * 2 * Math.PI
+    pitch = -Math.sin(phase) * 1.6
+    alt = 30 + Math.sin(phase + Math.PI / 2) * 12 - 12
+    if (alt < 5) alt = 5
+    gspd = 60 + Math.cos(phase) * 30
+    roll = Math.sin(phase * 2) * 0.1
+    // Loop drifts forward slightly then comes back — net delta=0 across loop
+    E = homeE + Math.sin(phase) * 8
+    N = homeN + Math.cos(phase) * 4
+    hdg = 0
+  } else if (t < 26) {
+    // diving sprint EAST and back (sin out-and-back keeps net delta = 0)
+    const u = (t - 18) / 8
+    const sweep = Math.sin(u * Math.PI) // 0 → 1 → 0
+    E = homeE + sweep * 80
+    N = homeN
+    alt = 35 - sweep * 22
+    gspd = 60 + sweep * 70
+    hdg = u < 0.5 ? 90 : 270
+    pitch = 0.4 - sweep * 0.2
+    roll = 0
+  } else if (t < 34) {
+    // double roll left (720°) while passing back through home
+    const u = (t - 26) / 8
+    let r = -((u * 4 * Math.PI) % (2 * Math.PI)) + Math.PI
+    if (r > Math.PI) r -= 2 * Math.PI
+    roll = r
+    pitch = 0.05
+    gspd = 70
+    E = homeE + (1 - u) * 30 // ending close to home from the sprint
+    N = homeN
+    alt = 18 + u * 6
+    hdg = 270
+  } else if (t < 42) {
+    // split-S near home — half-roll then pull through into a dive
+    const u = (t - 34) / 8
+    if (u < 0.4) {
+      roll = (u / 0.4) * Math.PI
+      pitch = 0.0
+    } else {
+      const v = (u - 0.4) / 0.6
+      roll = Math.PI - v * Math.PI
+      pitch = v * 1.4
+    }
+    gspd = 55 + u * 25
+    alt = 24 - u * 12
+    if (alt < 8) alt = 8
+    E = homeE + Math.sin(u * Math.PI) * 12
+    N = homeN - u * 6
+    hdg = (270 + u * 90) % 360
+  } else if (t < 56) {
+    // second power loop around home, bigger
+    const u = (t - 42) / 14
+    const phase = u * 2 * Math.PI
+    pitch = -Math.sin(phase) * 1.7
+    alt = 25 + Math.sin(phase + Math.PI / 2) * 18 - 18
+    if (alt < 4) alt = 4
+    gspd = 70 + Math.cos(phase) * 35
+    roll = Math.sin(phase * 1.3) * 0.15
+    E = homeE + Math.sin(phase) * 12
+    N = homeN + Math.cos(phase) * 6
+    hdg = 0
+  } else if (t < 75) {
+    // yaw orbit — 25m circle CENTRED ON HOME, full revolution + a bit
+    const u = (t - 56) / 19
+    const orbitPhase = u * 2 * Math.PI
+    const orbitR = 25
+    E = homeE + Math.sin(orbitPhase) * orbitR
+    N = homeN + Math.cos(orbitPhase) * orbitR
+    hdg = (((orbitPhase * 180) / Math.PI + 90) % 360 + 360) % 360
+    gspd = 55
+    alt = 18
+    roll = -0.7
+    pitch = 0.15
+  } else if (t < 95) {
+    // rip line — out west and back (sin out-and-back). Top speed at midpoint
+    const u = (t - 75) / 20
+    const sweep = Math.sin(u * Math.PI) // 0 → 1 → 0
+    E = homeE - sweep * 110
+    N = homeN
+    alt = 6 + sweep * 1.5
+    gspd = 60 + sweep * 75 // up to 135 km/h at midpoint
+    hdg = u < 0.5 ? 270 : 90
+    pitch = 0.4 - sweep * 0.1
+    roll = Math.sin(u * 6) * 0.08
+  } else if (t < 110) {
+    // chandelle climb back to home, banking
+    const u = (t - 95) / 15
+    const sweep = Math.sin(u * Math.PI)
+    pitch = -0.5 + sweep * 0.3
+    const turnPhase = u * Math.PI
+    hdg = (90 + Math.sin(turnPhase) * 120) % 360
+    roll = -0.7 * Math.sin(turnPhase)
+    gspd = 60 - u * 35
+    alt = 6 + easeInOut(u) * 28
+    // Smoothly home in
+    E = homeE + (1 - u) * 30
+    N = homeN + (1 - u) * 12
+  } else if (t < 122) {
+    // Hover descent — drift a few metres from spawn for a hand-flown feel,
+    // then settle in for touchdown. Real freestyle landings aren't pixel-
+    // perfect; pilots eyeball it.
+    const u = (t - 110) / 12
+    E = lerp(homeE, homeE + 3, u)
+    N = lerp(homeN, homeN + 2, u)
+    gspd = Math.max(15 - u * 14, 0.5)
+    alt = Math.max(34 - easeInOut(u) * 33, 1)
+    pitch = 0
+    roll = 0
+    hdg = 0
+  } else {
+    // Touchdown / disarm — a few metres NE of the spawn pad.
+    E = homeE + 3
+    N = homeN + 2
+    alt = 0
+    gspd = 0
+    pitch = 0
+    roll = 0
+    hdg = 0
+  }
+
+  return { E, N, alt, gspd, hdg, pitch, roll, mode }
 }
 
 // ── Common row formatter ───────────────────────────────────────────────────
