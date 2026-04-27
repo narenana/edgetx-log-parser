@@ -3,6 +3,7 @@ import { parseEdgeTXLog } from './utils/parseLog'
 import { loadLogFromUrl } from './utils/loadLogFromUrl'
 import { initAnalytics, getConsent, track } from './utils/analytics'
 import ConsentBanner from './components/ConsentBanner'
+import ThemeToggle from './components/ThemeToggle'
 
 // Dashboard pulls in Chart.js, Leaflet, Three.js, plus its own lazy children
 // (GlobeView, AltitudeAttitudeView). Splitting it off keeps the empty-state
@@ -48,13 +49,42 @@ const SAMPLES = {
   },
 }
 
+// Read the user's saved theme choice. Default to 'light' for new visitors;
+// keep 'dark' available via the toggle. The choice is mirrored to the
+// `data-theme` attribute on <html> so [data-theme="light"] / [data-theme="dark"]
+// CSS overrides take effect.
+function readInitialTheme() {
+  try {
+    const saved = localStorage.getItem('theme')
+    if (saved === 'light' || saved === 'dark') return saved
+  } catch { /* private mode etc. */ }
+  return 'light'
+}
+
 export default function App() {
   const [logs, setLogs] = useState([])
   const [activeIndex, setActiveIndex] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState(null)
   const [loadingSample, setLoadingSample] = useState(null) // 'fixed-wing' | 'quad' | null
+  const [theme, setTheme] = useState(readInitialTheme)
   const fileInputRef = useRef(null)
+
+  // Apply the theme to <html data-theme="..."> + persist. CSS variables
+  // overridden under [data-theme="light"] / [data-theme="dark"] flip
+  // automatically when the attribute changes.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try { localStorage.setItem('theme', theme) } catch { /* ignore */ }
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    setTheme(t => {
+      const next = t === 'light' ? 'dark' : 'light'
+      track('theme_changed', { theme: next })
+      return next
+    })
+  }, [])
 
   const appendLog = useCallback(log => {
     setLogs(prev => {
@@ -181,6 +211,8 @@ export default function App() {
           </div>
         )}
 
+        <ThemeToggle theme={theme} onToggle={toggleTheme} />
+
         <button className="open-btn" onClick={() => fileInputRef.current.click()}>
           Open logs
         </button>
@@ -216,7 +248,7 @@ export default function App() {
 
       {activeLog ? (
         <Suspense fallback={<div className="lazy-fallback">Loading viewer…</div>}>
-          <Dashboard key={activeLog.filename} log={activeLog} />
+          <Dashboard key={activeLog.filename} log={activeLog} theme={theme} />
         </Suspense>
       ) : (
         <div className={`drop-overlay${isDragOver ? ' drag-over' : ''}`}>
