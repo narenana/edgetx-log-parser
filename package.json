@@ -53,16 +53,19 @@
     "mac": {
       "target": [
         {
-          "target": "zip",
+          "target": "dmg",
           "arch": [
-            "x64",
-            "arm64"
+            "universal"
           ]
         }
       ],
       "category": "public.app-category.utilities",
-      "identity": null
+      "identity": null,
+      "generateUpdatesFilesForAllChannels": false,
+      "forceCodeSigning": false
     },
+    "generateUpdatesFilesForAllChannels": false,
+    "publish": null,
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true

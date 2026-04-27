@@ -1,0 +1,232 @@
+name: Build Releases
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop assets
+        run: npm run build:desktop
+        env:
+          VITE_BUILD_TARGET: desktop
+
+      - name: Package macOS Universal DMG
+        # Shipping universal-only (Intel + Apple Silicon in one binary).
+        # Verified with a fresh download on an M1 Mac — right-click → Open →
+        # Open on first launch works cleanly. A separate arm64 DMG would be
+        # smaller but universal keeps the release page simple and covers all
+        # Mac users with a single tested artifact.
+        run: npx electron-builder --mac dmg --universal
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          CSC_NAME: "-"
+          ELECTRON_BUILDER_PUBLISH: never
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up blockmap and yml files
+        run: |
+          rm -f release/*.blockmap release/*.yml release/*.yaml
+          echo "Release contents:"
+          ls -lh release/
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: release/*.dmg
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop assets
+        run: npm run build:desktop
+        env:
+          VITE_BUILD_TARGET: desktop
+
+      - name: Package Windows (NSIS installer + portable)
+        run: npx electron-builder --win nsis portable --x64
+        env:
+          ELECTRON_BUILDER_PUBLISH: never
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up blockmap and yml files
+        run: |
+          Remove-Item release\*.blockmap -ErrorAction SilentlyContinue
+          Remove-Item release\*.yml -ErrorAction SilentlyContinue
+          Remove-Item release\*.yaml -ErrorAction SilentlyContinue
+          Get-ChildItem release\
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: release/*.exe
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop assets
+        run: npm run build:desktop
+        env:
+          VITE_BUILD_TARGET: desktop
+
+      - name: Package Linux tar.gz
+        run: npx electron-builder --linux tar.gz --x64
+        env:
+          ELECTRON_BUILDER_PUBLISH: never
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up blockmap and yml files
+        run: |
+          rm -f release/*.blockmap release/*.yml release/*.yaml
+          echo "Release contents:"
+          ls -lh release/
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: release/*.tar.gz
+          if-no-files-found: error
+
+  create-release:
+    needs: [build-mac, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: List artifacts
+        run: find artifacts/ -type f
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.tar.gz
+          generate_release_notes: false
+          body: |
+            ## EdgeTX Log Parser v3.0.0
+
+            Parse and replay your EdgeTX transmitter flight logs — interactive 3D globe, synced charts, attitude visualiser, and flight event detection. Available as a native desktop app or instantly in the browser.
+
+            ---
+
+            ### 🌐 Web App
+            No download needed — open it straight in your browser:
+            **https://Cr4zySh4rk.github.io/edgetx-log-parser/**
+
+            ---
+
+            ### 💾 Downloads
+
+            #### macOS
+            | File | Description |
+            |------|-------------|
+            | `*-universal.dmg` | Universal binary — runs natively on both Intel and Apple Silicon (M1/M2/M3/M4) |
+
+            > **First launch:** macOS will show "unidentified developer" since the app is not notarized. To open: **right-click → Open → Open**. You only need to do this once.
+            >
+            > Shipping universal-only for simplicity — verified with a fresh download on an M1 Mac, first-launch right-click → Open worked cleanly.
+
+            #### Windows
+            | File | Description |
+            |------|-------------|
+            | `*Setup*.exe` | NSIS installer — Start Menu shortcut, Add/Remove Programs uninstaller |
+            | `*Portable*.exe` | Portable — no install required, run from anywhere / USB stick |
+
+            #### Linux
+            | File | Description |
+            |------|-------------|
+            | `*.tar.gz` | Linux x64 tar archive — extract and run the included binary |
+
+            ---
+
+            ### 🔧 What's new in this fork (vs. upstream v2.1.0)
+
+            #### App improvements (from upstream v3.0.0)
+            - **PWA support** — installable from the browser, works offline after first visit
+            - **GA4 analytics** with privacy-first Consent Mode v2
+            - **Code splitting** — Dashboard, GlobeView and AltitudeAttitudeView load on demand for faster startup
+            - **Responsive layout** — breakpoints for tablet and mobile
+            - **Landing page**, sample flight demo, and share-URL hook (`?log=`)
+            - **Dual-target build** — single source tree produces both the web app and the desktop app
+
+            #### macOS releases (new in this fork)
+            - **Universal DMG** — single installer for both Intel and Apple Silicon, verified on M1
+            - **Ad-hoc code signing** (`CSC_NAME="-"`) — prevents Gatekeeper "app is damaged" error on download
+            - Built on GitHub Actions `macos-latest` runners
+
+            #### Windows releases
+            - **NSIS installer** (`*Setup*.exe`) — Start Menu integration, clean uninstall
+            - **Portable executable** — single `.exe`, no install, run from USB or any directory
+            - Built on GitHub Actions `windows-latest` runners
+
+            #### Linux releases (restored from upstream)
+            - **tar.gz archive** for x64 — same format as upstream v2.1.0
+            - Built on GitHub Actions `ubuntu-latest` runners
+
+            #### GitHub Pages web app (fork-only)
+            - Web build deployed to GitHub Pages — gated so it only runs on forks, not on the canonical repo
+            - Auto-deploys on every push to `master`
+            - Full PWA: installable from the browser, offline-capable
+
+            #### CI / build infrastructure
+            - macOS, Windows, and Linux jobs run in parallel
+            - Release created automatically only after all three succeed
+            - Triggered on `v*` tags or manually via `workflow_dispatch`
+            - Clean release assets — blockmap and yml files stripped before upload
