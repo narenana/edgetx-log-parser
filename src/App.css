@@ -210,12 +210,19 @@ body {
 .map-wrap {
   flex: 1;
   min-height: 0;
+  position: relative;
+  /* Clip the canvas inside — Cesium and Leaflet keep their internal buffer
+     at the last-rendered pixel size, so when we exit fullscreen the canvas
+     can briefly overflow before its resize observer catches up. Without
+     overflow:hidden the wrap appears to never shrink. */
+  overflow: hidden;
 }
 
 .globe-wrap {
   flex: 1;
   min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .no-gps-msg {
@@ -643,6 +650,10 @@ body {
 
 /* ── Playback controls ── */
 .playback-row {
+  /* Acts as the positioning anchor for the .speed-picker popover on phones,
+     so the pill row spans the full play-row width instead of clipping to
+     the chip's own (~70 px) box. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -921,6 +932,9 @@ body {
      narrow viewports. */
   .speed-picker .speed-current { display: inline-flex !important; }
   .speed-picker .speed-pills { display: none !important; }
+  /* Popover is absolute-positioned against .playback-row (set above), so it
+     spans the FULL playback-row width — not just the chip. left/right are
+     relative to the row's padding-box. */
   .speed-picker.expanded .speed-pills {
     display: flex !important;
     position: absolute;
@@ -935,6 +949,7 @@ body {
     gap: 6px;
     box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.5);
     -webkit-overflow-scrolling: touch;
+    z-index: 60;          /* above the playback dock backdrop */
   }
   .speed-picker.expanded .speed-pills .speed-btn { flex: 0 0 auto; min-height: 36px; }
 
@@ -981,9 +996,12 @@ body {
  * the row is hidden by default and revealed as a popover above the play row
  * when the user taps the .speed-current chip. See the @media (max-width: 640px)
  * block above for the mobile rules.
+ *
+ * Note: .speed-picker is intentionally NOT position: relative — the popover
+ * anchors to .playback-row instead, so its width is the full row, not just
+ * the chip's box.
  * ─────────────────────────────────────────────────────────────────────────── */
 .speed-picker {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
