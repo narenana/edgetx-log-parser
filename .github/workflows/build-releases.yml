@@ -158,75 +158,38 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.exe
             artifacts/**/*.tar.gz
-          generate_release_notes: false
+          # Auto-generate the changelog (merged PRs since the last tag) and
+          # prepend it to the body below. Avoids hand-editing release notes
+          # for every tag while keeping the install instructions consistent.
+          generate_release_notes: true
           body: |
-            ## EdgeTX Log Parser v3.0.0
+            ## EdgeTX Log Parser ${{ github.ref_name }}
 
-            Parse and replay your EdgeTX transmitter flight logs — interactive 3D globe, synced charts, attitude visualiser, and flight event detection. Available as a native desktop app or instantly in the browser.
+            Parse and replay your EdgeTX transmitter flight logs — interactive 3D globe, synced charts, attitude visualiser, flight event detection, and a pre-flight summary. Available as a native desktop app or instantly in the browser.
 
-            ---
+            ### Web app
 
-            ### 🌐 Web App
-            No download needed — open it straight in your browser:
-            **https://Cr4zySh4rk.github.io/edgetx-log-parser/**
+            No install needed — open it in your browser at **<https://www.narenana.com/log-viewer/>**. Installable as a PWA from the address bar if you want a Dock / taskbar icon.
 
-            ---
-
-            ### 💾 Downloads
+            ### Downloads
 
             #### macOS
+
             | File | Description |
             |------|-------------|
-            | `*-universal.dmg` | Universal binary — runs natively on both Intel and Apple Silicon (M1/M2/M3/M4) |
+            | `*-universal.dmg` | Universal binary — runs natively on both Intel and Apple Silicon |
 
-            > **First launch:** macOS will show "unidentified developer" since the app is not notarized. To open: **right-click → Open → Open**. You only need to do this once.
-            >
-            > Shipping universal-only for simplicity — verified with a fresh download on an M1 Mac, first-launch right-click → Open worked cleanly.
+            > **First launch on macOS:** the app is ad-hoc signed but not notarized, so Gatekeeper will show *"unidentified developer."* To open: **right-click → Open → Open**. One-time only — subsequent launches are normal.
 
             #### Windows
+
             | File | Description |
             |------|-------------|
-            | `*Setup*.exe` | NSIS installer — Start Menu shortcut, Add/Remove Programs uninstaller |
-            | `*Portable*.exe` | Portable — no install required, run from anywhere / USB stick |
+            | `EdgeTX Log Parser Setup *.exe` | NSIS installer — Start Menu shortcut + clean uninstall via Add/Remove Programs |
+            | `EdgeTX Log Parser *.exe` | Portable — no install, run from anywhere / USB stick |
 
             #### Linux
+
             | File | Description |
             |------|-------------|
-            | `*.tar.gz` | Linux x64 tar archive — extract and run the included binary |
-
-            ---
-
-            ### 🔧 What's new in this fork (vs. upstream v2.1.0)
-
-            #### App improvements (from upstream v3.0.0)
-            - **PWA support** — installable from the browser, works offline after first visit
-            - **GA4 analytics** with privacy-first Consent Mode v2
-            - **Code splitting** — Dashboard, GlobeView and AltitudeAttitudeView load on demand for faster startup
-            - **Responsive layout** — breakpoints for tablet and mobile
-            - **Landing page**, sample flight demo, and share-URL hook (`?log=`)
-            - **Dual-target build** — single source tree produces both the web app and the desktop app
-
-            #### macOS releases (new in this fork)
-            - **Universal DMG** — single installer for both Intel and Apple Silicon, verified on M1
-            - **Ad-hoc code signing** (`CSC_NAME="-"`) — prevents Gatekeeper "app is damaged" error on download
-            - Built on GitHub Actions `macos-latest` runners
-
-            #### Windows releases
-            - **NSIS installer** (`*Setup*.exe`) — Start Menu integration, clean uninstall
-            - **Portable executable** — single `.exe`, no install, run from USB or any directory
-            - Built on GitHub Actions `windows-latest` runners
-
-            #### Linux releases (restored from upstream)
-            - **tar.gz archive** for x64 — same format as upstream v2.1.0
-            - Built on GitHub Actions `ubuntu-latest` runners
-
-            #### GitHub Pages web app (fork-only)
-            - Web build deployed to GitHub Pages — gated so it only runs on forks, not on the canonical repo
-            - Auto-deploys on every push to `master`
-            - Full PWA: installable from the browser, offline-capable
-
-            #### CI / build infrastructure
-            - macOS, Windows, and Linux jobs run in parallel
-            - Release created automatically only after all three succeed
-            - Triggered on `v*` tags or manually via `workflow_dispatch`
-            - Clean release assets — blockmap and yml files stripped before upload
+            | `edgetx-log-parser-*.tar.gz` | x64 tarball — extract and run the included binary |
