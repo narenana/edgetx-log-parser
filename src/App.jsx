@@ -68,6 +68,10 @@ export default function App() {
   const [error, setError] = useState(null)
   const [loadingSample, setLoadingSample] = useState(null) // 'fixed-wing' | 'quad' | null
   const [theme, setTheme] = useState(readInitialTheme)
+  // Set of log filenames whose pre-flight summary modal has been dismissed.
+  // Lifted to App so the modal stays dismissed across tab switches (which
+  // remount Dashboard via key={log.filename}).
+  const [dismissedSummaries, setDismissedSummaries] = useState(() => new Set())
   const fileInputRef = useRef(null)
 
   // Apply the theme to <html data-theme="..."> + persist. CSS variables
@@ -173,14 +177,27 @@ export default function App() {
     e.target.value = ''
   }
 
-  const closeTab = (e, idx) => {
-    e.stopPropagation()
+  const closeAt = useCallback(idx => {
     setLogs(prev => {
       const next = prev.filter((_, i) => i !== idx)
       setActiveIndex(i => Math.min(i, Math.max(next.length - 1, 0)))
       return next
     })
+  }, [])
+
+  const closeTab = (e, idx) => {
+    e.stopPropagation()
+    closeAt(idx)
   }
+
+  const dismissSummary = useCallback(filename => {
+    setDismissedSummaries(prev => {
+      if (prev.has(filename)) return prev
+      const next = new Set(prev)
+      next.add(filename)
+      return next
+    })
+  }, [])
 
   const activeLog = logs[activeIndex]
 
@@ -248,7 +265,14 @@ export default function App() {
 
       {activeLog ? (
         <Suspense fallback={<div className="lazy-fallback">Loading viewer…</div>}>
-          <Dashboard key={activeLog.filename} log={activeLog} theme={theme} />
+          <Dashboard
+            key={activeLog.filename}
+            log={activeLog}
+            theme={theme}
+            summaryDismissed={dismissedSummaries.has(activeLog.filename)}
+            onDismissSummary={() => dismissSummary(activeLog.filename)}
+            onCloseLog={() => closeAt(activeIndex)}
+          />
         </Suspense>
       ) : (
         <div className={`drop-overlay${isDragOver ? ' drag-over' : ''}`}>

@@ -82,6 +82,54 @@ export function parseEdgeTXLog(text, filename) {
   const voltVals = rows.filter(r => r['RxBt(V)'] > 0).map(r => r['RxBt(V)'])
   const capVals = rows.map(r => r['Capa(mAh)'] || 0)
 
+  // ── Extra metrics for the pre-flight summary modal ────────────────────────
+  // One pass over rows: peak distance from launch (the "how far did you
+  // get" number a pilot actually cares about), peak current, worst RSSI,
+  // and dominant flight mode by row count. Kept separate from the existing
+  // stats block so the diff stays reviewable; fold into the main loop later
+  // when we move parsing to a Web Worker.
+  let maxDistFromHomeKm = 0
+  let maxCurrent = 0
+  let minRSSI = null
+  let homeLat = null
+  let homeLon = null
+  const modeCounts = {}
+  let totalModed = 0
+
+  for (const r of rows) {
+    if (r._lat != null) {
+      if (homeLat == null) {
+        homeLat = r._lat
+        homeLon = r._lon
+      } else {
+        const d = haversineKm(homeLat, homeLon, r._lat, r._lon)
+        if (d > maxDistFromHomeKm) maxDistFromHomeKm = d
+      }
+    }
+    const cu = r['Curr(A)']
+    if (typeof cu === 'number' && !isNaN(cu) && cu > maxCurrent) maxCurrent = cu
+    const rs = r['1RSS(dB)']
+    if (typeof rs === 'number' && !isNaN(rs)) {
+      if (minRSSI == null || rs < minRSSI) minRSSI = rs
+    }
+    if (r['FM']) {
+      modeCounts[r['FM']] = (modeCounts[r['FM']] || 0) + 1
+      totalModed++
+    }
+  }
+
+  let dominantMode = null
+  let dominantPct = 0
+  if (totalModed > 0) {
+    for (const [mode, count] of Object.entries(modeCounts)) {
+      const pct = count / totalModed
+      if (pct > dominantPct) {
+        dominantMode = mode
+        dominantPct = pct
+      }
+    }
+  }
+
   const stats = {
     duration: rows.length > 1 ? rows[rows.length - 1]._tSec : 0,
     maxAlt: altVals.length ? Math.max(...altVals) : 0,
@@ -90,8 +138,13 @@ export function parseEdgeTXLog(text, filename) {
     maxClimb: vspVals.length ? Math.max(...vspVals) : 0,
     maxSink: vspVals.length ? Math.min(...vspVals) : 0,
     distanceKm: totalDistKm,
+    maxDistFromHomeKm,
     minVoltage: voltVals.length ? Math.min(...voltVals) : null,
     maxCapacity: capVals.length ? Math.max(...capVals) : null,
+    maxCurrent,
+    minRSSI,
+    dominantMode,
+    dominantPct,
   }
 
   const events = detectEvents(rows)
