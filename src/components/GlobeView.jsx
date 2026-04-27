@@ -338,8 +338,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       // pulse with a 0.35 baseline (steady-on position light) and a sharp
       // spike to 1.0 every 1.1 s. Port and starboard are 250 ms out of
       // phase so the flashes alternate.
-      const LEFT_WT  = new Cesium.Cartesian3(-4.85, 0.30, -0.4)
-      const RIGHT_WT = new Cesium.Cartesian3( 4.85, 0.30, -0.4)
+      //
+      // Offset axes follow CESIUM's model frame (not glTF):
+      //   +X = forward (Cesium maps glTF +Z forward → its own +X)
+      //   +Y = right   (Cesium maps glTF +X right   → its own +Y)
+      //   +Z = up      (Cesium maps glTF +Y up      → its own +Z)
+      // glTF wingtip (±4.85, 0.30, -0.4) → Cesium (-0.4, ±4.85, 0.30).
+      const LEFT_WT  = new Cesium.Cartesian3(-0.4, -4.85, 0.30)
+      const RIGHT_WT = new Cesium.Cartesian3(-0.4,  4.85, 0.30)
       const navAircraftEntityGetter = () => aircraftEntity
       addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
                        Cesium.Color.fromCssColorString('#ff2020'), 0)
