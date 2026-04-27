@@ -32,12 +32,28 @@ function shortName(filename) {
   return `${name} ${hh}:${mm}`
 }
 
+// Built-in demo flights — both shipped under public/ and routed via
+// loadLogFromUrl. The `sample_type` ends up in GA4 so we can see which
+// demo people actually try first.
+const SAMPLES = {
+  'fixed-wing': {
+    url: './sample-fixed-wing.csv',
+    displayName: 'sample-fixed-wing.csv',
+    label: '✈ Try fixed wing',
+  },
+  'quad': {
+    url: './sample-quad.csv',
+    displayName: 'sample-quad.csv',
+    label: '⌖ Try 5″ quad',
+  },
+}
+
 export default function App() {
   const [logs, setLogs] = useState([])
   const [activeIndex, setActiveIndex] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState(null)
-  const [loadingSample, setLoadingSample] = useState(false)
+  const [loadingSample, setLoadingSample] = useState(null) // 'fixed-wing' | 'quad' | null
   const fileInputRef = useRef(null)
 
   const appendLog = useCallback(log => {
@@ -77,17 +93,19 @@ export default function App() {
     }
   }, [])
 
-  const loadSample = useCallback(async () => {
+  const loadSample = useCallback(async (kind) => {
+    const sample = SAMPLES[kind]
+    if (!sample) return
     setError(null)
-    setLoadingSample(true)
+    setLoadingSample(kind)
     try {
-      const log = await loadLogFromUrl('./sample-log.csv', { displayName: 'sample-flight.csv' })
-      track('log_loaded', { source: 'sample' })
+      const log = await loadLogFromUrl(sample.url, { displayName: sample.displayName })
+      track('log_loaded', { source: 'sample', sample_type: kind })
       appendLog(log)
     } catch (e) {
-      setError(`Failed to load sample: ${e.message}`)
+      setError(`Failed to load ${kind} sample: ${e.message}`)
     } finally {
-      setLoadingSample(false)
+      setLoadingSample(null)
     }
   }, [appendLog])
 
@@ -213,10 +231,17 @@ export default function App() {
             </button>
             <button
               className="drop-btn drop-btn-secondary"
-              onClick={loadSample}
-              disabled={loadingSample}
+              onClick={() => loadSample('fixed-wing')}
+              disabled={!!loadingSample}
             >
-              {loadingSample ? 'Loading…' : 'Try a sample flight'}
+              {loadingSample === 'fixed-wing' ? 'Loading…' : SAMPLES['fixed-wing'].label}
+            </button>
+            <button
+              className="drop-btn drop-btn-secondary"
+              onClick={() => loadSample('quad')}
+              disabled={!!loadingSample}
+            >
+              {loadingSample === 'quad' ? 'Loading…' : SAMPLES['quad'].label}
             </button>
           </div>
           <div style={{ marginTop: 8, color: 'var(--text3)', fontSize: 11 }}>
