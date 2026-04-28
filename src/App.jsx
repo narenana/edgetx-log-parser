@@ -255,7 +255,7 @@ export default function App() {
       onDragLeave={onDragLeave}
     >
       <header className="header">
-        <span className="header-logo">EdgeTX Viewer</span>
+        <span className="header-logo">RC Log Viewer</span>
 
         {logs.length > 0 && (
           <div className="tabs">
@@ -320,7 +320,7 @@ export default function App() {
       ) : (
         <div className={`drop-overlay${isDragOver ? ' drag-over' : ''}`}>
           <div className="drop-icon">✈</div>
-          <div className="drop-title">EdgeTX Log Viewer</div>
+          <div className="drop-title">RC Log Viewer</div>
           <div className="drop-sub">
             Drop a flight log here, or click below to open one
           </div>

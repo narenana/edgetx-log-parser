@@ -1,8 +1,15 @@
-# EdgeTX Log Parser
+# RC Log Viewer
 
-A flight log visualiser for EdgeTX RC aircraft. Load a CSV log from your transmitter's SD card and replay the entire flight in 3D — satellite map, live attitude, synced charts.
+A flight log visualiser for RC aircraft. Drop a log from your transmitter or flight controller and replay the entire flight in 3D — satellite map, live attitude, synced charts.
 
-[![EdgeTX Log Parser — video walkthrough](https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg)](https://youtu.be/6MLQCoG5t2w)
+Supported formats:
+
+- **EdgeTX CSV** (`.csv`) — exported from any EdgeTX / OpenTX transmitter SD card.
+- **iNAV / Betaflight blackbox** (`.bbl`, `.bfl`, `.txt`) — binary flight controller logs, parsed in-browser via WASM.
+
+> Repo name still reads `edgetx-log-parser` — that was the name when the project shipped EdgeTX-only. Format support has grown; the user-facing brand is now "RC Log Viewer". The repo will be renamed once the URL break is worth it.
+
+[![RC Log Viewer — video walkthrough](https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg)](https://youtu.be/6MLQCoG5t2w)
 
 *Click the thumbnail above to watch a quick walkthrough on YouTube.*
 
@@ -12,24 +19,26 @@ A flight log visualiser for EdgeTX RC aircraft. Load a CSV log from your transmi
 
 **🌐 Web app** — open in any modern browser, drop a log, done. Logs never leave your machine; parsing and rendering all happen client-side. Best for one-off viewing or sharing a quick look on someone else's computer.
 
-**💻 Desktop app (Windows)** — installer / portable build with the full Electron shell. Same UI, file-association support, and works offline. Best for regular use.
+**💻 Desktop app (Mac / Windows / Linux)** — full Electron shell. Same UI, file-association support, and works offline. Best for regular use.
 
 ### Web
 
-Visit the hosted version *(domain coming soon)*. No install, no upload — your CSV is parsed in-browser with PapaParse, drawn with Cesium / Three.js / Leaflet, and discarded when you close the tab.
+Open it at **<https://www.narenana.com/log-viewer/>**. No install, no upload — CSVs are parsed in-browser with PapaParse, blackbox files via a Web Worker running the [`blackbox-log`](https://github.com/blackbox-log/blackbox-log) Rust crate compiled to WASM. Everything is drawn with Cesium / Three.js / Leaflet and discarded when you close the tab.
 
 The web build is a PWA — on supported browsers (Chrome, Edge, modern Safari) the address bar shows an install icon. Once installed, the app shell and Cesium runtime are cached, so the viewer works fully offline thereafter. Updates show a small "Refresh / Later" prompt — they never reload mid-session.
 
 ### Desktop downloads
 
-Grab the latest Windows build from [**Releases**](https://github.com/narenana/edgetx-log-parser/releases):
+Grab the latest build from [**Releases**](https://github.com/narenana/edgetx-log-parser/releases):
 
-| File | Description |
-|------|-------------|
-| `EdgeTX Log Parser Setup x.x.x.exe` | NSIS installer — installs to Program Files with shortcuts |
-| `EdgeTX Log Parser x.x.x.exe` | Portable — run directly, no install needed |
+| File | Platform |
+|------|----------|
+| `RC Log Viewer Setup x.x.x.exe` | Windows NSIS installer (x64) — installs to Program Files with shortcuts |
+| `RC Log Viewer x.x.x.exe` | Windows portable (x64) — run directly, no install needed |
+| `RC.Log.Viewer-x.x.x-universal.dmg` | macOS Universal (Intel + Apple Silicon) |
+| `rc-log-viewer-x.x.x.tar.gz` | Linux x64 tarball |
 
-Windows x64 only.
+> First launch on macOS shows the unidentified-developer warning (the app is ad-hoc signed but not notarized). Right-click → Open → Open. One-time, then it launches normally.
 
 ---
 
@@ -46,9 +55,18 @@ Windows x64 only.
 
 ---
 
-## Step 1 — Enable logging in EdgeTX
+## Loading a log
 
-Logs are not recorded by default. You need to add a Special Function to your model that tells EdgeTX to write to the SD card.
+The drop zone accepts both formats — the viewer auto-detects which parser to use.
+
+- **iNAV / Betaflight blackbox** (`.bbl`, `.bfl`, `.txt`): typically already enabled on the FC. Pull the log from your FC's onboard storage or SD card and drop it on the page.
+- **EdgeTX CSV** (`.csv`): not recorded by default. Steps to enable on the transmitter follow below.
+
+---
+
+## (EdgeTX only) Step 1 — Enable logging on the transmitter
+
+Logs are not recorded by default on EdgeTX. You need to add a Special Function to your model that tells the transmitter to write to the SD card.
 
 ### 1.1 Open your model's Special Functions page
 
@@ -83,7 +101,7 @@ Press **[Save]** / **[Enter]** to confirm. The setting persists per-model.
 
 ---
 
-## Step 2 — Fly and retrieve the log
+## (EdgeTX only) Step 2 — Fly and retrieve the log
 
 1. Power on your transmitter with the model loaded.
 2. The log starts as soon as the configured switch activates.
@@ -95,10 +113,10 @@ Press **[Save]** / **[Enter]** to confirm. The setting persists per-model.
 
 ---
 
-## Step 3 — Load the log in EdgeTX Log Parser
+## Step 3 — Load the log in RC Log Viewer
 
-1. Launch the app.
-2. Drag one or more `.csv` log files onto the window — or click **Open Log** in the top-right corner.
+1. Launch the app (web or desktop).
+2. Drag log files onto the window — or click **Open log files** to browse. CSV and blackbox both work; the viewer auto-detects from the file's magic header.
 3. Each file opens as a tab. Click a tab to switch between flights.
 
 ---
@@ -146,7 +164,7 @@ All five chart panels share a single cursor. Hover over any chart to move it; dr
 | Betaflight | ✓ | ✓ | Attitude columns may vary by version |
 | ExpressLRS / receiver-only | — | — | Speed, RSSI and battery only; no GPS or attitude |
 
-The parser reads standard EdgeTX CSV column names. If a column is absent, the corresponding panel is hidden automatically.
+The CSV parser reads standard EdgeTX column names; the blackbox parser reads field names from each log's header. Either way, if a column is absent, the corresponding panel is hidden automatically.
 
 ---
 

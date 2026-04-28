@@ -37,12 +37,12 @@ export default defineConfig(() => {
     devOptions: { enabled: false },
 
     manifest: {
-      name: 'EdgeTX Log Viewer',
-      short_name: 'EdgeTX',
+      name: 'RC Log Viewer',
+      short_name: 'RC Logs',
       description:
-        "Drop your transmitter's CSV log and replay the entire flight on a 3D " +
-        'globe with synced charts. Works in the browser — your logs never ' +
-        'leave your machine.',
+        'Drop EdgeTX CSV or iNAV / Betaflight blackbox logs and replay the ' +
+        'entire flight on a 3D globe with synced charts. Works in the ' +
+        'browser — your logs never leave your machine.',
       theme_color: '#0e1117',
       background_color: '#0e1117',
       display: 'standalone',

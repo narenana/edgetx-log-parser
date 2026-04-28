@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "com.narenana.edgetx-log-parser",
-    "productName": "EdgeTX Log Parser",
+    "productName": "RC Log Viewer",
     "directories": {
       "output": "release"
     },
