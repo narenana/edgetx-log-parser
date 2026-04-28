@@ -175,37 +175,108 @@ function buildAircraftScene() {
   canopy.position.set(0, 0.26, -1.0)
   g.add(canopy)
 
-  // Wings spanning X axis
+  // Wings — each side is a single continuous tapered surface instead of
+  // the previous two-box-per-wing design (which left a visible seam at
+  // the join). Built from a planform Shape extruded into thickness with
+  // bevelled edges, so the surfaces blend rather than stack.
+  //
+  // Coordinate system in the planform Shape:
+  //   X axis = span (root → tip), positive = right side
+  //   Z axis = chord (negative = leading edge / forward, positive = trailing)
+  // Then extrude by `depth` along Y to give the wing its thickness.
+  const buildWingHalf = (side, opts) => {
+    const { rootChord, tipChord, span, depth, sweep = 0, mat } = opts
+    const halfRoot = rootChord / 2
+    const halfTip = tipChord / 2
+    const tipX = span * side
+    const shape = new THREE.Shape()
+    // Root leading-edge → tip leading-edge → tip trailing-edge → root trailing-edge
+    shape.moveTo(0, -halfRoot)
+    shape.lineTo(tipX, -halfTip + sweep)
+    shape.lineTo(tipX, halfTip + sweep)
+    shape.lineTo(0, halfRoot)
+    shape.closePath()
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth,
+      bevelEnabled: true,
+      bevelSize: 0.04,
+      bevelThickness: 0.02,
+      bevelSegments: 2,
+      curveSegments: 1,
+    })
+    // ExtrudeGeometry extrudes along +Z by default. We want thickness
+    // along Y (vertical) and the planform in the XZ plane, so rotate.
+    geo.rotateX(-Math.PI / 2)
+    geo.translate(0, -depth / 2, 0)
+    return new THREE.Mesh(geo, mat)
+  }
+
   const addWing = (side) => {
-    const inner = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.12, 2.1), matWing)
-    inner.position.set(side * 1.1, 0.06, -0.2)
-    inner.rotation.z = -side * 0.05
-    g.add(inner)
+    const wing = buildWingHalf(side, {
+      rootChord: 2.1,
+      tipChord: 0.9,
+      span: 4.85,
+      depth: 0.10,
+      sweep: 0.30,         // leading edge angled aft so the tip sits slightly behind the root
+      mat: matWing,
+    })
+    wing.position.set(0, 0.08, -0.10)
+    wing.rotation.z = -side * 0.04   // subtle dihedral
+    g.add(wing)
 
-    const outer = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.10, 1.7), matWing)
-    outer.position.set(side * 3.2, 0.15, -0.4)
-    outer.rotation.z = -side * 0.10
-    g.add(outer)
+    // Winglet — small upturned plate at the tip. Reads as "modern airliner-ish"
+    // without committing to a full airliner silhouette.
+    const wingletGeo = new THREE.BoxGeometry(0.08, 0.55, 0.85)
+    const winglet = new THREE.Mesh(wingletGeo, matDark)
+    winglet.position.set(side * 4.85, 0.34, -0.10 + 0.30)
+    winglet.rotation.z = -side * 0.18
+    g.add(winglet)
 
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.44, 0.8), matWing)
-    tip.position.set(side * 4.8, 0.34, -0.4)
-    g.add(tip)
-
-    const nav = new THREE.Mesh(new THREE.SphereGeometry(0.10, 6, 5), side < 0 ? matRed : matGrn)
-    nav.position.set(side * 4.85, 0.30, -0.4)
+    // Nav light at the wingtip leading edge
+    const nav = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), side < 0 ? matRed : matGrn)
+    nav.position.set(side * 4.85, 0.30, -0.40)
     g.add(nav)
   }
   addWing(-1)
   addWing(+1)
 
-  // Horizontal stabilisers (span X, at tail)
-  const hStab = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.09, 0.85), matWing)
+  // Horizontal stabilisers — same single-piece treatment as the main wing.
+  const hStabGeo = new THREE.ExtrudeGeometry(
+    (() => {
+      const s = new THREE.Shape()
+      s.moveTo(-1.6, -0.42)
+      s.lineTo(1.6, -0.42)
+      s.lineTo(1.6, 0.42)
+      s.lineTo(-1.6, 0.42)
+      s.closePath()
+      return s
+    })(),
+    { depth: 0.09, bevelEnabled: true, bevelSize: 0.025, bevelThickness: 0.015, bevelSegments: 1 }
+  )
+  hStabGeo.rotateX(-Math.PI / 2)
+  hStabGeo.translate(0, -0.045, 0)
+  const hStab = new THREE.Mesh(hStabGeo, matWing)
   hStab.position.set(0, 0.09, 2.6)
   g.add(hStab)
 
-  // Vertical stabiliser (at tail)
-  const vStab = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.0, 0.85), matWing)
-  vStab.position.set(0, 0.56, 2.6)
+  // Vertical stabiliser — slightly tapered for a more realistic profile
+  // than a slab box. Wider at the root, narrower at the top.
+  const vStabShape = new THREE.Shape()
+  vStabShape.moveTo(-0.45, 0)        // root leading edge
+  vStabShape.lineTo(0.45, 0)         // root trailing edge
+  vStabShape.lineTo(0.20, 1.05)      // tip trailing edge
+  vStabShape.lineTo(-0.05, 1.05)     // tip leading edge
+  vStabShape.closePath()
+  const vStabGeo = new THREE.ExtrudeGeometry(vStabShape, {
+    depth: 0.09, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.01, bevelSegments: 1,
+  })
+  vStabGeo.translate(0, 0, -0.045)   // center thickness
+  const vStab = new THREE.Mesh(vStabGeo, matWing)
+  // ExtrudeGeometry's natural orientation has the shape in XY and depth
+  // in Z — exactly what we want for the vertical stab (height in Y,
+  // chord in X, thickness in Z).
+  vStab.position.set(0, 0.18, 2.6)
   g.add(vStab)
 
   scene.add(g)
@@ -418,19 +489,49 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const targetHdg  = trajHdgRef.current
       const targetDist = Math.max(150, Math.min(600, spdMs * 5 + alt * 1.5 + 150))
 
+      // Detect playback speed by measuring how much virtual time
+      // advanced per real second since the last frame. The damping
+      // factors below get scaled by this so the camera stays glued to
+      // the craft regardless of speed: at 1× the catch-up is the
+      // tuned-for-feel 5%/frame; at 10× it becomes 50%/frame so the
+      // craft stops streaking out of view.
+      const realNow = performance.now()
+      let speedFactor = 1
+      if (smooth.lastReal != null && smooth.lastVt != null) {
+        const dReal = (realNow - smooth.lastReal) / 1000
+        const dVt = vt - smooth.lastVt
+        if (dReal > 0) speedFactor = Math.max(1, Math.abs(dVt) / dReal)
+      }
+      smooth.lastReal = realNow
+      smooth.lastVt = vt
+
       if (!smooth.pos) {
         smooth.pos  = target.clone()
         smooth.hdg  = targetHdg
         const camDist = Cesium.Cartesian3.distance(viewer.camera.position, smooth.pos)
         smooth.dist = Math.max(150, Math.min(600, camDist))
+      } else if (speedFactor > 50) {
+        // Big jump (scrub or initial seek) — teleport rather than chase.
+        // Otherwise lerp would overshoot or oscillate visibly.
+        smooth.pos = target.clone()
+        smooth.hdg = targetHdg
+        smooth.dist = targetDist
       } else {
-        Cesium.Cartesian3.lerp(smooth.pos, target, 0.05, smooth.pos)
+        const posDamp = Math.min(1, 0.05 * speedFactor)
+        const hdgDamp = Math.min(1, 0.004 * speedFactor)
+        const distDamp = Math.min(1, 0.008 * speedFactor)
+        Cesium.Cartesian3.lerp(smooth.pos, target, posDamp, smooth.pos)
         // Heading: deadband so small drifts/turns don't rotate the camera.
-        // Only follow if offset > 45°, and then slowly (0.4%/frame).
+        // Only follow if offset > 45°, and then at the speed-scaled rate.
         const hdgDelta = ((targetHdg - smooth.hdg + 540) % 360) - 180
-        if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, 0.004)
+        if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, hdgDamp)
         smooth.hdg = ((smooth.hdg % 360) + 360) % 360  // wrap to [0,360)
-        smooth.dist += (targetDist - smooth.dist) * 0.008
+        // Skip the auto distance lerp if the user manually scrolled
+        // recently — that would otherwise pull their chosen zoom level
+        // back toward the speed/altitude-derived target.
+        if (!smooth.userDistUntil || performance.now() > smooth.userDistUntil) {
+          smooth.dist += (targetDist - smooth.dist) * distDamp
+        }
       }
 
       viewer.camera.lookAt(
@@ -461,9 +562,10 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       },
     })
 
-    // Mouse/scroll → manual mode: camera still follows aircraft but user orbits/zooms freely.
-    // We use Cesium.trackedEntity which keeps the camera locked onto the moving aircraft
-    // while letting the ScreenSpaceCameraController handle all mouse rotation/zoom/tilt.
+    // Mouse drag → manual mode: camera still follows aircraft but user
+    // orbits/zooms freely via Cesium's ScreenSpaceCameraController.
+    // We use Cesium.trackedEntity which keeps the camera locked onto
+    // the moving aircraft while Cesium handles input.
     const releaseAuto = () => {
       if (!autoRef.current) return
       autoRef.current = false
@@ -473,7 +575,30 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     }
     const el = containerRef.current
     el.addEventListener('mousedown', releaseAuto)
-    el.addEventListener('wheel', releaseAuto)
+
+    // Wheel in auto mode does NOT release auto — it just adjusts the
+    // follow distance. The previous behaviour (wheel → manual mode)
+    // caused a hard jump-zoom on first scroll: Cesium's `trackedEntity`
+    // snaps to a default offset based on the aircraft's bounding sphere
+    // (tiny model = very close camera), and the scroll event then
+    // applied on top of that already-snapped position. Now scroll just
+    // tweaks `smooth.dist`; the auto-follow camera-distance lerp keeps
+    // it from feeling abrupt. Drag (mousedown above) remains the gesture
+    // that actually means "I want to control this myself".
+    const onWheelAuto = e => {
+      if (!autoRef.current) return
+      e.preventDefault()
+      // ~15 % zoom per notch; slightly less when zoomed close so the
+      // last few notches don't shoot past the aircraft.
+      const factor = e.deltaY > 0 ? 1.15 : 0.87
+      const next = smooth.dist * factor
+      smooth.dist = Math.max(50, Math.min(5000, next))
+      // Suspend the speed/altitude-driven distance lerp briefly so the
+      // camera doesn't immediately drift back to the auto target. Resumes
+      // after a couple of seconds of no scroll.
+      smooth.userDistUntil = performance.now() + 2500
+    }
+    el.addEventListener('wheel', onWheelAuto, { passive: false })
 
     stateRef.current = { viewer, smooth, getAircraftEntity: () => aircraftEntity }
     curRowRef.current = gpsRows[0]
@@ -504,7 +629,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     return () => {
       cancelled = true
       el.removeEventListener('mousedown', releaseAuto)
-      el.removeEventListener('wheel', releaseAuto)
+      el.removeEventListener('wheel', onWheelAuto)
       document.removeEventListener('fullscreenchange', onFsChange)
       resizeObserver?.disconnect()
       stateRef.current = null

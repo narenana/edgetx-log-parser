@@ -72,6 +72,7 @@
     }
   },
   "dependencies": {
+    "blackbox-parser": "file:./vendor/blackbox-parser",
     "cesium": "^1.140.0",
     "chart.js": "^4.4.2",
     "leaflet": "^1.9.4",
@@ -92,6 +93,8 @@
     "electron-reload": "^2.0.0-alpha.1",
     "vite": "^5.4.0",
     "vite-plugin-pwa": "^1.2.0",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.6.0",
     "wait-on": "^8.0.0"
   }
 }

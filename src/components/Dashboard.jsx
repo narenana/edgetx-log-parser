@@ -4,8 +4,12 @@ import SyncedChart from './SyncedChart'
 import FlightModeBar from './FlightModeBar'
 import StatsPanel from './StatsPanel'
 import FullscreenButton from './FullscreenButton'
-import FlightSummaryModal from './FlightSummaryModal'
 import { track } from '../utils/analytics'
+
+// FlightSummaryModal is now rendered at the App level so it can be
+// shown during async blackbox parsing (before the log object exists)
+// and survive the parsing→log transition without remounting. This file
+// no longer imports it.
 
 // GlobeView pulls in Cesium (external via vite-plugin-cesium) and the
 // Three.js GLB exporter. AltitudeAttitudeView pulls in the Three.js runtime.
@@ -31,13 +35,7 @@ function ds(label, data, color, extra = {}) {
   }
 }
 
-export default function Dashboard({
-  log,
-  theme = 'light',
-  summaryDismissed = false,
-  onDismissSummary = () => {},
-  onCloseLog = () => {},
-}) {
+export default function Dashboard({ log, theme = 'light' }) {
   const [viewMode, setViewMode] = useState(2) // 1 = classic, 2 = 3D globe
   const [cursorIndex, setCursorIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -65,29 +63,47 @@ export default function Dashboard({
   }, [log.filename]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Animation loop ──────────────────────────────────────────────────────────
+  // Driven by requestAnimationFrame so virtualTimeRef updates land at the
+  // monitor's actual refresh rate (60 / 120 / 144 Hz). The previous
+  // setInterval(33ms) ran at a fixed ~30 Hz which caused visible
+  // stuttering at higher playback speeds: each tick advanced the virtual
+  // time by `33 ms × speed`, so at 10× a single visual update covered
+  // 330 ms of motion — the screen could render that as one big jump
+  // instead of a smooth slide. With RAF, the gap between paints is one
+  // vsync frame, so even at 30× speed the motion is smooth: GlobeView's
+  // preRender uses interpRows(rows, vt) to compute a continuous in-between
+  // position regardless of how dense the source rows are.
   useEffect(() => {
     if (!playing) return
 
     // Seed virtual time from the cursor's current position
     virtualTimeRef.current = rows[cursorIndex]?._tSec ?? 0
     let lastReal = performance.now()
+    let raf = 0
 
-    const id = setInterval(() => {
+    const tick = () => {
       const now = performance.now()
       virtualTimeRef.current += ((now - lastReal) / 1000) * speedRef.current
       lastReal = now
       const vt = virtualTimeRef.current
 
       setCursorIndex(prev => {
-        if (prev >= rows.length - 1) { setPlaying(false); return prev }
-        // Advance as many rows as virtual time has passed — but never go back
+        if (prev >= rows.length - 1) {
+          setPlaying(false)
+          return prev
+        }
         let next = prev
         while (next < rows.length - 1 && rows[next + 1]._tSec <= vt) next++
+        // React bails on a state set if the value is identical, so frames
+        // where the source row didn't change are essentially free.
         return next
       })
-    }, 33)
 
-    return () => clearInterval(id)
+      raf = requestAnimationFrame(tick)
+    }
+
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
   }, [playing, rows])
 
   // ── Space bar to play/pause ─────────────────────────────────────────────────
@@ -176,18 +192,6 @@ export default function Dashboard({
 
   return (
     <div className="dashboard">
-      {/* Pre-flight summary — gates the user into the viewer with a single
-          deliberate click, or offers a graceful exit on empty-data logs.
-          Dismissed-state lives in App.jsx (keyed by filename) so the modal
-          only shows once per loaded log even when tabbing between logs. */}
-      {!summaryDismissed && (
-        <FlightSummaryModal
-          log={log}
-          onProceed={onDismissSummary}
-          onCloseLog={onCloseLog}
-        />
-      )}
-
       {/* View mode toggle */}
       <div className="view-toggle-bar">
         <span className="view-toggle-label">View</span>

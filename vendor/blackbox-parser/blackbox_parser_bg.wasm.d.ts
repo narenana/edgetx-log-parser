@@ -1,0 +1,31 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_flightlog_free: (a: number, b: number) => void;
+export const flightlog_boardInfo: (a: number, b: number) => void;
+export const flightlog_craftName: (a: number, b: number) => void;
+export const flightlog_firmware: (a: number, b: number) => void;
+export const flightlog_gpsCols: (a: number) => number;
+export const flightlog_gpsFieldNames: (a: number, b: number) => void;
+export const flightlog_gpsFieldSigned: (a: number, b: number) => void;
+export const flightlog_gpsFieldUnits: (a: number, b: number) => void;
+export const flightlog_gpsFrames: (a: number) => number;
+export const flightlog_gpsTimes: (a: number) => number;
+export const flightlog_hasGps: (a: number) => number;
+export const flightlog_mainCols: (a: number) => number;
+export const flightlog_mainFieldNames: (a: number, b: number) => void;
+export const flightlog_mainFieldSigned: (a: number, b: number) => void;
+export const flightlog_mainFieldUnits: (a: number, b: number) => void;
+export const flightlog_mainFrames: (a: number) => number;
+export const flightlog_mainTimes: (a: number) => number;
+export const flightlog_slowCols: (a: number) => number;
+export const flightlog_slowFieldNames: (a: number, b: number) => void;
+export const flightlog_slowFieldSigned: (a: number, b: number) => void;
+export const flightlog_slowFieldUnits: (a: number, b: number) => void;
+export const flightlog_slowFrames: (a: number) => number;
+export const flightlog_slowTimes: (a: number) => number;
+export const parseBlackbox: (a: number, b: number, c: number, d: number) => void;
+export const __wbindgen_export: (a: number, b: number, c: number) => void;
+export const __wbindgen_export2: (a: number, b: number) => number;
+export const __wbindgen_export3: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_add_to_stack_pointer: (a: number) => number;
