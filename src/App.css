@@ -656,25 +656,29 @@ body {
   top: 10px;
   right: 10px;
   padding: 5px 11px;
-  background: rgba(22, 33, 62, 0.75);
+  background: var(--hud-bg);
   border: 1px solid var(--border);
   border-radius: 5px;
-  color: var(--text3);
+  color: var(--text2);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.5px;
   cursor: pointer;
+  box-shadow: 0 1px 4px var(--shadow-overlay);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   transition: all 0.15s;
 }
-.globe-auto-btn:hover { color: var(--text); border-color: var(--text3); }
+.globe-auto-btn:hover { color: var(--text); border-color: var(--border-bright); background: var(--bg2); }
 .globe-auto-btn.active {
   color: var(--cyan);
   border-color: var(--cyan);
-  background: rgba(125, 207, 255, 0.08);
+  background: var(--hud-bg);
 }
 
-/* Google Earth–style nav widget (top-right, under auto/manual toggle) */
+/* Google Earth–style nav widget (top-right, under auto/manual toggle).
+   Theme-aware so the buttons stay legible in both light + dark and
+   against arbitrary satellite imagery underneath. */
 .globe-nav {
   position: absolute;
   top: 48px;
@@ -683,11 +687,13 @@ body {
   flex-direction: column;
   gap: 8px;
   align-items: center;
-  background: rgba(8, 15, 26, 0.72);
-  border: 1px solid rgba(65, 72, 104, 0.55);
+  background: var(--hud-bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
+  box-shadow: 0 2px 6px var(--shadow-overlay);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   user-select: none;
 }
 .globe-nav .nav-compass,
@@ -711,9 +717,9 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 1px solid rgba(125, 207, 255, 0.25);
-  background: rgba(22, 33, 62, 0.85);
-  color: var(--text2);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -725,15 +731,15 @@ body {
 .globe-nav .nav-btn:hover {
   color: var(--cyan);
   border-color: var(--cyan);
-  background: rgba(125, 207, 255, 0.12);
+  background: var(--bg2);
 }
 .globe-nav .nav-btn:active {
-  background: rgba(125, 207, 255, 0.2);
+  background: var(--bg3);
   transform: scale(0.94);
 }
 .globe-nav .nav-tilt,
 .globe-nav .nav-zoom {
-  border-top: 1px solid rgba(65, 72, 104, 0.4);
+  border-top: 1px solid var(--border);
   padding-top: 6px;
 }
 
