@@ -1,29 +1,19 @@
 /**
- * Main-thread shim for the blackbox parser. All real work happens in
- * `blackbox-worker.js` so the UI thread stays responsive while a 50 MB
- * BBL parses + maps in the background.
+ * Main-thread shim for the blackbox parser.
  *
- * Vite's `?worker` suffix tells the bundler to compile this file's
- * import target as a separate worker chunk — the WASM binary travels
- * with it. No special config beyond what's already in `vite.config.js`.
+ * Spawns a Web Worker (see `blackbox-worker.js`) on first call and
+ * routes all parsing through it. The worker's message handler is
+ * registered before WASM init starts, so the worker can reply with
+ * `ready` + `diag` events even while it's still initializing — gives us
+ * an early failure signal if init hangs.
  *
- * The worker is instantiated once per page load and reused across all
- * subsequent loads. WASM init (~20 ms) happens on first message, not
- * on every parse.
+ * If the worker doesn't say `ready` within 4 s we assume it's wedged
+ * and fall back to parsing on the main thread (briefly blocking the
+ * UI but at least the user gets a result).
  */
 
-// v0.1.1 NOTE: temporarily running the parser on the main thread instead
-// of in a Web Worker. The bundler-target WASM module's top-level-await
-// init was hanging silently inside the worker context — a known sharp
-// edge of vite-plugin-top-level-await + worker bundles, where init can
-// stall before the worker's `message` handler even registers.
-//
-// Trade-off: drag-and-drop will briefly block the UI thread during parse
-// (~1-2 s with the Float64Array fast path on a 5 MB log). Worth it to
-// get a working pipeline in the user's hands; we'll layer the worker
-// back on once we understand exactly why init was hanging.
-
-import { parseBlackbox as wasmParseBlackbox } from 'blackbox-parser'
+import init, { parseBlackbox as wasmParseBlackbox } from 'blackbox-parser'
+import wasmUrl from 'blackbox-parser/blackbox_parser_bg.wasm?url'
 import { mapToViewerLog } from './blackbox-mapper'
 
 const BLACKBOX_MAGIC = 'H Product:Blackbox'
@@ -37,9 +27,43 @@ export function looksLikeBlackbox(uint8) {
 
 const TARGET_MAIN_FRAMES = 8000
 const APPROX_BYTES_PER_FRAME = 60
+const WORKER_READY_TIMEOUT_MS = 4000
+
+// Singleton worker — survives across log loads so WASM init only pays
+// once. Created lazily on first parse.
+let workerInstance = null
+let workerReadyPromise = null
+
+function getWorker() {
+  if (workerInstance) return { worker: workerInstance, ready: workerReadyPromise }
+
+  // Vite's `?worker` suffix bundles the file as a separate worker chunk
+  // and exports a constructor. Type=module gets us ES imports inside.
+  const w = new Worker(new URL('./blackbox-worker.js', import.meta.url), {
+    type: 'module',
+  })
+  workerInstance = w
+
+  workerReadyPromise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      w.removeEventListener('message', onReady)
+      reject(new Error(`worker did not become ready in ${WORKER_READY_TIMEOUT_MS}ms`))
+    }, WORKER_READY_TIMEOUT_MS)
+    const onReady = e => {
+      if (e.data && e.data.type === 'ready') {
+        clearTimeout(timer)
+        w.removeEventListener('message', onReady)
+        resolve()
+      }
+    }
+    w.addEventListener('message', onReady)
+  })
+
+  return { worker: w, ready: workerReadyPromise }
+}
 
 /**
- * Parse a blackbox log buffer (main-thread for now — see note above).
+ * Parse a blackbox log buffer.
  *
  * @param {Uint8Array} bytes
  * @param {string} filename
@@ -47,38 +71,78 @@ const APPROX_BYTES_PER_FRAME = 60
  * @param {(line: string) => void} [onDiag]
  */
 export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
+  // Try the worker first.
+  try {
+    const { worker, ready } = getWorker()
+    await ready
+    return await parseViaWorker(worker, bytes, filename, onProgress, onDiag)
+  } catch (err) {
+    if (onDiag) onDiag(`worker unavailable: ${err.message}; falling back to main thread`)
+    // Worker dead — fall back so the user still gets a result.
+    return parseOnMainThread(bytes, filename, onProgress, onDiag)
+  }
+}
+
+function parseViaWorker(worker, bytes, filename, onProgress, onDiag) {
+  return new Promise((resolve, reject) => {
+    const handler = e => {
+      const msg = e.data
+      if (!msg) return
+      if (msg.type === 'progress') {
+        if (onProgress) onProgress(msg.stage, msg.pct)
+      } else if (msg.type === 'diag') {
+        if (onDiag) onDiag(msg.message)
+      } else if (msg.type === 'done') {
+        worker.removeEventListener('message', handler)
+        worker.removeEventListener('error', errHandler)
+        resolve(msg.log)
+      } else if (msg.type === 'error') {
+        worker.removeEventListener('message', handler)
+        worker.removeEventListener('error', errHandler)
+        reject(new Error(msg.message))
+      }
+    }
+    const errHandler = e => {
+      worker.removeEventListener('message', handler)
+      worker.removeEventListener('error', errHandler)
+      reject(new Error(e.message || 'Worker crashed'))
+    }
+    worker.addEventListener('message', handler)
+    worker.addEventListener('error', errHandler)
+    // Transfer the buffer to avoid copying — the main thread no longer
+    // needs the bytes once the worker has them.
+    worker.postMessage({ bytes, filename }, [bytes.buffer])
+  })
+}
+
+// Fallback path. Same code that previously lived inline; kept around so
+// even if the worker can't spin up (rare cache state, broken extension,
+// etc.) the user still gets their log open instead of a hang.
+async function parseOnMainThread(bytes, filename, onProgress, onDiag) {
   const t0 = performance.now()
   const diag = msg => {
-    const line = `+${(performance.now() - t0).toFixed(0)}ms ${msg}`
+    const line = `+${(performance.now() - t0).toFixed(0)}ms ${msg} (main-thread fallback)`
     if (onDiag) onDiag(line)
     console.log('[bb-parse]', line)
   }
 
   diag(`received ${filename} (${bytes.length.toLocaleString()} bytes)`)
+  await init({ module_or_path: wasmUrl })
 
   const estimatedFrames = bytes.length / APPROX_BYTES_PER_FRAME
   const stride = Math.max(1, Math.round(estimatedFrames / TARGET_MAIN_FRAMES))
-  diag(`stride=${stride} (≈${Math.round(estimatedFrames).toLocaleString()} frames est.)`)
+  diag(`stride=${stride}`)
 
   if (onProgress) onProgress('parsing', 10)
+  await new Promise(r => setTimeout(r, 0)) // let modal paint
 
-  // Yield to the event loop so React renders the modal before the
-  // (potentially blocking) WASM call. Without this the modal won't even
-  // paint the "parsing" step until after the parse finishes.
-  await new Promise(r => setTimeout(r, 0))
-
-  const tParse = performance.now()
   const parsed = wasmParseBlackbox(bytes, stride)
-  diag(`wasmParseBlackbox returned in ${(performance.now() - tParse).toFixed(0)}ms`)
+  diag(`wasmParseBlackbox returned in ${(performance.now() - t0).toFixed(0)}ms`)
 
   if (onProgress) onProgress('mapping', 60)
-  // Yield again so the bar animation updates before the mapping loop.
   await new Promise(r => setTimeout(r, 0))
 
-  const tMap = performance.now()
   const log = mapToViewerLog(parsed, filename, diag)
-  diag(`mapToViewerLog returned in ${(performance.now() - tMap).toFixed(0)}ms, rows=${log.rows.length}`)
-
   parsed.free()
   if (onProgress) onProgress('done', 100)
   return log

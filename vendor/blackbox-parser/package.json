@@ -14,14 +14,12 @@
   "files": [
     "blackbox_parser_bg.wasm",
     "blackbox_parser.js",
-    "blackbox_parser_bg.js",
     "blackbox_parser.d.ts",
     "LICENSE-MIT"
   ],
   "main": "blackbox_parser.js",
   "types": "blackbox_parser.d.ts",
   "sideEffects": [
-    "./blackbox_parser.js",
     "./snippets/*"
   ]
 }
