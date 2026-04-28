@@ -24,7 +24,13 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # `npm ci` strictly enforces lockfile shape and on macOS arm64
+        # has hit a flaky "Exit handler never called!" bug intermittently
+        # — when it crashes mid-install, devDeps like cross-env are
+        # missing for the next step. `npm install` is more forgiving and
+        # equally fast on a cold runner; the lockfile is still respected
+        # for resolution, just not enforced.
+        run: npm install --no-audit --no-fund
 
       - name: Build desktop assets
         run: npm run build:desktop
@@ -71,7 +77,13 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # `npm ci` strictly enforces lockfile shape and on macOS arm64
+        # has hit a flaky "Exit handler never called!" bug intermittently
+        # — when it crashes mid-install, devDeps like cross-env are
+        # missing for the next step. `npm install` is more forgiving and
+        # equally fast on a cold runner; the lockfile is still respected
+        # for resolution, just not enforced.
+        run: npm install --no-audit --no-fund
 
       - name: Build desktop assets
         run: npm run build:desktop
@@ -112,7 +124,13 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        # `npm ci` strictly enforces lockfile shape and on macOS arm64
+        # has hit a flaky "Exit handler never called!" bug intermittently
+        # — when it crashes mid-install, devDeps like cross-env are
+        # missing for the next step. `npm install` is more forgiving and
+        # equally fast on a cold runner; the lockfile is still respected
+        # for resolution, just not enforced.
+        run: npm install --no-audit --no-fund
 
       - name: Build desktop assets
         run: npm run build:desktop
