@@ -175,37 +175,108 @@ function buildAircraftScene() {
   canopy.position.set(0, 0.26, -1.0)
   g.add(canopy)
 
-  // Wings spanning X axis
+  // Wings — each side is a single continuous tapered surface instead of
+  // the previous two-box-per-wing design (which left a visible seam at
+  // the join). Built from a planform Shape extruded into thickness with
+  // bevelled edges, so the surfaces blend rather than stack.
+  //
+  // Coordinate system in the planform Shape:
+  //   X axis = span (root → tip), positive = right side
+  //   Z axis = chord (negative = leading edge / forward, positive = trailing)
+  // Then extrude by `depth` along Y to give the wing its thickness.
+  const buildWingHalf = (side, opts) => {
+    const { rootChord, tipChord, span, depth, sweep = 0, mat } = opts
+    const halfRoot = rootChord / 2
+    const halfTip = tipChord / 2
+    const tipX = span * side
+    const shape = new THREE.Shape()
+    // Root leading-edge → tip leading-edge → tip trailing-edge → root trailing-edge
+    shape.moveTo(0, -halfRoot)
+    shape.lineTo(tipX, -halfTip + sweep)
+    shape.lineTo(tipX, halfTip + sweep)
+    shape.lineTo(0, halfRoot)
+    shape.closePath()
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth,
+      bevelEnabled: true,
+      bevelSize: 0.04,
+      bevelThickness: 0.02,
+      bevelSegments: 2,
+      curveSegments: 1,
+    })
+    // ExtrudeGeometry extrudes along +Z by default. We want thickness
+    // along Y (vertical) and the planform in the XZ plane, so rotate.
+    geo.rotateX(-Math.PI / 2)
+    geo.translate(0, -depth / 2, 0)
+    return new THREE.Mesh(geo, mat)
+  }
+
   const addWing = (side) => {
-    const inner = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.12, 2.1), matWing)
-    inner.position.set(side * 1.1, 0.06, -0.2)
-    inner.rotation.z = -side * 0.05
-    g.add(inner)
+    const wing = buildWingHalf(side, {
+      rootChord: 2.1,
+      tipChord: 0.9,
+      span: 4.85,
+      depth: 0.10,
+      sweep: 0.30,         // leading edge angled aft so the tip sits slightly behind the root
+      mat: matWing,
+    })
+    wing.position.set(0, 0.08, -0.10)
+    wing.rotation.z = -side * 0.04   // subtle dihedral
+    g.add(wing)
 
-    const outer = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.10, 1.7), matWing)
-    outer.position.set(side * 3.2, 0.15, -0.4)
-    outer.rotation.z = -side * 0.10
-    g.add(outer)
+    // Winglet — small upturned plate at the tip. Reads as "modern airliner-ish"
+    // without committing to a full airliner silhouette.
+    const wingletGeo = new THREE.BoxGeometry(0.08, 0.55, 0.85)
+    const winglet = new THREE.Mesh(wingletGeo, matDark)
+    winglet.position.set(side * 4.85, 0.34, -0.10 + 0.30)
+    winglet.rotation.z = -side * 0.18
+    g.add(winglet)
 
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.44, 0.8), matWing)
-    tip.position.set(side * 4.8, 0.34, -0.4)
-    g.add(tip)
-
-    const nav = new THREE.Mesh(new THREE.SphereGeometry(0.10, 6, 5), side < 0 ? matRed : matGrn)
-    nav.position.set(side * 4.85, 0.30, -0.4)
+    // Nav light at the wingtip leading edge
+    const nav = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), side < 0 ? matRed : matGrn)
+    nav.position.set(side * 4.85, 0.30, -0.40)
     g.add(nav)
   }
   addWing(-1)
   addWing(+1)
 
-  // Horizontal stabilisers (span X, at tail)
-  const hStab = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.09, 0.85), matWing)
+  // Horizontal stabilisers — same single-piece treatment as the main wing.
+  const hStabGeo = new THREE.ExtrudeGeometry(
+    (() => {
+      const s = new THREE.Shape()
+      s.moveTo(-1.6, -0.42)
+      s.lineTo(1.6, -0.42)
+      s.lineTo(1.6, 0.42)
+      s.lineTo(-1.6, 0.42)
+      s.closePath()
+      return s
+    })(),
+    { depth: 0.09, bevelEnabled: true, bevelSize: 0.025, bevelThickness: 0.015, bevelSegments: 1 }
+  )
+  hStabGeo.rotateX(-Math.PI / 2)
+  hStabGeo.translate(0, -0.045, 0)
+  const hStab = new THREE.Mesh(hStabGeo, matWing)
   hStab.position.set(0, 0.09, 2.6)
   g.add(hStab)
 
-  // Vertical stabiliser (at tail)
-  const vStab = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.0, 0.85), matWing)
-  vStab.position.set(0, 0.56, 2.6)
+  // Vertical stabiliser — slightly tapered for a more realistic profile
+  // than a slab box. Wider at the root, narrower at the top.
+  const vStabShape = new THREE.Shape()
+  vStabShape.moveTo(-0.45, 0)        // root leading edge
+  vStabShape.lineTo(0.45, 0)         // root trailing edge
+  vStabShape.lineTo(0.20, 1.05)      // tip trailing edge
+  vStabShape.lineTo(-0.05, 1.05)     // tip leading edge
+  vStabShape.closePath()
+  const vStabGeo = new THREE.ExtrudeGeometry(vStabShape, {
+    depth: 0.09, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.01, bevelSegments: 1,
+  })
+  vStabGeo.translate(0, 0, -0.045)   // center thickness
+  const vStab = new THREE.Mesh(vStabGeo, matWing)
+  // ExtrudeGeometry's natural orientation has the shape in XY and depth
+  // in Z — exactly what we want for the vertical stab (height in Y,
+  // chord in X, thickness in Z).
+  vStab.position.set(0, 0.18, 2.6)
   g.add(vStab)
 
   scene.add(g)
