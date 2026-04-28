@@ -42,12 +42,16 @@ const SAMPLES = {
   'fixed-wing': {
     url: './sample-fixed-wing.csv',
     displayName: 'sample-fixed-wing.csv',
-    label: '✈ Try fixed wing',
+    icon: '✈',
+    title: 'Fixed-wing flight',
+    sub: 'iNAV · cross-country',
   },
   'quad': {
     url: './sample-quad.csv',
     displayName: 'sample-quad.csv',
-    label: '⌖ Try 5″ quad',
+    icon: '⌖',
+    title: '5″ quad flight',
+    sub: 'Betaflight · freestyle',
   },
 }
 
@@ -318,31 +322,51 @@ export default function App() {
           <div className="drop-icon">✈</div>
           <div className="drop-title">EdgeTX Log Viewer</div>
           <div className="drop-sub">
-            Drop EdgeTX CSV log files here, or click to browse
+            Drop a flight log here, or click below to open one
           </div>
-          <div className="drop-actions">
-            <button className="drop-btn" onClick={() => fileInputRef.current.click()}>
-              Open log files
-            </button>
-            <button
-              className="drop-btn drop-btn-secondary"
-              onClick={() => loadSample('fixed-wing')}
-              disabled={!!loadingSample}
-            >
-              {loadingSample === 'fixed-wing' ? 'Loading…' : SAMPLES['fixed-wing'].label}
-            </button>
-            <button
-              className="drop-btn drop-btn-secondary"
-              onClick={() => loadSample('quad')}
-              disabled={!!loadingSample}
-            >
-              {loadingSample === 'quad' ? 'Loading…' : SAMPLES['quad'].label}
-            </button>
+
+          {/* Single primary CTA — clear hierarchy: this is what users
+              should reach for. Samples are presented separately below. */}
+          <button
+            className="drop-btn drop-btn-primary"
+            onClick={() => fileInputRef.current.click()}
+          >
+            Open log files
+          </button>
+
+          <div className="drop-formats">
+            Supports EdgeTX CSV · iNAV / Betaflight blackbox (.bbl, .bfl, .txt)
           </div>
-          <div style={{ marginTop: 8, color: 'var(--text3)', fontSize: 11 }}>
-            Supports iNAV · Betaflight · Basic receiver logs
+
+          {/* Separator labels the next section so users don't read the
+              sample cards as if they were primary features. */}
+          <div className="drop-divider">
+            <span>Or try a sample flight</span>
           </div>
-          <div style={{ marginTop: 4, color: 'var(--text3)', fontSize: 11, opacity: 0.7 }}>
+
+          <div className="drop-samples">
+            {Object.entries(SAMPLES).map(([kind, s]) => (
+              <button
+                key={kind}
+                className="sample-card"
+                onClick={() => loadSample(kind)}
+                disabled={!!loadingSample}
+                aria-label={`Load sample: ${s.title}`}
+              >
+                <span className="sample-card-icon" aria-hidden="true">
+                  {s.icon}
+                </span>
+                <span className="sample-card-text">
+                  <span className="sample-card-title">
+                    {loadingSample === kind ? 'Loading…' : s.title}
+                  </span>
+                  <span className="sample-card-sub">{s.sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="drop-privacy">
             Logs are parsed in your browser — nothing is uploaded.
           </div>
         </div>
