@@ -418,19 +418,44 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const targetHdg  = trajHdgRef.current
       const targetDist = Math.max(150, Math.min(600, spdMs * 5 + alt * 1.5 + 150))
 
+      // Detect playback speed by measuring how much virtual time
+      // advanced per real second since the last frame. The damping
+      // factors below get scaled by this so the camera stays glued to
+      // the craft regardless of speed: at 1× the catch-up is the
+      // tuned-for-feel 5%/frame; at 10× it becomes 50%/frame so the
+      // craft stops streaking out of view.
+      const realNow = performance.now()
+      let speedFactor = 1
+      if (smooth.lastReal != null && smooth.lastVt != null) {
+        const dReal = (realNow - smooth.lastReal) / 1000
+        const dVt = vt - smooth.lastVt
+        if (dReal > 0) speedFactor = Math.max(1, Math.abs(dVt) / dReal)
+      }
+      smooth.lastReal = realNow
+      smooth.lastVt = vt
+
       if (!smooth.pos) {
         smooth.pos  = target.clone()
         smooth.hdg  = targetHdg
         const camDist = Cesium.Cartesian3.distance(viewer.camera.position, smooth.pos)
         smooth.dist = Math.max(150, Math.min(600, camDist))
+      } else if (speedFactor > 50) {
+        // Big jump (scrub or initial seek) — teleport rather than chase.
+        // Otherwise lerp would overshoot or oscillate visibly.
+        smooth.pos = target.clone()
+        smooth.hdg = targetHdg
+        smooth.dist = targetDist
       } else {
-        Cesium.Cartesian3.lerp(smooth.pos, target, 0.05, smooth.pos)
+        const posDamp = Math.min(1, 0.05 * speedFactor)
+        const hdgDamp = Math.min(1, 0.004 * speedFactor)
+        const distDamp = Math.min(1, 0.008 * speedFactor)
+        Cesium.Cartesian3.lerp(smooth.pos, target, posDamp, smooth.pos)
         // Heading: deadband so small drifts/turns don't rotate the camera.
-        // Only follow if offset > 45°, and then slowly (0.4%/frame).
+        // Only follow if offset > 45°, and then at the speed-scaled rate.
         const hdgDelta = ((targetHdg - smooth.hdg + 540) % 360) - 180
-        if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, 0.004)
+        if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, hdgDamp)
         smooth.hdg = ((smooth.hdg % 360) + 360) % 360  // wrap to [0,360)
-        smooth.dist += (targetDist - smooth.dist) * 0.008
+        smooth.dist += (targetDist - smooth.dist) * distDamp
       }
 
       viewer.camera.lookAt(

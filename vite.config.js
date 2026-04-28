@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import cesium from 'vite-plugin-cesium'
 import { VitePWA } from 'vite-plugin-pwa'
+import wasm from 'vite-plugin-wasm'
+import topLevelAwait from 'vite-plugin-top-level-await'
 
 // Dual-target build:
 //   VITE_BUILD_TARGET=web      → hosted (Cloudflare Pages, mounted at /log-viewer/
@@ -95,7 +97,18 @@ export default defineConfig(() => {
   })
 
   return {
-    plugins: [react(), cesium(), ...(isDesktop ? [] : [pwa])],
+    // wasm + topLevelAwait teach Vite/Rollup to handle the ESM-style WASM
+    // import that `wasm-pack build --target bundler` emits — needed by
+    // `@narenana/blackbox-parser`. Order matters: wasm before topLevelAwait.
+    plugins: [react(), wasm(), topLevelAwait(), cesium(), ...(isDesktop ? [] : [pwa])],
+    // Vite worker contexts use a separate plugin pipeline. The blackbox
+    // parser worker needs the same WASM glue, so re-register both
+    // plugins here. Without this the worker build fails with the
+    // "ESM integration proposal for Wasm" error.
+    worker: {
+      format: 'es',
+      plugins: () => [wasm(), topLevelAwait()],
+    },
     base: './',
     // Desktop builds need a stub for `virtual:pwa-register/react` since the
     // PWA plugin isn't active. PwaUpdate.jsx imports it statically; the stub

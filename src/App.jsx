@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { parseEdgeTXLog } from './utils/parseLog'
+import { parseBlackboxBuffer, looksLikeBlackbox } from './utils/parseBlackbox'
 import { loadLogFromUrl } from './utils/loadLogFromUrl'
 import { initAnalytics, getConsent, track } from './utils/analytics'
 import ConsentBanner from './components/ConsentBanner'
 import ThemeToggle from './components/ThemeToggle'
+import FlightSummaryModal from './components/FlightSummaryModal'
 
 // Dashboard pulls in Chart.js, Leaflet, Three.js, plus its own lazy children
 // (GlobeView, AltitudeAttitudeView). Splitting it off keeps the empty-state
@@ -72,6 +74,10 @@ export default function App() {
   // Lifted to App so the modal stays dismissed across tab switches (which
   // remount Dashboard via key={log.filename}).
   const [dismissedSummaries, setDismissedSummaries] = useState(() => new Set())
+  // Active parse state — populated while a blackbox file is in flight on
+  // the worker. The page would otherwise look frozen since the user just
+  // dropped a file but no log has appeared yet. { filename, stage, pct }.
+  const [parsing, setParsing] = useState(null)
   const fileInputRef = useRef(null)
 
   // Apply the theme to <html data-theme="..."> + persist. CSS variables
@@ -108,13 +114,49 @@ export default function App() {
     setError(null)
     const results = []
     for (const file of files) {
-      if (!file.name.toLowerCase().endsWith('.csv')) continue
+      const lower = file.name.toLowerCase()
+      const looksCsv = lower.endsWith('.csv')
+      const looksBblExt = lower.endsWith('.bbl') || lower.endsWith('.bfl') || lower.endsWith('.txt')
+      if (!looksCsv && !looksBblExt) continue
       try {
-        const text = await file.text()
-        const log = parseEdgeTXLog(text, file.name)
+        // For ambiguous extensions (`.txt` is used by both EdgeTX text
+        // logs and iNAV blackbox), sniff the first bytes for the
+        // blackbox magic header before committing to a parser. CSVs
+        // never start with that string.
+        const buf = await file.arrayBuffer()
+        const u8 = new Uint8Array(buf)
+        let log
+        if (looksBblExt && looksLikeBlackbox(u8)) {
+          // Blackbox parsing runs on a Web Worker — the binary parse +
+          // field mapping is multi-second work that would otherwise
+          // freeze the UI. Surface progress to the loading overlay so
+          // the user sees movement instead of a hung tab. Diag messages
+          // accumulate in the parsing object so the modal can render
+          // them inline — useful for debugging without DevTools.
+          setParsing({ filename: file.name, stage: 'parsing', pct: 0, diag: [] })
+          log = await parseBlackboxBuffer(
+            u8,
+            file.name,
+            (stage, pct) => {
+              setParsing(p => (p ? { ...p, stage, pct } : p))
+            },
+            line => {
+              setParsing(p =>
+                p ? { ...p, diag: [...(p.diag || []), line].slice(-20) } : p,
+              )
+            },
+          )
+          track('log_loaded', { source: 'file', format: 'blackbox' })
+        } else {
+          // Text decoding only on the CSV path — blackbox is binary.
+          const text = new TextDecoder('utf-8').decode(u8)
+          log = parseEdgeTXLog(text, file.name)
+        }
         results.push(log)
       } catch (e) {
         setError(`Failed to parse ${file.name}: ${e.message}`)
+      } finally {
+        setParsing(null)
       }
     }
     if (results.length) {
@@ -236,7 +278,7 @@ export default function App() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.bbl,.bfl,.txt"
           multiple
           style={{ display: 'none' }}
           onChange={onFileInput}
@@ -269,9 +311,6 @@ export default function App() {
             key={activeLog.filename}
             log={activeLog}
             theme={theme}
-            summaryDismissed={dismissedSummaries.has(activeLog.filename)}
-            onDismissSummary={() => dismissSummary(activeLog.filename)}
-            onCloseLog={() => closeAt(activeIndex)}
           />
         </Suspense>
       ) : (
@@ -308,6 +347,30 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* App-level FlightSummaryModal covers both flows:
+            (a) BBL parse — appears the moment a file is dropped, driven
+                by real worker `progress` events while the parser runs.
+            (b) Sync CSV — appears once the log is in the array.
+          Stable `key` on the active filename keeps the modal mounted
+          across the parsing→log transition so the checklist smoothly
+          fades into the summary grid instead of remounting.
+          Held back by `dismissedSummaries` so re-selecting a previously
+          dismissed log doesn't re-pop the modal. */}
+      {(() => {
+        const target = parsing?.filename ?? activeLog?.filename
+        if (!target) return null
+        if (dismissedSummaries.has(target)) return null
+        return (
+          <FlightSummaryModal
+            key={target}
+            parsing={parsing && parsing.filename === target ? parsing : null}
+            log={activeLog && activeLog.filename === target ? activeLog : null}
+            onProceed={() => dismissSummary(target)}
+            onCloseLog={() => closeAt(activeIndex)}
+          />
+        )
+      })()}
 
       <ConsentBanner />
 

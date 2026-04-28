@@ -1,0 +1,27 @@
+{
+  "name": "blackbox-parser",
+  "type": "module",
+  "collaborators": [
+    "narenana"
+  ],
+  "description": "Browser-native parser for Betaflight / iNAV / Cleanflight blackbox logs (WASM)",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/narenana/blackbox-parser"
+  },
+  "files": [
+    "blackbox_parser_bg.wasm",
+    "blackbox_parser.js",
+    "blackbox_parser_bg.js",
+    "blackbox_parser.d.ts",
+    "LICENSE-MIT"
+  ],
+  "main": "blackbox_parser.js",
+  "types": "blackbox_parser.d.ts",
+  "sideEffects": [
+    "./blackbox_parser.js",
+    "./snippets/*"
+  ]
+}

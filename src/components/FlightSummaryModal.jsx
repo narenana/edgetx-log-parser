@@ -1,82 +1,161 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { track } from '../utils/analytics'
 
-// Theatrical processing steps — parsing has already completed by the time
-// the modal mounts (it's synchronous in the parser today), but stepping
-// through these states gives the user a beat to register the tool is doing
-// work for them, and then a satisfying reveal of the actual summary.
-// Total run time = STEPS.length × STEP_MS + REVEAL_MS.
+// Three-step processing animation. Same visuals for every load path —
+// the only difference is that step 0 ("Parsing telemetry") absorbs the
+// real parse wait, while steps 1–2 are post-parse theatrical flourishes:
+//
+//   CSV sync path:        step 0 ~280 ms (timer) → 1 ~280 ms → 2 ~280 ms
+//   Blackbox async path:  step 0 = worker run time → 1 ~280 ms → 2 ~280 ms
+//
+// In both cases steps 1 and 2 run with the same timers, so the user sees
+// the same closing animation whether the data took 100 ms or 5 s. While
+// the BBL worker is mid-parse, step 0 just keeps pulsing.
 const STEPS = [
-  'Parsing telemetry',
-  'Detecting flight events',
-  'Computing flight metrics',
+  'Parsing log',                // step 1: absorbs the actual parse wait
+  'Detecting flight events',    // step 2: theatrical (always 280 ms)
+  'Computing flight metrics',   // step 3: theatrical (always 280 ms)
 ]
-const STEP_MS = 280
-const REVEAL_MS = 220
+
+const STEP_MS = 280     // timer interval for the post-parse steps 1 & 2
+const REVEAL_MS = 220   // brief pause before swapping processing → summary
 
 /**
  * Pre-flight summary modal.
  *
- * Shown immediately after a log is loaded. Forces the user to review the
- * flight's headline numbers and proceed with one deliberate click — turning
- * "drop CSV → confused dashboard" into "drop CSV → see at a glance whether
- * this flight was interesting → dive in."
+ * Two entry modes:
+ *   - `log` only:               sync-loaded log (CSV). Theatrical timer
+ *                                animation runs once, then summary.
+ *   - `parsing` first, then `log`: blackbox path. Real worker progress
+ *                                drives the checklist. When the log
+ *                                arrives the modal transitions smoothly
+ *                                to the summary view (no remount).
  *
- * If the log captured no meaningful telemetry (very short duration, no
- * GPS/battery/altitude), the modal switches to an empty-state branch with
- * a "Close this log" exit so bad-data files don't dump the user into an
- * empty viewer.
+ * Caller (App.jsx) keeps the modal mounted with a stable `key` across
+ * the parsing → log transition so we don't restart any animations.
  *
- * Dismissed-state lives in App.jsx (keyed by filename), so the modal only
- * shows once per log even when the user tabs between multiple loaded logs.
+ * Empty-data branch (very short log, no telemetry) is reached after
+ * processing finishes and shows a friendly "close this log" exit.
  */
-export default function FlightSummaryModal({ log, onProceed, onCloseLog }) {
-  const { stats, hasGPS, hasBattery, hasCurrent, flightModes } = log
+export default function FlightSummaryModal({ log, parsing, onProceed, onCloseLog }) {
+  // The header subtitle uses whichever filename is available — parsing
+  // sets it before the log exists; log carries it after.
+  const filename = log?.filename ?? parsing?.filename ?? ''
 
   // Heuristic: a log is "real" if it ran long enough AND has at least one
-  // telemetry channel that captured something. Tuned conservatively — we'd
-  // rather show the empty branch on a borderline case than gate a real
-  // flight behind it.
+  // telemetry channel that captured something. Tuned conservatively.
   const hasRealData =
-    stats.duration >= 5 && (hasGPS || hasBattery || stats.maxAlt > 0)
+    !!log && log.stats.duration >= 5 &&
+    (log.hasGPS || log.hasBattery || log.stats.maxAlt > 0)
 
-  // Processing animation: step through STEPS, then transition to 'summary'.
-  // `currentStep` is the index of the in-flight step; -1 means none yet,
-  // STEPS.length means all done.
   const [phase, setPhase] = useState('processing') // 'processing' | 'summary'
   const [currentStep, setCurrentStep] = useState(0)
 
+  // Per-step timings. Step 0 starts at mount; later steps' startedAt
+  // gets filled when currentStep advances. Each entry is captured once
+  // (no re-starts) so the displayed durations are stable.
+  const [stepTimings, setStepTimings] = useState(() => {
+    const t0 = Date.now()
+    return STEPS.map((_, i) => ({
+      startedAt: i === 0 ? t0 : null,
+      finishedAt: null,
+    }))
+  })
+
+  // Live-updates the elapsed display on the active step. 200 ms is fine
+  // visually and keeps render churn minimal — we're not measuring frame
+  // budget, just user-facing seconds.
+  const [, forceTick] = useState(0)
   useEffect(() => {
+    if (currentStep >= STEPS.length) return
+    const id = setInterval(() => forceTick(t => t + 1), 200)
+    return () => clearInterval(id)
+  }, [currentStep])
+
+  // When currentStep advances, fill in finishedAt for completed steps
+  // and startedAt for the newly active step. One pass per transition.
+  useEffect(() => {
+    if (currentStep === 0) return
+    setStepTimings(prev => {
+      const now = Date.now()
+      return prev.map((t, i) => {
+        if (i < currentStep && t.finishedAt === null) {
+          return { ...t, finishedAt: now }
+        }
+        if (i === currentStep && t.startedAt === null) {
+          return { ...t, startedAt: now }
+        }
+        return t
+      })
+    })
+  }, [currentStep])
+
+  // Whether we entered in async (BBL) mode. Captured once on mount so the
+  // CSV vs BBL animation paths don't second-guess each other later when
+  // App.jsx clears the parsing prop after the worker resolves.
+  const isAsyncRef = useRef(!!parsing)
+
+  // Track summary_shown once when a log eventually appears. Logged with
+  // has_real_data so we can see how often the empty branch fires.
+  useEffect(() => {
+    if (!log) return
     track('summary_shown', {
       has_real_data: hasRealData,
-      duration_sec: Math.round(stats.duration ?? 0),
+      duration_sec: Math.round(log.stats.duration ?? 0),
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!log])
 
+  // CSV (sync) path: log was present at mount. Run the full 3-step
+  // theatrical animation, no parsing wait — step 0 ticks at the same
+  // timer pace as steps 1 and 2.
+  useEffect(() => {
+    if (isAsyncRef.current) return
+    if (!log) return
     let cancelled = false
     const timers = []
-
-    // Walk through each step, then after a short reveal pause, swap to
-    // the summary view. All timers cleaned up on unmount.
-    STEPS.forEach((_, i) => {
+    for (let s = 0; s < STEPS.length; s++) {
       timers.push(setTimeout(() => {
-        if (!cancelled) setCurrentStep(i + 1)
-      }, (i + 1) * STEP_MS))
-    })
+        if (!cancelled) setCurrentStep(s + 1)
+      }, (s + 1) * STEP_MS))
+    }
     timers.push(setTimeout(() => {
       if (!cancelled) setPhase('summary')
     }, STEPS.length * STEP_MS + REVEAL_MS))
-
     return () => {
       cancelled = true
       timers.forEach(clearTimeout)
     }
-    // Run once per modal mount — App.jsx keys dismissal by filename so we
-    // only mount once per log anyway.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const model = modelFromFilename(log.filename)
-  const dateStr = dateFromFilename(log.filename)
+  // BBL (async) path: step 0 ("Parsing telemetry") pulses while the
+  // worker chews through the file. When the log lands, step 0 immediately
+  // ✓s and steps 1 & 2 roll through on the same 280 ms timer used by the
+  // CSV path — visual identical from the user's perspective.
+  useEffect(() => {
+    if (!isAsyncRef.current) return
+    if (!log) return
+    let cancelled = false
+    const timers = []
+    setCurrentStep(1) // step 0 done — parse just finished
+    timers.push(setTimeout(() => {
+      if (!cancelled) setCurrentStep(2)
+    }, STEP_MS))
+    timers.push(setTimeout(() => {
+      if (!cancelled) setCurrentStep(STEPS.length)
+    }, STEP_MS * 2))
+    timers.push(setTimeout(() => {
+      if (!cancelled) setPhase('summary')
+    }, STEP_MS * 2 + REVEAL_MS))
+    return () => {
+      cancelled = true
+      timers.forEach(clearTimeout)
+    }
+  }, [!!log])
+
+  const model = modelFromFilename(filename)
+  const dateStr = dateFromFilename(filename)
 
   return (
     <div className="summary-modal-backdrop" role="dialog" aria-modal="true" aria-label="Flight summary">
@@ -90,57 +169,77 @@ export default function FlightSummaryModal({ log, onProceed, onCloseLog }) {
 
         {phase === 'processing' ? (
           <div className="summary-processing" aria-live="polite">
-            <div className="summary-processing-spinner" aria-hidden="true" />
             <ul className="summary-processing-steps">
               {STEPS.map((label, i) => {
                 const state =
                   i < currentStep ? 'done' :
                   i === currentStep ? 'active' :
                   'pending'
+                // Step 1 carries the real parse wait, so its indicator is
+                // a horizontal progress bar (indeterminate slide while
+                // active, fills solid blue when done). Steps 2 and 3 are
+                // theatrical bridges to the summary reveal — a small
+                // dot/check is enough.
+                const isFirstStep = i === 0
+                const timing = stepTimings[i]
                 return (
                   <li key={label} className={`summary-processing-step ${state}`}>
-                    <span className="summary-processing-mark" aria-hidden="true">
-                      {state === 'done' ? '✓' : state === 'active' ? '·' : '·'}
-                    </span>
+                    {isFirstStep ? (
+                      <div className="summary-processing-bar" aria-hidden="true">
+                        <div className="summary-processing-bar-fill" />
+                      </div>
+                    ) : (
+                      <span className="summary-processing-mark" aria-hidden="true">
+                        {state === 'done' ? '✓' : '·'}
+                      </span>
+                    )}
                     <span className="summary-processing-label">{label}</span>
+                    <span className="summary-processing-time">
+                      {fmtElapsed(timing)}
+                    </span>
                   </li>
                 )
               })}
             </ul>
+            {parsing && parsing.diag && parsing.diag.length > 0 && (
+              <pre className="summary-processing-diag" aria-live="polite">
+                {parsing.diag.join('\n')}
+              </pre>
+            )}
           </div>
         ) : hasRealData ? (
           <>
             <div className="summary-grid">
-              <Tile label="Duration" value={fmtDuration(stats.duration)} />
-              <Tile label="Max altitude" value={Math.round(stats.maxAlt)} unit="m" />
-              {hasGPS && (
-                <Tile label="Max speed" value={Math.round(stats.maxSpeed)} unit="km/h" />
+              <Tile label="Duration" value={fmtDuration(log.stats.duration)} />
+              <Tile label="Max altitude" value={Math.round(log.stats.maxAlt)} unit="m" />
+              {log.hasGPS && (
+                <Tile label="Max speed" value={Math.round(log.stats.maxSpeed)} unit="km/h" />
               )}
-              {hasGPS && stats.maxDistFromHomeKm > 0 && (
-                <Tile label="Max from home" value={fmtDistance(stats.maxDistFromHomeKm)} />
+              {log.hasGPS && log.stats.maxDistFromHomeKm > 0 && (
+                <Tile label="Max from home" value={fmtDistance(log.stats.maxDistFromHomeKm)} />
               )}
-              {hasGPS && stats.distanceKm > 0 && (
-                <Tile label="Total distance" value={fmtDistance(stats.distanceKm)} />
+              {log.hasGPS && log.stats.distanceKm > 0 && (
+                <Tile label="Total distance" value={fmtDistance(log.stats.distanceKm)} />
               )}
-              <Tile label="Max climb" value={stats.maxClimb.toFixed(1)} unit="m/s" />
-              <Tile label="Max sink" value={stats.maxSink.toFixed(1)} unit="m/s" />
-              {hasBattery && stats.minVoltage != null && (
-                <Tile label="Min voltage" value={stats.minVoltage.toFixed(1)} unit="V" />
+              <Tile label="Max climb" value={log.stats.maxClimb.toFixed(1)} unit="m/s" />
+              <Tile label="Max sink" value={log.stats.maxSink.toFixed(1)} unit="m/s" />
+              {log.hasBattery && log.stats.minVoltage != null && (
+                <Tile label="Min voltage" value={log.stats.minVoltage.toFixed(1)} unit="V" />
               )}
-              {hasCurrent && stats.maxCurrent > 0 && (
-                <Tile label="Max current" value={stats.maxCurrent.toFixed(1)} unit="A" />
+              {log.hasCurrent && log.stats.maxCurrent > 0 && (
+                <Tile label="Max current" value={log.stats.maxCurrent.toFixed(1)} unit="A" />
               )}
-              {hasCurrent && stats.maxCapacity > 0 && (
-                <Tile label="Used" value={Math.round(stats.maxCapacity)} unit="mAh" />
+              {log.hasCurrent && log.stats.maxCapacity > 0 && (
+                <Tile label="Used" value={Math.round(log.stats.maxCapacity)} unit="mAh" />
               )}
-              {stats.minRSSI != null && (
-                <Tile label="Min RSSI" value={Math.round(stats.minRSSI)} unit="dB" />
+              {log.stats.minRSSI != null && (
+                <Tile label="Min RSSI" value={Math.round(log.stats.minRSSI)} unit="dB" />
               )}
-              {stats.dominantMode && flightModes.length > 1 && (
+              {log.stats.dominantMode && log.flightModes.length > 1 && (
                 <Tile
                   label="Most-used mode"
-                  value={stats.dominantMode}
-                  unit={`${Math.round(stats.dominantPct * 100)}%`}
+                  value={log.stats.dominantMode}
+                  unit={`${Math.round(log.stats.dominantPct * 100)}%`}
                 />
               )}
             </div>
@@ -206,7 +305,19 @@ function fmtDuration(sec) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-// Switch units below 1 km so a 200 m hover doesn't read "0.20 km".
+// Live-updating elapsed display per step. Pending = blank, active = time
+// since startedAt right now, done = startedAt → finishedAt span.
+function fmtElapsed(timing) {
+  if (!timing || timing.startedAt == null) return ''
+  const end = timing.finishedAt ?? Date.now()
+  const ms = Math.max(0, end - timing.startedAt)
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const totalSec = Math.floor(ms / 1000)
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}m ${s}s`
+}
+
 function fmtDistance(km) {
   if (km < 1) return `${Math.round(km * 1000)} m`
   return `${km.toFixed(2)} km`
@@ -215,6 +326,9 @@ function fmtDistance(km) {
 function modelFromFilename(filename) {
   return filename
     .replace(/\.csv$/i, '')
+    .replace(/\.bbl$/i, '')
+    .replace(/\.bfl$/i, '')
+    .replace(/\.txt$/i, '')
     .replace(/-\d{4}-\d{2}-\d{2}-\d{6}$/, '')
 }
 
