@@ -536,12 +536,20 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         smooth.hdg  = targetHdg
         const camDist = Cesium.Cartesian3.distance(viewer.camera.position, smooth.pos)
         smooth.dist = Math.max(150, Math.min(600, camDist))
-      } else if (speedFactor > 50) {
+      } else if (speedFactor > 200) {
         // Big jump (scrub or initial seek) — teleport rather than chase.
-        // Otherwise lerp would overshoot or oscillate visibly.
+        // Threshold raised from 50 → 200 so normal high-speed playback
+        // (the speed picker maxes at 60×) doesn't trip this every frame.
+        // Genuine scrubs from the timeline produce speedFactors in the
+        // thousands, so they still teleport correctly.
         smooth.pos = target.clone()
         smooth.hdg = targetHdg
-        smooth.dist = targetDist
+        // Distance: respect a manual scroll even on a teleport.
+        // Otherwise scrolling at 60× playback or right after a scrub
+        // would have its zoom level wiped on the next frame.
+        if (!smooth.userDistOverride) {
+          smooth.dist = targetDist
+        }
       } else {
         const posDamp = Math.min(1, 0.05 * speedFactor)
         const hdgDamp = Math.min(1, 0.004 * speedFactor)
@@ -552,10 +560,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         const hdgDelta = ((targetHdg - smooth.hdg + 540) % 360) - 180
         if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, hdgDamp)
         smooth.hdg = ((smooth.hdg % 360) + 360) % 360  // wrap to [0,360)
-        // Skip the auto distance lerp if the user manually scrolled
-        // recently — that would otherwise pull their chosen zoom level
-        // back toward the speed/altitude-derived target.
-        if (!smooth.userDistUntil || performance.now() > smooth.userDistUntil) {
+        // Skip the auto distance lerp if the user manually scrolled.
+        // The flag stays set for the rest of the session unless they
+        // re-enable auto via the toggle button below — earlier this was
+        // a 2.5 s timer but that read as "zoom snaps back" once it
+        // lapsed.
+        if (!smooth.userDistOverride) {
           smooth.dist += (targetDist - smooth.dist) * distDamp
         }
       }
@@ -619,10 +629,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const factor = e.deltaY > 0 ? 1.15 : 0.87
       const next = smooth.dist * factor
       smooth.dist = Math.max(50, Math.min(5000, next))
-      // Suspend the speed/altitude-driven distance lerp briefly so the
-      // camera doesn't immediately drift back to the auto target. Resumes
-      // after a couple of seconds of no scroll.
-      smooth.userDistUntil = performance.now() + 2500
+      // Once the user has expressed a zoom preference, hold it for the
+      // rest of the session. Earlier this was a 2.5 s timer that lapsed
+      // and let the speed/altitude-driven auto-distance pull the camera
+      // back, which read as "scroll doesn't work — it just snaps back".
+      // The auto-toggle button (or a fresh log) re-engages auto distance.
+      smooth.userDistOverride = true
     }
     el.addEventListener('wheel', onWheelAuto, { passive: false })
 
@@ -676,10 +688,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const ac = s.getAircraftEntity?.()
       if (ac) { s.viewer.trackedEntity = ac; s.viewer.camera.constrainedAxis = undefined }
     } else {
-      // Back to auto: release trackedEntity and any residual orbit transform
+      // Back to auto: release trackedEntity and any residual orbit transform.
+      // Also clear the userDistOverride flag so the speed/altitude-driven
+      // auto distance lerp re-engages — explicit opt-in to "drive my zoom
+      // for me" via this button is the way back into the smart-default world.
       s.viewer.trackedEntity = undefined
       s.viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
       s.smooth.pos = null
+      s.smooth.userDistOverride = false
     }
   }
 
