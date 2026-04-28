@@ -310,6 +310,28 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
 
   const gpsRows = useMemo(() => rows.filter(r => r._lat != null && r._lon != null), [rows])
 
+  // Polyline points use a SUBSET of gpsRows. The blackbox mapper produces
+  // ~7000 rows per log (every main frame interpolated linearly between
+  // adjacent GPS frames so the aircraft moves smoothly per frame). That
+  // density is great for the live aircraft entity but feeds Catmull-Rom
+  // smoothing in the path polyline a problem set: subtle GPS noise
+  // between adjacent frames + tight point spacing → tiny S-curves at
+  // every GPS-frame boundary, visible as waves on the path.
+  // Downsample to ~600 points (matches the original GPS rate) so the
+  // smoother sees coarse waypoints and produces a clean curve.
+  const pathRows = useMemo(() => {
+    const target = 600
+    const stride = Math.max(1, Math.floor(gpsRows.length / target))
+    if (stride === 1) return gpsRows
+    const out = []
+    for (let i = 0; i < gpsRows.length; i += stride) out.push(gpsRows[i])
+    // Always include the final row so the path doesn't end short.
+    if (out[out.length - 1] !== gpsRows[gpsRows.length - 1]) {
+      out.push(gpsRows[gpsRows.length - 1])
+    }
+    return out
+  }, [gpsRows])
+
   useEffect(() => {
     if (!containerRef.current || gpsRows.length < 2) return
 
@@ -352,7 +374,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         },
       })
     }
-    for (const r of gpsRows) {
+    // Use the downsampled `pathRows` here, not `gpsRows`. See the
+    // useMemo above for why — feeding the smoother all 7000+ rows
+    // from the BBL mapper makes it produce visible waves at every GPS
+    // frame boundary instead of a clean curve.
+    for (const r of pathRows) {
       const fm = r['FM'] || 'UNKNOWN'
       const pt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0))
       if (fm !== prevFM) { flush(); segPts = segPts.length ? [segPts[segPts.length - 1]] : []; prevFM = fm }
