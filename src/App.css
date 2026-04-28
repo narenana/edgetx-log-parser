@@ -1294,18 +1294,29 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 33, 62, 0.75);
+  /* Theme-aware: --hud-bg is white-translucent in light mode, near-
+     black-translucent in dark mode. The earlier hardcoded navy blue
+     made the icon (rendered in --text2 = dark slate in light mode)
+     vanish against the button's own background. */
+  background: var(--hud-bg);
   border: 1px solid var(--border);
   border-radius: 5px;
-  color: var(--text2);
+  color: var(--text);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
+  /* Subtle shadow so the button reads against any satellite imagery —
+     a dark map tile won't swallow it, a bright tile won't bleach it. */
+  box-shadow: 0 1px 4px var(--shadow-overlay);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   transition: all 0.15s;
 }
-.fullscreen-btn:hover { color: var(--text); border-color: var(--text3); }
+.fullscreen-btn:hover {
+  color: var(--text);
+  border-color: var(--border-bright);
+  background: var(--bg2);
+}
 .fullscreen-btn.active {
   color: var(--cyan);
   border-color: var(--cyan);
