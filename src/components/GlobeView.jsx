@@ -455,7 +455,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         const hdgDelta = ((targetHdg - smooth.hdg + 540) % 360) - 180
         if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, hdgDamp)
         smooth.hdg = ((smooth.hdg % 360) + 360) % 360  // wrap to [0,360)
-        smooth.dist += (targetDist - smooth.dist) * distDamp
+        // Skip the auto distance lerp if the user manually scrolled
+        // recently — that would otherwise pull their chosen zoom level
+        // back toward the speed/altitude-derived target.
+        if (!smooth.userDistUntil || performance.now() > smooth.userDistUntil) {
+          smooth.dist += (targetDist - smooth.dist) * distDamp
+        }
       }
 
       viewer.camera.lookAt(
@@ -486,9 +491,10 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       },
     })
 
-    // Mouse/scroll → manual mode: camera still follows aircraft but user orbits/zooms freely.
-    // We use Cesium.trackedEntity which keeps the camera locked onto the moving aircraft
-    // while letting the ScreenSpaceCameraController handle all mouse rotation/zoom/tilt.
+    // Mouse drag → manual mode: camera still follows aircraft but user
+    // orbits/zooms freely via Cesium's ScreenSpaceCameraController.
+    // We use Cesium.trackedEntity which keeps the camera locked onto
+    // the moving aircraft while Cesium handles input.
     const releaseAuto = () => {
       if (!autoRef.current) return
       autoRef.current = false
@@ -498,7 +504,30 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     }
     const el = containerRef.current
     el.addEventListener('mousedown', releaseAuto)
-    el.addEventListener('wheel', releaseAuto)
+
+    // Wheel in auto mode does NOT release auto — it just adjusts the
+    // follow distance. The previous behaviour (wheel → manual mode)
+    // caused a hard jump-zoom on first scroll: Cesium's `trackedEntity`
+    // snaps to a default offset based on the aircraft's bounding sphere
+    // (tiny model = very close camera), and the scroll event then
+    // applied on top of that already-snapped position. Now scroll just
+    // tweaks `smooth.dist`; the auto-follow camera-distance lerp keeps
+    // it from feeling abrupt. Drag (mousedown above) remains the gesture
+    // that actually means "I want to control this myself".
+    const onWheelAuto = e => {
+      if (!autoRef.current) return
+      e.preventDefault()
+      // ~15 % zoom per notch; slightly less when zoomed close so the
+      // last few notches don't shoot past the aircraft.
+      const factor = e.deltaY > 0 ? 1.15 : 0.87
+      const next = smooth.dist * factor
+      smooth.dist = Math.max(50, Math.min(5000, next))
+      // Suspend the speed/altitude-driven distance lerp briefly so the
+      // camera doesn't immediately drift back to the auto target. Resumes
+      // after a couple of seconds of no scroll.
+      smooth.userDistUntil = performance.now() + 2500
+    }
+    el.addEventListener('wheel', onWheelAuto, { passive: false })
 
     stateRef.current = { viewer, smooth, getAircraftEntity: () => aircraftEntity }
     curRowRef.current = gpsRows[0]
@@ -529,7 +558,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     return () => {
       cancelled = true
       el.removeEventListener('mousedown', releaseAuto)
-      el.removeEventListener('wheel', releaseAuto)
+      el.removeEventListener('wheel', onWheelAuto)
       document.removeEventListener('fullscreenchange', onFsChange)
       resizeObserver?.disconnect()
       stateRef.current = null
