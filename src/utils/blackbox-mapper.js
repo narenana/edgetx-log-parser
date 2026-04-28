@@ -114,13 +114,45 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
     if (gpsTimes && gpsPtr < numGps) {
       const fixOk = i_gpsFix < 0 || cell(gpsFrames, gpsPtr, i_gpsFix, gpsCols) >= 2
       if (fixOk) {
-        if (i_gpsLat >= 0) lat = cell(gpsFrames, gpsPtr, i_gpsLat, gpsCols) / 1e7
-        if (i_gpsLon >= 0) lon = cell(gpsFrames, gpsPtr, i_gpsLon, gpsCols) / 1e7
+        // Interpolate between gpsPtr and gpsPtr+1 using this main row's
+        // timestamp. Without this, every ~7-15 consecutive main rows
+        // share the same GPS frame's lat/lon (GPS arrives at 5-10 Hz,
+        // main at 50-70 Hz post-stride) and the aircraft visually jerks
+        // forward at each GPS boundary. With it, position evolves
+        // smoothly between fixes.
+        const hasNext = gpsPtr + 1 < numGps
+        const tA = gpsTimes[gpsPtr]
+        const tB = hasNext ? gpsTimes[gpsPtr + 1] : tA
+        const span = tB - tA
+        const t = hasNext && span > 0
+          ? Math.max(0, Math.min(1, (tUs - tA) / span))
+          : 0
+        const baseA = gpsPtr * gpsCols
+        const baseB = hasNext ? (gpsPtr + 1) * gpsCols : baseA
+        const lerp = (a, b) => a + (b - a) * t
+
+        if (i_gpsLat >= 0) {
+          lat = lerp(gpsFrames[baseA + i_gpsLat], gpsFrames[baseB + i_gpsLat]) / 1e7
+        }
+        if (i_gpsLon >= 0) {
+          lon = lerp(gpsFrames[baseA + i_gpsLon], gpsFrames[baseB + i_gpsLon]) / 1e7
+        }
         // iNAV 8 stores GPS altitude in METRES MSL (validated against 14
         // real flight logs from a Bangalore field). Older iNAV used cm.
-        if (i_gpsAlt >= 0) gpsAltMslM = cell(gpsFrames, gpsPtr, i_gpsAlt, gpsCols)
-        if (i_gpsSpeed >= 0) gpsSpeedKmh = cell(gpsFrames, gpsPtr, i_gpsSpeed, gpsCols) * 0.036
-        if (i_gpsHdg >= 0) gpsHdg = cell(gpsFrames, gpsPtr, i_gpsHdg, gpsCols) / 10
+        if (i_gpsAlt >= 0) {
+          gpsAltMslM = lerp(gpsFrames[baseA + i_gpsAlt], gpsFrames[baseB + i_gpsAlt])
+        }
+        if (i_gpsSpeed >= 0) {
+          gpsSpeedKmh = lerp(gpsFrames[baseA + i_gpsSpeed], gpsFrames[baseB + i_gpsSpeed]) * 0.036
+        }
+        if (i_gpsHdg >= 0) {
+          // Heading lerps through the shortest arc to avoid 359°→1°
+          // shooting around the long way.
+          const hA = gpsFrames[baseA + i_gpsHdg] / 10
+          const hB = gpsFrames[baseB + i_gpsHdg] / 10
+          const d = ((hB - hA + 540) % 360) - 180
+          gpsHdg = (hA + d * t + 360) % 360
+        }
         hasFix = lat !== null && lon !== null && !(lat === 0 && lon === 0)
       }
     }
