@@ -479,15 +479,22 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
 
     // ── Fly-away guard state ─────────────────────────────────────────────────
     // Counts consecutive frames in which the camera/smooth state has gone
-    // out of bounds. Once it crosses FLY_AWAY_DEBOUNCE frames in a row, we
-    // hard-reset back to auto mode with sane defaults. The cooldown stops
-    // a broken state from triggering recovery on every single frame in a
-    // tight loop — give the reset one second to settle before re-arming.
+    // CATASTROPHICALLY bad (NaN/Infinity, or camera 30+ km from aircraft).
+    // Tight thresholds + long debounce so that legitimate transients (the
+    // initial flyTo settling, scrub teleports, brief speedFactor spikes)
+    // never trip it — only genuine state corruption does.
+    //
+    // We deliberately DO NOT trigger on smooth.dist being merely "out of
+    // range" — that's an invariant violation worth flagging in tests, but
+    // the production lerp clamps it back into range within a few frames
+    // on its own. Reacting too aggressively here was causing visible
+    // 1 Hz flicker on healthy scenes, which is worse than the bug it's
+    // supposed to fix.
     let flyAwayStreak = 0
     let flyAwayCount = 0
     let lastFlyAwayResetMs = 0
-    const FLY_AWAY_DEBOUNCE = 8           // ~130 ms at 60 fps
-    const FLY_AWAY_COOLDOWN_MS = 1000
+    const FLY_AWAY_DEBOUNCE = 30          // ~500 ms at 60 fps; ~3 s at 10 fps
+    const FLY_AWAY_COOLDOWN_MS = 5000
 
     viewer.scene.preRender.addEventListener(() => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
@@ -510,16 +517,18 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           const camPos = viewer.camera.positionWC
           const camToAc = acPos ? Cesium.Cartesian3.distance(camPos, acPos) : null
 
-          const distBad = !Number.isFinite(smooth.dist) || smooth.dist < 40 || smooth.dist > 5500
+          // Catastrophic-only checks. We trigger ONLY on:
+          //   - genuinely non-finite numbers (NaN / Infinity), which never
+          //     show up in a healthy scene; and
+          //   - camera-to-aircraft distance well past anything the auto
+          //     follow can produce: max smooth.dist (5 km) + scrub
+          //     transient (~few km) is comfortably under 30 km / 200 km.
+          const distBad = !Number.isFinite(smooth.dist)
           const hdgBad  = !Number.isFinite(smooth.hdg)
           const posBad  = !Number.isFinite(smooth.pos.x) || !Number.isFinite(smooth.pos.y) || !Number.isFinite(smooth.pos.z)
           const camBad  = !Number.isFinite(camPos.x) || !Number.isFinite(camPos.y) || !Number.isFinite(camPos.z)
-          // Auto: camera sits ~smooth.dist (max 5 km) from aircraft. A 12 km
-          //   gap means tracking is broken.
-          // Manual: user might wide-zoom intentionally. 100 km is well past
-          //   any valid sightseeing distance.
-          const farLimit = autoRef.current ? 12000 : 100000
-          const camTooFar = camToAc != null && camToAc > farLimit
+          const farLimit = autoRef.current ? 30000 : 200000
+          const camTooFar = camToAc != null && Number.isFinite(camToAc) && camToAc > farLimit
 
           if (distBad || hdgBad || posBad || camBad || camTooFar) {
             flyAwayStreak++
@@ -544,14 +553,17 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
               smooth.lastVt = null
               // Force auto mode if the user was in manual — fly-aways
               // typically happen when manual orbit gets confused, and
-              // forcing back to auto is the only way to re-anchor.
+              // forcing back to auto is the only way to re-anchor. The
+              // lookAtTransform(IDENTITY) call ONLY runs when we're
+              // actually leaving manual; calling it in auto would clobber
+              // the per-frame lookAt and produce a one-frame visual jump.
               if (!autoRef.current) {
                 autoRef.current = true
                 setAutoMode(true)
+                try {
+                  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
+                } catch (_) {}
               }
-              try {
-                viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
-              } catch (_) {}
             }
           } else {
             flyAwayStreak = 0
