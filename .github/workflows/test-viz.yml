@@ -1,0 +1,119 @@
+name: Visualisation Tests
+
+# Gates the GlobeView camera/control behaviour. Runs the Puppeteer harness
+# at tests/visualisation/ which:
+#   - asserts INV-1..5 invariants after every action
+#   - runs named cases (B = bounded zoom, G = fly-away recovery,
+#     N = nav widget, D = mouse drag)
+#   - fuzz-tests random action sequences with seeded PRNG so any failure
+#     replays deterministically via `node harness.js --replay <seed>`
+#
+# Failure dumps land in tests/visualisation/fuzz-failures/seed-N.json
+# and are uploaded as a workflow artifact for offline triage.
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      fuzz_seeds:
+        description: 'Number of fuzz seeds to run'
+        default: '20'
+        required: false
+      fuzz_actions:
+        description: 'Actions per seed'
+        default: '200'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # PRs cancel previous in-flight runs of themselves; main keeps history.
+  group: viz-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test-viz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # PR/push gate uses a small fuzz run (fast feedback). Manual dispatch
+    # can crank it via inputs. Master push runs the larger gate to catch
+    # anything PR-time fuzz happened to skip.
+    env:
+      FUZZ_SEEDS: ${{ github.event.inputs.fuzz_seeds || (github.event_name == 'pull_request' && '5' || '20') }}
+      FUZZ_ACTIONS: ${{ github.event.inputs.fuzz_actions || (github.event_name == 'pull_request' && '80' || '200') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install root deps
+        run: npm install --no-audit --no-fund
+
+      - name: Build viewer (web target)
+        run: npm run build
+        env:
+          VITE_BUILD_TARGET: web
+          # Cesium token isn't required for the harness — the viewer
+          # falls back to OSM imagery and the harness only inspects
+          # state via window.__viewerState (no imagery checks).
+          VITE_CESIUM_TOKEN: ${{ secrets.VITE_CESIUM_TOKEN }}
+
+      - name: Install Chrome
+        # browser-actions/setup-chrome installs a stable Chrome and
+        # exports CHROME_PATH (env). Our harness reads CHROME_PATH so
+        # this is enough — no puppeteer chromium download needed.
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+
+      - name: Install harness deps
+        working-directory: tests/visualisation
+        run: npm install --no-audit --no-fund
+
+      - name: Serve dist/ in background
+        # `vite preview` serves the production build on 4173 by default.
+        # We use --host to make sure puppeteer can reach it on
+        # 127.0.0.1, and run it in the background.
+        run: |
+          nohup npx vite preview --port 4173 --host 127.0.0.1 > preview.log 2>&1 &
+          echo $! > preview.pid
+          # Wait until the server actually responds before continuing.
+          # `npx wait-on` returns non-zero if it never sees a 200, which
+          # fails the step instead of letting the test silently time out.
+          npx wait-on -t 30000 http://127.0.0.1:4173/
+
+      - name: Run named cases + fuzz
+        env:
+          TEST_URL: http://127.0.0.1:4173/
+          TEST_LOG: ${{ github.workspace }}/public/sample-fixed-wing.csv
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        working-directory: tests/visualisation
+        run: |
+          echo "Running named cases first (must all pass), then fuzz $FUZZ_SEEDS x $FUZZ_ACTIONS"
+          node harness.js --fuzz
+
+      - name: Upload fuzz failure dumps (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures-${{ github.run_id }}
+          path: |
+            tests/visualisation/fuzz-failures/
+            tests/visualisation/preview.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Stop preview server
+        if: always()
+        run: |
+          if [[ -f preview.pid ]]; then kill "$(cat preview.pid)" 2>/dev/null || true; fi
