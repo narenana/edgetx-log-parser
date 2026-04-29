@@ -444,10 +444,28 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const LEFT_WT  = new Cesium.Cartesian3(-0.4, -4.85, 0.30)
       const RIGHT_WT = new Cesium.Cartesian3(-0.4,  4.85, 0.30)
       const navAircraftEntityGetter = () => aircraftEntity
-      addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
+      const leftStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
                        Cesium.Color.fromCssColorString('#ff2020'), 0)
-      addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
+      const rightStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
                        Cesium.Color.fromCssColorString('#20ff60'), 250)
+
+      // Debug hooks: lets the user isolate visual issues by turning off
+      // the strobes (and altitude stem) and seeing if the model still
+      // appears to deform. Console:
+      //   window.__toggleStrobes()  // hide/show wingtip strobes
+      //   window.__toggleAircraft() // hide/show aircraft model
+      if (typeof window !== 'undefined') {
+        window.__toggleStrobes = () => {
+          const next = !leftStrobe.show
+          leftStrobe.show = next; rightStrobe.show = next
+          return next ? 'strobes ON' : 'strobes OFF'
+        }
+        window.__toggleAircraft = () => {
+          if (!aircraftEntity) return 'aircraft entity not yet loaded'
+          aircraftEntity.show = !aircraftEntity.show
+          return aircraftEntity.show ? 'aircraft ON' : 'aircraft OFF'
+        }
+      }
     }).catch(err => console.error('aircraft GLB build failed:', err))
 
     // Altitude stem
@@ -908,6 +926,8 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         delete window.__viewerCorrupt
         delete window.__viewerForceReset
         delete window.__flyAwayCount
+        delete window.__toggleStrobes
+        delete window.__toggleAircraft
       }
       if (glbUrlRef.current) { URL.revokeObjectURL(glbUrlRef.current); glbUrlRef.current = null }
       try { viewer.destroy() } catch (_) {}
