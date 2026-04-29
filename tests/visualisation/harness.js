@@ -87,10 +87,30 @@ async function newSession() {
   const browser = await puppeteer.launch({
     executablePath: CHROME_PATH,
     headless: HEADLESS,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: [
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      // Headless Chrome aggressively throttles rAF / setTimeout when the
+      // window is occluded or backgrounded. Cesium's preRender only
+      // fires while the scene actually renders, so under throttling the
+      // per-frame tick rate collapses — the fly-away guard's 8-frame
+      // debounce never accumulates, nav-widget rAF holds drift instead
+      // of stepping, etc. These four flags pin the renderer to its
+      // un-throttled foreground rate.
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-features=CalculateNativeWinOcclusion',
+    ],
     defaultViewport: VIEWPORT,
   })
   const page = await browser.newPage()
+  // Force document.visibilityState = 'visible' — rAF throttling also
+  // checks this independently of the Chrome flags above.
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible' })
+    Object.defineProperty(document, 'hidden', { get: () => false })
+  })
   page.on('pageerror', err => console.error('[pageerror]', err.message))
   page.on('console', msg => {
     const t = msg.type()
@@ -389,9 +409,10 @@ const NAMED_CASES = [
       const before = await page.evaluate(() => window.__viewerState())
       const ok = await page.evaluate(() => window.__viewerCorrupt('dist'))
       if (!ok) return { pass: false, detail: 'corrupt hook missing' }
-      // Wait a bit longer than DEBOUNCE (8 frames) + COOLDOWN-prep + a few
-      // recovery frames. ~400 ms is plenty.
-      await sleep(450)
+      // Wait long enough for DEBOUNCE (8 frames) + recovery + 1 s
+      // cooldown to fully clear, even on CI-throttled headless Chrome
+      // where rAF can run nearer 10 fps than 60 fps. 1500 ms covers it.
+      await sleep(1500)
       const after = await page.evaluate(() => window.__viewerState())
       const recovered = after.smooth.dist >= 50 && after.smooth.dist <= 5000
       const counted = after.flyAwayCount > before.flyAwayCount
@@ -451,7 +472,7 @@ const NAMED_CASES = [
       if (mid.autoMode) return { pass: false, detail: 'drag did not enter manual' }
       // Now corrupt — guard should force auto back on.
       await page.evaluate(() => window.__viewerCorrupt('dist'))
-      await sleep(450)
+      await sleep(1500)
       const after = await page.evaluate(() => window.__viewerState())
       const pass = after.autoMode === true && after.smooth.dist <= 5000
       return { pass, detail: `auto:${mid.autoMode}→${after.autoMode} dist:${after.smooth.dist?.toFixed?.(0)}` }
@@ -751,12 +772,17 @@ async function main() {
         )
         if (ok) pass++
         else fail++
-        // Reset zoom override between cases to keep tests independent.
+        // Hard-reset between cases so corruption from one test never
+        // bleeds into the next. The toggle-dance fallback handles the
+        // case where the dev hook isn't exposed (e.g., a stale build).
         await page.evaluate(() => {
+          if (typeof window.__viewerForceReset === 'function') {
+            window.__viewerForceReset()
+            return
+          }
           const btn = document.querySelector('.globe-auto-btn')
           if (btn && !btn.classList.contains('active')) btn.click()
           if (btn && btn.classList.contains('active')) {
-            // Force a clean restart of override flag via toggle dance
             btn.click(); btn.click()
           }
         })
@@ -767,6 +793,10 @@ async function main() {
       }
     }
     console.log(`\n  Named: ${pass} passed, ${fail} failed`)
+    // Named-case failures must fail the build — earlier this only set
+    // process.exitCode for fuzz failures, so a CI "success" could ship
+    // 17 broken named cases. Promote both classes to gating failures.
+    if (fail > 0) process.exitCode = 1
 
     // ── Fuzz ────────────────────────────────────────────────────────────
     if (RUN_FUZZ) {

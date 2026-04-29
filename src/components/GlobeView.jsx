@@ -834,6 +834,30 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         }
         return true
       }
+      // Test-only hook: hard-reset the smooth/auto state. The harness
+      // calls this between named cases so corruption from one test
+      // never bleeds into the next. Production code never calls this —
+      // toggle the .globe-auto-btn for the user-visible reset path.
+      window.__viewerForceReset = () => {
+        const s = stateRef.current
+        if (!s) return false
+        s.smooth.pos = null
+        s.smooth.hdg = 0
+        s.smooth.dist = 500
+        s.smooth.userDistOverride = false
+        s.smooth.lastReal = null
+        s.smooth.lastVt = null
+        if (!autoRef.current) {
+          autoRef.current = true
+          setAutoMode(true)
+        }
+        try {
+          s.viewer.trackedEntity = undefined
+          s.viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
+        } catch (_) {}
+        window.__flyAwayCount = 0
+        return true
+      }
     }
     curRowRef.current = gpsRows[0]
 
@@ -870,6 +894,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       if (typeof window !== 'undefined') {
         delete window.__viewerState
         delete window.__viewerCorrupt
+        delete window.__viewerForceReset
         delete window.__flyAwayCount
       }
       if (glbUrlRef.current) { URL.revokeObjectURL(glbUrlRef.current); glbUrlRef.current = null }
