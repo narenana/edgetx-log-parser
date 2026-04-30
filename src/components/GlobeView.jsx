@@ -399,9 +399,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
     // pathRows sorted ascending by _tSec — binary-search for the
-    // vt-aligned index. tubeIdxRef.current is the smoothed-position index
-    // where past meets future. Declared early so the FM-segment
-    // CallbackProperty closures below can capture the same ref.
+    // vt-aligned index, then interpolate WITHIN the bracketing pair so
+    // the split lands exactly at the aircraft's actual position rather
+    // than at the next pathRow boundary (which could be up to ~1 s of
+    // path AHEAD of the aircraft, making the FM-coloured "past" appear
+    // to lead the model).
     const tubeIdxRef = { current: 0 }
     const updateTubeIdx = () => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
@@ -411,7 +413,22 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         if (pathRows[mid]._tSec < vt) lo = mid + 1
         else hi = mid
       }
-      tubeIdxRef.current = Math.min(pathPositions.length - 1, lo * SMOOTH_STEPS)
+      // lo = first pathRows index with _tSec >= vt.
+      // The aircraft is positioned BETWEEN pathRows[lo-1] and pathRows[lo].
+      let smIdx
+      if (lo === 0) {
+        smIdx = 0
+      } else {
+        const t0 = pathRows[lo - 1]._tSec
+        const t1 = pathRows[lo]._tSec
+        const frac = t1 > t0 ? (vt - t0) / (t1 - t0) : 0
+        const clamped = frac < 0 ? 0 : frac > 1 ? 1 : frac
+        // Catmull-rom inserts SMOOTH_STEPS samples between each pair of
+        // pathRows, so the aircraft's smoothed-position index inside
+        // the bracket is (lo-1)*STEPS + fraction*STEPS, floored.
+        smIdx = (lo - 1) * SMOOTH_STEPS + Math.floor(clamped * SMOOTH_STEPS)
+      }
+      tubeIdxRef.current = Math.min(pathPositions.length - 1, smIdx)
     }
     updateTubeIdx()
 
