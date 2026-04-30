@@ -41,11 +41,79 @@ export default function Dashboard({ log, theme = 'light' }) {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [speedExpanded, setSpeedExpanded] = useState(false)
+  const [bookmarks, setBookmarks] = useState([]) // sorted ascending row indices
   const speedRef = useRef(speed)
   const virtualTimeRef = useRef(0)
+  // Mirror bookmarks into a ref so the rAF playback loop can read the
+  // latest list without restarting every time the array changes.
+  const bookmarksRef = useRef(bookmarks)
   useEffect(() => { speedRef.current = speed }, [speed])
+  useEffect(() => { bookmarksRef.current = bookmarks }, [bookmarks])
 
   const { rows, events } = log
+
+  // ── Bookmarks: per-log, persisted to localStorage ───────────────────────────
+  // Stable fingerprint = filename + row-count + first-row-tSec. Two
+  // different logs with the same filename (recorded after a reset, or
+  // re-opened after re-parsing) get distinct keys via the row metadata.
+  const bookmarkKey = useMemo(() => {
+    const fname = log.filename || 'untitled'
+    const t0 = rows[0]?._tSec ?? 0
+    return `bm:${fname}:${rows.length}:${Math.round(t0)}`
+  }, [log.filename, rows])
+
+  // Load bookmarks when the log (or its fingerprint) changes.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(bookmarkKey)
+      const parsed = raw ? JSON.parse(raw) : []
+      setBookmarks(Array.isArray(parsed) ? parsed.filter(i => Number.isInteger(i) && i >= 0 && i < rows.length) : [])
+    } catch { setBookmarks([]) }
+  }, [bookmarkKey, rows.length])
+
+  // Save bookmarks on change. Skip the very first run (initial empty array
+  // from useState) — the load effect above writes the canonical value.
+  const bmFirstRun = useRef(true)
+  useEffect(() => {
+    if (bmFirstRun.current) { bmFirstRun.current = false; return }
+    try { localStorage.setItem(bookmarkKey, JSON.stringify(bookmarks)) } catch {}
+  }, [bookmarkKey, bookmarks])
+
+  // True when the current cursor position matches an existing bookmark
+  // (within a small tolerance of ±2 rows, so users don't have to land on
+  // the exact same frame to "remove" it).
+  const cursorOnBookmark = useMemo(() => {
+    return bookmarks.some(i => Math.abs(i - cursorIndex) <= 2)
+  }, [bookmarks, cursorIndex])
+
+  const saveBookmark = useCallback(() => {
+    setBookmarks(prev => {
+      // Toggle: if cursor is on (or near) an existing bookmark, remove it
+      const near = prev.find(i => Math.abs(i - cursorIndex) <= 2)
+      if (near != null) {
+        track('bookmark_removed')
+        return prev.filter(i => i !== near)
+      }
+      track('bookmark_saved', { count: prev.length + 1 })
+      return [...prev, cursorIndex].sort((a, b) => a - b)
+    })
+  }, [cursorIndex])
+
+  const jumpToBookmark = useCallback((direction) => {
+    if (bookmarks.length === 0) return
+    let target
+    if (direction === 'next') {
+      target = bookmarks.find(i => i > cursorIndex)
+      if (target == null) target = bookmarks[0]                  // wrap → first
+    } else {
+      target = [...bookmarks].reverse().find(i => i < cursorIndex)
+      if (target == null) target = bookmarks[bookmarks.length - 1] // wrap → last
+    }
+    setCursorIndex(target)
+    virtualTimeRef.current = rows[target]._tSec
+    setPlaying(false)
+    track('bookmark_jumped', { direction })
+  }, [bookmarks, cursorIndex, rows])
 
   // ── Per-log analytics summary (privacy-safe aggregates only) ────────────────
   // Fired once per loaded log. No GPS, no flight content — just shape metrics
@@ -94,6 +162,23 @@ export default function Dashboard({ log, theme = 'light' }) {
         }
         let next = prev
         while (next < rows.length - 1 && rows[next + 1]._tSec <= vt) next++
+        // Pause on bookmark crossing. We only fire when the cursor has
+        // ADVANCED into a bookmark — i.e. there's a bookmark strictly
+        // greater than `prev` and at-or-before `next`. Pressing play
+        // while parked on a bookmark therefore doesn't immediately
+        // re-pause; we keep going until we cross the NEXT one.
+        if (next > prev) {
+          const bms = bookmarksRef.current
+          // bms is sorted ascending — first match is the closest one
+          // we just rolled past.
+          const hit = bms.find(b => b > prev && b <= next)
+          if (hit != null) {
+            setPlaying(false)
+            virtualTimeRef.current = rows[hit]._tSec
+            track('bookmark_auto_pause')
+            return hit
+          }
+        }
         // React bails on a state set if the value is identical, so frames
         // where the source row didn't change are essentially free.
         return next
@@ -269,6 +354,16 @@ export default function Dashboard({ log, theme = 'light' }) {
         {/* Playback controls */}
         <div className="playback-row">
           <button
+            className="bookmark-btn nav-btn-prev"
+            onClick={() => jumpToBookmark('prev')}
+            disabled={bookmarks.length === 0}
+            title="Jump to previous bookmark"
+            aria-label="Jump to previous bookmark"
+          >
+            ⏮
+          </button>
+
+          <button
             className={`play-btn${playing ? ' active' : ''}`}
             onClick={() => {
               setPlaying(p => {
@@ -280,6 +375,26 @@ export default function Dashboard({ log, theme = 'light' }) {
             title="Play / Pause (Space)"
           >
             {playing ? '⏸' : '▶'}
+          </button>
+
+          <button
+            className="bookmark-btn nav-btn-next"
+            onClick={() => jumpToBookmark('next')}
+            disabled={bookmarks.length === 0}
+            title="Jump to next bookmark"
+            aria-label="Jump to next bookmark"
+          >
+            ⏭
+          </button>
+
+          <button
+            className={`bookmark-btn save-bookmark${cursorOnBookmark ? ' active' : ''}`}
+            onClick={saveBookmark}
+            title={cursorOnBookmark ? 'Remove bookmark here' : 'Save bookmark at current position'}
+            aria-label={cursorOnBookmark ? 'Remove bookmark here' : 'Save bookmark at current position'}
+            aria-pressed={cursorOnBookmark}
+          >
+            {cursorOnBookmark ? '★' : '☆'}
           </button>
 
           {/* Speed picker — full row of pills on desktop, single chip
@@ -327,20 +442,36 @@ export default function Dashboard({ log, theme = 'light' }) {
           onEventClick={type => track('event_marker_clicked', { type })}
         />
 
-        {/* Timeline scrubber */}
-        <input
-          type="range"
-          className="timeline-scrubber"
-          min={0}
-          max={rows.length - 1}
-          value={cursorIndex}
-          onChange={e => {
-            const idx = Number(e.target.value)
-            setCursorIndex(idx)
-            virtualTimeRef.current = rows[idx]._tSec
-            setPlaying(false)
-          }}
-        />
+        {/* Timeline scrubber + bookmark markers. Markers sit in an
+            overlay div positioned over the scrubber — they don't
+            intercept clicks (pointer-events: none in CSS) so the
+            scrubber's drag still works through them. */}
+        <div className="scrubber-wrap">
+          <input
+            type="range"
+            className="timeline-scrubber"
+            min={0}
+            max={rows.length - 1}
+            value={cursorIndex}
+            onChange={e => {
+              const idx = Number(e.target.value)
+              setCursorIndex(idx)
+              virtualTimeRef.current = rows[idx]._tSec
+              setPlaying(false)
+            }}
+          />
+          {bookmarks.length > 0 && (
+            <div className="bookmark-marks" aria-hidden="true">
+              {bookmarks.map(idx => (
+                <span
+                  key={idx}
+                  className="bookmark-mark"
+                  style={{ left: `${(idx / (rows.length - 1)) * 100}%` }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

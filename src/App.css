@@ -875,27 +875,79 @@ body {
   margin-bottom: 8px;
 }
 
-.play-btn {
-  width: 44px;
-  height: 36px;
+.play-btn,
+.bookmark-btn {
+  width: 48px;
+  height: 42px;
   background: var(--bg3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text);
-  font-size: 16px;
+  font-size: 17px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.1s;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
   flex: none;
 }
-.play-btn:hover { background: var(--hover-bg); border-color: var(--border-bright); }
+.play-btn { font-size: 18px; }
+.play-btn:hover,
+.bookmark-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
+  border-color: var(--border-bright);
+}
 .play-btn.active {
   background: var(--blue);
   border-color: var(--blue);
   color: var(--on-blue-text);
   box-shadow: 0 2px 10px var(--shadow-card);
+}
+
+/* Bookmark navigation (prev / next). Visually quieter than play. */
+.bookmark-btn { font-size: 14px; }
+.bookmark-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Save-bookmark uses a star: outline (☆) when nothing here, solid (★) when
+   the cursor is on/near a bookmark. The latter is highlighted so the user
+   knows clicking again will REMOVE rather than re-save. */
+.bookmark-btn.save-bookmark {
+  font-size: 18px;
+}
+.bookmark-btn.save-bookmark.active {
+  background: var(--bg);
+  border-color: var(--orange, #d56e10);
+  color: var(--orange, #d56e10);
+  box-shadow: 0 0 0 1px var(--orange, #d56e10);
+}
+
+/* Scrubber + bookmark marker overlay */
+.scrubber-wrap {
+  position: relative;
+  width: 100%;
+}
+.bookmark-marks {
+  /* Sits over the scrubber. Doesn't intercept clicks — scrubber gets them. */
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Slight inset so markers align with the visible track, not the
+     range element's full padding-box. The scrubber itself is 4 px tall
+     centred vertically, so we centre the marks too. */
+  display: flex;
+  align-items: center;
+}
+.bookmark-mark {
+  position: absolute;
+  width: 8px;
+  height: 14px;
+  margin-left: -4px;
+  background: var(--orange, #d56e10);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--bg);
 }
 
 .speed-btns {
@@ -1148,8 +1200,19 @@ body {
   .view-toggle-label { display: none; }
   .view-toggle-btn { padding: 4px 10px; font-size: 11px; min-height: 28px; }
 
-  /* Larger touch targets for playback. */
-  .play-btn { width: 40px; height: 36px; font-size: 16px; }
+  /* Larger touch targets for playback — Apple HIG recommends 44 px
+     minimum on iOS. Going slightly bigger on phones because thumb
+     accuracy on a sticky bottom bar is worse than a precise click. */
+  .play-btn,
+  .bookmark-btn {
+    width: 52px;
+    height: 48px;
+    font-size: 18px;
+    border-radius: 10px;
+  }
+  .play-btn { font-size: 20px; }
+  .bookmark-btn { font-size: 16px; }
+  .bookmark-btn.save-bookmark { font-size: 22px; }
 
   /* Speed picker collapses to a single chip on phones — see .speed-picker
      below. The full pill row stays in the DOM for screen-reader access; CSS
