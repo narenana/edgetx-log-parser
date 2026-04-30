@@ -44,7 +44,11 @@ export default function Dashboard({ log, theme = 'light' }) {
   const [bookmarks, setBookmarks] = useState([]) // sorted ascending row indices
   const speedRef = useRef(speed)
   const virtualTimeRef = useRef(0)
+  // Mirror bookmarks into a ref so the rAF playback loop can read the
+  // latest list without restarting every time the array changes.
+  const bookmarksRef = useRef(bookmarks)
   useEffect(() => { speedRef.current = speed }, [speed])
+  useEffect(() => { bookmarksRef.current = bookmarks }, [bookmarks])
 
   const { rows, events } = log
 
@@ -158,6 +162,23 @@ export default function Dashboard({ log, theme = 'light' }) {
         }
         let next = prev
         while (next < rows.length - 1 && rows[next + 1]._tSec <= vt) next++
+        // Pause on bookmark crossing. We only fire when the cursor has
+        // ADVANCED into a bookmark — i.e. there's a bookmark strictly
+        // greater than `prev` and at-or-before `next`. Pressing play
+        // while parked on a bookmark therefore doesn't immediately
+        // re-pause; we keep going until we cross the NEXT one.
+        if (next > prev) {
+          const bms = bookmarksRef.current
+          // bms is sorted ascending — first match is the closest one
+          // we just rolled past.
+          const hit = bms.find(b => b > prev && b <= next)
+          if (hit != null) {
+            setPlaying(false)
+            virtualTimeRef.current = rows[hit]._tSec
+            track('bookmark_auto_pause')
+            return hit
+          }
+        }
         // React bails on a state set if the value is identical, so frames
         // where the source row didn't change are essentially free.
         return next
