@@ -311,6 +311,10 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   const curRowRef     = useRef(null)
   const trajHdgRef    = useRef(0)
   const trajPitchRef  = useRef(0)
+  // Smoothed copy of the telemetry _pitchDeg. Used for the model's
+  // attitude (matches the HUD), kept separate from trajPitchRef which
+  // tracks trajectory slope.
+  const attitudePitchRef = useRef(0)
   const autoRef       = useRef(true)
   const hudRef        = useRef(null)
   const glbUrlRef     = useRef(null)
@@ -539,14 +543,13 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           // Our nose is at -Z, so at HPR=0 nose points West.
           // HPR heading CW from North: West→North needs +π/2 offset.
           //
-          // Pitch uses the smoothed trajectory slope (trajPitchRef) —
-          // even though the telemetry stream has _pitchDeg, feeding it
-          // raw makes the model jitter every frame on noisy logs and
-          // ruins the smoothness of the visualisation. trajPitchRef is
-          // updated with damping in preRender below.
+          // Pitch from telemetry, smoothed in preRender (attitudePitchRef)
+          // so per-row noise doesn't jitter the model. The smoothing
+          // step also handles the missing-value case so HPR never gets
+          // NaN.
           const hpr = new Cesium.HeadingPitchRoll(
             trajHdgRef.current * D2R + Math.PI / 2,
-            trajPitchRef.current * D2R,
+            attitudePitchRef.current * D2R,
             -(r?._rollDeg ?? 0) * D2R
           )
           return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
@@ -748,6 +751,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           const newPitch = Math.atan2((gp2['Alt(m)'] ?? 0) - (gp1['Alt(m)'] ?? 0), hd) / D2R
           trajPitchRef.current += (newPitch - trajPitchRef.current) * 0.05
         }
+      }
+
+      // Smoothed telemetry pitch — used for the model's actual attitude.
+      // Heavier damping than trajPitchRef so per-row noise doesn't make
+      // the model jitter, but light enough to feel responsive (~5 frames
+      // to converge on a step change).
+      if (Number.isFinite(r?._pitchDeg)) {
+        attitudePitchRef.current += (r._pitchDeg - attitudePitchRef.current) * 0.20
       }
 
       const now = performance.now()
