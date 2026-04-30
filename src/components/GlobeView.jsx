@@ -516,9 +516,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     // on its own. Reacting too aggressively here was causing visible
     // 1 Hz flicker on healthy scenes, which is worse than the bug it's
     // supposed to fix.
-    let flyAwayStreak = 0
-    let flyAwayCount = 0
-    let lastFlyAwayResetMs = 0
+    // Counters live on a single object so __viewerForceReset (test
+    // hook) can clear them in one spot. lastResetMs in particular needs
+    // to be re-zeroable so the harness can re-arm the guard between
+    // named cases without waiting out the full 5 s cooldown.
+    const guard = { streak: 0, count: 0, lastResetMs: 0 }
     const FLY_AWAY_DEBOUNCE = 30          // ~500 ms at 60 fps; ~3 s at 10 fps
     const FLY_AWAY_COOLDOWN_MS = 5000
 
@@ -537,7 +539,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       // a user might intentionally zoom out far.
       {
         const nowMs = performance.now()
-        const inCooldown = (nowMs - lastFlyAwayResetMs) < FLY_AWAY_COOLDOWN_MS
+        const inCooldown = (nowMs - guard.lastResetMs) < FLY_AWAY_COOLDOWN_MS
         if (smooth.pos != null && !inCooldown) {
           const acPos = aircraftEntity?.position?.getValue?.(viewer.clock.currentTime) ?? null
           const camPos = viewer.camera.positionWC
@@ -557,12 +559,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           const camTooFar = camToAc != null && Number.isFinite(camToAc) && camToAc > farLimit
 
           if (distBad || hdgBad || posBad || camBad || camTooFar) {
-            flyAwayStreak++
-            if (flyAwayStreak >= FLY_AWAY_DEBOUNCE) {
-              flyAwayStreak = 0
-              flyAwayCount++
-              lastFlyAwayResetMs = nowMs
-              if (typeof window !== 'undefined') window.__flyAwayCount = flyAwayCount
+            guard.streak++
+            if (guard.streak >= FLY_AWAY_DEBOUNCE) {
+              guard.streak = 0
+              guard.count++
+              guard.lastResetMs = nowMs
+              if (typeof window !== 'undefined') window.__flyAwayCount = guard.count
               console.warn('[GlobeView] fly-away detected — resetting to auto', {
                 smoothDist: smooth.dist, hdg: smooth.hdg, camToAc,
                 distBad, hdgBad, posBad, camBad, camTooFar,
@@ -592,7 +594,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
               }
             }
           } else {
-            flyAwayStreak = 0
+            guard.streak = 0
           }
         }
       }
@@ -702,7 +704,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         smooth.pos  = target.clone()
         smooth.hdg  = targetHdg
         const camDist = Cesium.Cartesian3.distance(viewer.camera.position, smooth.pos)
-        smooth.dist = Math.max(150, Math.min(600, camDist))
+        // If the camera position came in as NaN (e.g. recovering from a
+        // corrupted state), camDist is NaN — clamp falls through to
+        // NaN which then poisons the next frame. Default to 500 m.
+        const safe = Number.isFinite(camDist) ? camDist : 500
+        smooth.dist = Math.max(150, Math.min(600, safe))
       } else if (speedFactor > 200) {
         // Big jump (scrub or initial seek) — teleport rather than chase.
         // Threshold raised from 50 → 200 so normal high-speed playback
@@ -776,6 +782,9 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     // current position seeds the orbit, and the manual-mode branch in
     // preRender keeps the transform synced to the moving aircraft.
     const releaseAuto = () => {
+      if (typeof window !== 'undefined') {
+        window.__releaseAutoCalls = (window.__releaseAutoCalls || 0) + 1
+      }
       if (!autoRef.current) return
       autoRef.current = false
       setAutoMode(false)
@@ -797,7 +806,16 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       viewer.camera.constrainedAxis = undefined
     }
     const el = containerRef.current
-    el.addEventListener('mousedown', releaseAuto)
+    // Register on BOTH mousedown and pointerdown, AND use capture phase.
+    // Cesium's ScreenSpaceEventHandler attaches pointer-event listeners
+    // on the canvas and stops propagation in the bubble phase, so a
+    // bubble-phase mousedown listener on the parent container never
+    // hears real puppeteer/desktop drag gestures (only DOM-synthesized
+    // ones). Capture-phase + pointerdown wins both: it fires before
+    // Cesium can swallow the event, and on every input mode (mouse,
+    // pen, touch) including modern Chrome's pointer-only path.
+    el.addEventListener('pointerdown', releaseAuto, true)
+    el.addEventListener('mousedown', releaseAuto, true)
 
     // Wheel in auto mode does NOT release auto — it just adjusts the
     // follow distance. The previous behaviour (wheel → manual mode)
@@ -849,7 +867,21 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
             posZ: s.smooth.pos?.z,
             userDistOverride: !!s.smooth.userDistOverride,
           },
-          camera: { x: camPos.x, y: camPos.y, z: camPos.z },
+          camera: {
+            x: camPos.x, y: camPos.y, z: camPos.z,
+            // Cesium-tracked heading + pitch (radians). Tests use these
+            // to verify that drag/rotate actually moves the camera, which
+            // smooth.hdg can't catch in manual mode (smooth.hdg only
+            // updates from the auto-follow block).
+            heading: s.viewer.camera.heading,
+            pitch: s.viewer.camera.pitch,
+            // Whether the camera has an active orbit transform (non-IDENTITY).
+            // SSCC needs this to be true for mouse-drag to rotate around
+            // the target instead of around the globe centre.
+            hasOrbitTransform: !Cesium.Matrix4.equals(
+              s.viewer.camera.transform, Cesium.Matrix4.IDENTITY,
+            ),
+          },
           aircraft: acPos ? { x: acPos.x, y: acPos.y, z: acPos.z } : null,
           camToAircraftMeters: acPos
             ? Cesium.Cartesian3.distance(camPos, acPos)
@@ -886,14 +918,47 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         s.smooth.userDistOverride = false
         s.smooth.lastReal = null
         s.smooth.lastVt = null
+        // Trajectory refs feed targetHdg/targetPitch in preRender. If a
+        // prior corruption (G2 distNaN) propagated NaN into them, the
+        // next auto-frame computes NaN heading and lookAt poisons the
+        // camera again. Reset them too.
+        if (!Number.isFinite(trajHdgRef.current))   trajHdgRef.current = 0
+        if (!Number.isFinite(trajPitchRef.current)) trajPitchRef.current = 0
         if (!autoRef.current) {
           autoRef.current = true
           setAutoMode(true)
         }
+        // If a previous test corrupted the camera (G2 sets
+        // smooth.dist=NaN which propagates through camera.lookAt's
+        // internal math, leaving camera.position/heading as NaN),
+        // restore a finite state via setView. setView with destination
+        // + orientation explicitly resets the camera and is the
+        // documented way to do this in Cesium without disturbing
+        // SSCC's orbit-mode flag (which lookAt() does corrupt).
         try {
           s.viewer.trackedEntity = undefined
-          s.viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
+          const cp = s.viewer.camera.position
+          const broken = !Number.isFinite(cp.x) || !Number.isFinite(cp.y) || !Number.isFinite(cp.z) ||
+                         !Number.isFinite(s.viewer.camera.heading)
+          if (broken) {
+            const r = curRowRef.current
+            if (r && r._lat != null) {
+              const alt = Math.max(0, r['Alt(m)'] || 0)
+              s.viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt + 500),
+                orientation: { heading: 0, pitch: -Math.PI / 4, roll: 0 },
+              })
+            }
+          }
         } catch (_) {}
+        // Re-arm the fly-away guard immediately. Otherwise the inter-
+        // case gap (~2 s) is shorter than the cooldown (5 s) and
+        // back-to-back G-cases share their cooldowns: G1 recovers,
+        // then G2/G3/G4 get blocked because guard.lastResetMs is still
+        // recent.
+        guard.streak = 0
+        guard.count = 0
+        guard.lastResetMs = 0
         window.__flyAwayCount = 0
         return true
       }
@@ -925,7 +990,8 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
 
     return () => {
       cancelled = true
-      el.removeEventListener('mousedown', releaseAuto)
+      el.removeEventListener('pointerdown', releaseAuto, true)
+      el.removeEventListener('mousedown', releaseAuto, true)
       el.removeEventListener('wheel', onWheelAuto)
       document.removeEventListener('fullscreenchange', onFsChange)
       resizeObserver?.disconnect()

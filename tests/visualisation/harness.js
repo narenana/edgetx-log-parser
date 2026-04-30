@@ -290,14 +290,16 @@ async function readCameraOrient(page) {
   return page.evaluate(() => {
     const v = window.__viewerState?.()
     if (!v) return null
-    // Heading/pitch from Cesium's camera object — pulled via a small
-    // helper exposed on stateRef. If unavailable, fall back to smooth.hdg.
     return {
       smoothHdg: v.smooth.hdg,
       smoothDist: v.smooth.dist,
       camToAircraft: v.camToAircraftMeters,
       autoMode: v.autoMode,
       flyAwayCount: v.flyAwayCount,
+      // Cesium camera heading (rad). Tracks the actual viewport rotation
+      // even in manual mode (where smooth.hdg goes dormant).
+      camHeading: v.camera?.heading,
+      camPitch: v.camera?.pitch,
     }
   })
 }
@@ -538,55 +540,78 @@ const NAMED_CASES = [
   },
   {
     id: 'N4',
-    title: 'Nav rotate-left — 300ms hold rotates camera, no fly-away',
+    title: 'Nav rotate-left — heading actually changes',
     run: async page => {
       await sleep(1100)
       const before = await readCameraOrient(page)
       await holdNavBtn(page, 'rotL', 300)
       await sleep(150)
       const after = await readCameraOrient(page)
+      const dh = Math.abs(((after.camHeading - before.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const rotated = dh > 0.05  // ~3° minimum for 300 ms hold @ 0.02 rad/frame
       const bounded = after.camToAircraft < 10000
-      const pass = bounded
+      const pass = rotated && bounded
       return {
         pass,
-        detail: `camToAc:${before.camToAircraft?.toFixed(0)}→${after.camToAircraft?.toFixed(0)} m`,
+        detail: `Δheading=${(dh*180/Math.PI).toFixed(1)}° camToAc=${after.camToAircraft?.toFixed(0)}m`,
       }
     },
   },
   {
     id: 'N5',
-    title: 'Nav rotate-right — 300ms hold rotates, no fly-away',
+    title: 'Nav rotate-right — heading actually changes',
     run: async page => {
       await sleep(1100)
+      const before = await readCameraOrient(page)
       await holdNavBtn(page, 'rotR', 300)
       await sleep(150)
       const after = await readCameraOrient(page)
-      const pass = after.camToAircraft < 10000
-      return { pass, detail: `camToAc=${after.camToAircraft?.toFixed(0)} m` }
+      const dh = Math.abs(((after.camHeading - before.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const rotated = dh > 0.05
+      const bounded = after.camToAircraft < 10000
+      const pass = rotated && bounded
+      return {
+        pass,
+        detail: `Δheading=${(dh*180/Math.PI).toFixed(1)}° camToAc=${after.camToAircraft?.toFixed(0)}m`,
+      }
     },
   },
   {
     id: 'N6',
-    title: 'Nav tilt-up — 300ms hold, no fly-away',
+    title: 'Nav tilt-up — pitch actually changes',
     run: async page => {
       await sleep(1100)
+      const before = await readCameraOrient(page)
       await holdNavBtn(page, 'tiltU', 300)
       await sleep(150)
       const after = await readCameraOrient(page)
-      const pass = after.camToAircraft < 10000
-      return { pass, detail: `camToAc=${after.camToAircraft?.toFixed(0)} m` }
+      const dp = Math.abs(after.camPitch - before.camPitch)
+      const tilted = dp > 0.03
+      const bounded = after.camToAircraft < 10000
+      const pass = tilted && bounded
+      return {
+        pass,
+        detail: `Δpitch=${(dp*180/Math.PI).toFixed(1)}° camToAc=${after.camToAircraft?.toFixed(0)}m`,
+      }
     },
   },
   {
     id: 'N7',
-    title: 'Nav tilt-down — 300ms hold, no fly-away',
+    title: 'Nav tilt-down — pitch actually changes',
     run: async page => {
       await sleep(1100)
+      const before = await readCameraOrient(page)
       await holdNavBtn(page, 'tiltD', 300)
       await sleep(150)
       const after = await readCameraOrient(page)
-      const pass = after.camToAircraft < 10000
-      return { pass, detail: `camToAc=${after.camToAircraft?.toFixed(0)} m` }
+      const dp = Math.abs(after.camPitch - before.camPitch)
+      const tilted = dp > 0.03
+      const bounded = after.camToAircraft < 10000
+      const pass = tilted && bounded
+      return {
+        pass,
+        detail: `Δpitch=${(dp*180/Math.PI).toFixed(1)}° camToAc=${after.camToAircraft?.toFixed(0)}m`,
+      }
     },
   },
   {
@@ -621,26 +646,34 @@ const NAMED_CASES = [
   },
   {
     id: 'D2',
-    title: 'Long horizontal drag stays bounded',
+    title: 'Long horizontal drag rotates farther than short drag',
     run: async page => {
       await sleep(1100)
+      const before = await readCameraOrient(page)
       await dragMouse(page, -400, 0)
       await sleep(200)
       const after = await readCameraOrient(page)
-      const pass = after.camToAircraft < 10000
-      return { pass, detail: `camToAc=${after.camToAircraft?.toFixed(0)}` }
+      const dh = Math.abs(((after.camHeading - before.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const rotated = dh > 0.10  // bigger drag → bigger rotation
+      const bounded = after.camToAircraft < 10000
+      const pass = rotated && bounded
+      return { pass, detail: `Δheading=${(dh*180/Math.PI).toFixed(1)}° camToAc=${after.camToAircraft?.toFixed(0)}m` }
     },
   },
   {
     id: 'D3',
-    title: 'Right-button vertical drag (tilt) stays bounded',
+    title: 'Right-button vertical drag tilts (pitch changes)',
     run: async page => {
       await sleep(1100)
+      const before = await readCameraOrient(page)
       await dragMouse(page, 0, -120, 'right')
       await sleep(200)
       const after = await readCameraOrient(page)
-      const pass = after.camToAircraft < 10000
-      return { pass, detail: `camToAc=${after.camToAircraft?.toFixed(0)}` }
+      const dp = Math.abs(after.camPitch - before.camPitch)
+      const tilted = dp > 0.03
+      const bounded = after.camToAircraft < 10000
+      const pass = tilted && bounded
+      return { pass, detail: `Δpitch=${(dp*180/Math.PI).toFixed(1)}° camToAc=${after.camToAircraft?.toFixed(0)}m` }
     },
   },
   {
@@ -655,6 +688,178 @@ const NAMED_CASES = [
       const stable = Math.abs(t2 - t1) < 250
       const pass = stable && t2 < 10000
       return { pass, detail: `t1=${t1?.toFixed(0)} t2=${t2?.toFixed(0)} drift=${(t2-t1).toFixed(0)} m` }
+    },
+  },
+  {
+    id: 'D5',
+    title: 'First mouse drag actually rotates camera (regression: b81db12)',
+    run: async page => {
+      await sleep(1100)
+      const before = await readCameraOrient(page)
+      if (before.autoMode !== true) return { pass: false, detail: `not in auto: ${before.autoMode}` }
+      // Log: state before drag
+      console.log(`     [D5 before] h=${before.camHeading?.toFixed(3)} orbit=${await page.evaluate(()=>window.__viewerState().camera.hasOrbitTransform)} dist=${before.smoothDist?.toFixed(0)}`)
+      await dragMouse(page, -180, 0)
+      await sleep(200)
+      const after = await readCameraOrient(page)
+      console.log(`     [D5 after ] h=${after.camHeading?.toFixed(3)} orbit=${await page.evaluate(()=>window.__viewerState().camera.hasOrbitTransform)} dist=${after.smoothDist?.toFixed(0)}`)
+      const dh = Math.abs(((after.camHeading - before.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const rotated = dh > 0.05
+      const switched = after.autoMode === false
+      const pass = rotated && switched && after.camToAircraft < 10000
+      return {
+        pass,
+        detail: `Δheading=${(dh*180/Math.PI).toFixed(1)}° auto:${before.autoMode}→${after.autoMode} camToAc=${after.camToAircraft?.toFixed(0)}`,
+      }
+    },
+  },
+  {
+    id: 'D6',
+    title: 'First right-button drag actually pitches camera',
+    run: async page => {
+      await sleep(1100)
+      const before = await readCameraOrient(page)
+      if (before.autoMode !== true) return { pass: false, detail: `not in auto: ${before.autoMode}` }
+      await dragMouse(page, 0, -120, 'right')
+      await sleep(200)
+      const after = await readCameraOrient(page)
+      const dp = Math.abs(after.camPitch - before.camPitch)
+      const pitched = dp > 0.03
+      const switched = after.autoMode === false
+      const pass = pitched && switched && after.camToAircraft < 10000
+      return {
+        pass,
+        detail: `Δpitch=${(dp*180/Math.PI).toFixed(1)}° auto:${before.autoMode}→${after.autoMode}`,
+      }
+    },
+  },
+
+  // ── T-series: interaction sequences ────────────────────────────────────
+  // Each named-case reset returns to auto mode, so these tests have a
+  // clean starting state. They verify that ORDER of interactions doesn't
+  // break expected behaviour (the user-reported bug we just fixed was
+  // exactly this: button-then-mouse worked but mouse-first didn't).
+  {
+    id: 'T1',
+    title: 'Button-rotate then mouse-drag-rotate both change heading',
+    run: async page => {
+      await sleep(1100)
+      const t0 = await readCameraOrient(page)
+      // Step 1: rotate via button
+      await holdNavBtn(page, 'rotR', 300)
+      await sleep(150)
+      const t1 = await readCameraOrient(page)
+      const d1 = Math.abs(((t1.camHeading - t0.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      // Step 2: drag mouse — should ADDITIONALLY rotate
+      await dragMouse(page, -200, 0)
+      await sleep(200)
+      const t2 = await readCameraOrient(page)
+      const d2 = Math.abs(((t2.camHeading - t1.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const pass = d1 > 0.05 && d2 > 0.05 && t2.camToAircraft < 10000
+      return {
+        pass,
+        detail: `button Δh=${(d1*180/Math.PI).toFixed(1)}° then mouse Δh=${(d2*180/Math.PI).toFixed(1)}°`,
+      }
+    },
+  },
+  {
+    id: 'T2',
+    title: 'Mouse-drag then button both change heading (REGRESSION: b81db12)',
+    run: async page => {
+      await sleep(1100)
+      const t0 = await readCameraOrient(page)
+      if (t0.autoMode !== true) return { pass: false, detail: `not in auto: ${t0.autoMode}` }
+      // Step 1: first mouse drag (the case that was silently no-op-ing)
+      await dragMouse(page, -200, 0)
+      await sleep(200)
+      const t1 = await readCameraOrient(page)
+      const d1 = Math.abs(((t1.camHeading - t0.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      // Step 2: button rotate — should still work
+      await holdNavBtn(page, 'rotR', 300)
+      await sleep(150)
+      const t2 = await readCameraOrient(page)
+      const d2 = Math.abs(((t2.camHeading - t1.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const pass = d1 > 0.05 && d2 > 0.05 && t2.camToAircraft < 10000
+      return {
+        pass,
+        detail: `mouse Δh=${(d1*180/Math.PI).toFixed(1)}° then button Δh=${(d2*180/Math.PI).toFixed(1)}°`,
+      }
+    },
+  },
+  {
+    id: 'T3',
+    title: 'Wheel-zoom in auto then mouse-drag — wheel adjusts dist, drag rotates',
+    run: async page => {
+      await sleep(1100)
+      const t0 = await readCameraOrient(page)
+      // Wheel zoom in auto mode adjusts smooth.dist without exiting auto
+      await dispatchWheel(page, 200) // zoom out
+      await sleep(150)
+      const t1 = await readCameraOrient(page)
+      const distGrew = t1.smoothDist > t0.smoothDist + 10
+      const stillAuto = t1.autoMode === true
+      // Then drag → enters manual + rotates
+      await dragMouse(page, -180, 0)
+      await sleep(200)
+      const t2 = await readCameraOrient(page)
+      const dh = Math.abs(((t2.camHeading - t1.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const rotated = dh > 0.05
+      const switchedManual = t2.autoMode === false
+      const pass = distGrew && stillAuto && rotated && switchedManual && t2.camToAircraft < 10000
+      return {
+        pass,
+        detail: `dist:${t0.smoothDist?.toFixed(0)}→${t1.smoothDist?.toFixed(0)} stillAuto=${stillAuto}, then Δh=${(dh*180/Math.PI).toFixed(1)}° → manual=${!t2.autoMode}`,
+      }
+    },
+  },
+  {
+    id: 'T4',
+    title: 'Auto-toggle manual→auto, mouse drag re-enters manual and rotates',
+    run: async page => {
+      await sleep(1100)
+      // Drag → manual
+      await dragMouse(page, -100, 0)
+      await sleep(150)
+      const t1 = await readCameraOrient(page)
+      if (t1.autoMode !== false) return { pass: false, detail: `expected manual after drag: ${t1.autoMode}` }
+      // Auto-toggle → back to auto
+      await clickAutoToggle(page)
+      await sleep(200)
+      const t2 = await readCameraOrient(page)
+      if (t2.autoMode !== true) return { pass: false, detail: `expected auto after toggle: ${t2.autoMode}` }
+      // Drag again → manual + rotates
+      const before = await readCameraOrient(page)
+      await dragMouse(page, -180, 0)
+      await sleep(200)
+      const after = await readCameraOrient(page)
+      const dh = Math.abs(((after.camHeading - before.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const rotated = dh > 0.05
+      const pass = rotated && after.autoMode === false && after.camToAircraft < 10000
+      return {
+        pass,
+        detail: `manual→auto→manual; Δh on second drag=${(dh*180/Math.PI).toFixed(1)}°`,
+      }
+    },
+  },
+  {
+    id: 'T5',
+    title: 'Two consecutive mouse drags both rotate (no second-drag staleness)',
+    run: async page => {
+      await sleep(1100)
+      const t0 = await readCameraOrient(page)
+      await dragMouse(page, -150, 0)
+      await sleep(200)
+      const t1 = await readCameraOrient(page)
+      const d1 = Math.abs(((t1.camHeading - t0.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      await dragMouse(page, -150, 0)
+      await sleep(200)
+      const t2 = await readCameraOrient(page)
+      const d2 = Math.abs(((t2.camHeading - t1.camHeading + Math.PI*3) % (Math.PI*2)) - Math.PI)
+      const pass = d1 > 0.05 && d2 > 0.05 && t2.camToAircraft < 10000
+      return {
+        pass,
+        detail: `drag1 Δh=${(d1*180/Math.PI).toFixed(1)}° drag2 Δh=${(d2*180/Math.PI).toFixed(1)}°`,
+      }
     },
   },
 ]
