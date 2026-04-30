@@ -779,20 +779,21 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       if (!autoRef.current) return
       autoRef.current = false
       setAutoMode(false)
-      const r = curRowRef.current
-      if (r && r._lat != null) {
-        const alt = Math.max(0, r['Alt(m)'] || 0)
-        const tgt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
-        const tform = Cesium.Transforms.eastNorthUpToFixedFrame(tgt)
-        viewer.camera.lookAtTransform(
-          tform,
-          new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(smooth.hdg + 180),
-            Cesium.Math.toRadians(-18),
-            Math.max(150, Math.min(800, smooth.dist || 500)),
-          ),
-        )
-      }
+      // CRITICAL: don't call viewer.camera.lookAtTransform(...) here.
+      // releaseAuto runs synchronously inside the mousedown event;
+      // Cesium's ScreenSpaceCameraController has already captured the
+      // start of a drag and is waiting for mouse-move deltas. Mutating
+      // the camera transform mid-event corrupts SSCC's drag math, so
+      // the very first mouse-drag after entering manual via mouse does
+      // nothing — but a subsequent mouse-drag works because the early-
+      // return above skips this handler.
+      //
+      // The auto-mode lookAt that just ran on the previous preRender
+      // frame already left the camera in an ENU-aligned local frame at
+      // smooth.pos, which is close enough to the aircraft that the
+      // manual-mode preRender block's per-frame lookAtTransform reads
+      // a sensible local offset on its first run and the camera stays
+      // anchored. No explicit handover needed.
       viewer.camera.constrainedAxis = undefined
     }
     const el = containerRef.current
