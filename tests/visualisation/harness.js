@@ -977,9 +977,7 @@ async function main() {
         )
         if (ok) pass++
         else fail++
-        // Hard-reset between cases so corruption from one test never
-        // bleeds into the next. The toggle-dance fallback handles the
-        // case where the dev hook isn't exposed (e.g., a stale build).
+        // Reset state between cases.
         await page.evaluate(() => {
           if (typeof window.__viewerForceReset === 'function') {
             window.__viewerForceReset()
