@@ -68,14 +68,19 @@ function lerpHdg(from, to, t) {
   return from + diff * t
 }
 
-// Strobe pulse — returns 0..1 over a 1.1 s cycle. Sharp 70 ms peak with a
-// short fade tail, then a 0.35 baseline (steady-on position light glow).
-// `phaseMs` shifts the cycle so port and starboard can alternate.
+// Strobe pulse — returns 0..1 over a 2.5 s cycle. Brief 60 ms peak and
+// short fade tail, then a 0.30 baseline. Earlier the cycle was 1.1 s
+// with a peak that — combined with the strobe primitive's 23 px peak
+// pixelSize — read as "model deforming every second" at typical
+// follow distances where the model is only ~20 px wide. Stretching
+// the period and lowering both peak/baseline keeps the nav-light
+// effect without dominating the visible model.
 function strobeBrightness(phaseMs = 0) {
-  const t = (((Date.now() + phaseMs) % 1100) + 1100) % 1100 / 1100
-  if (t < 0.06) return 1.0
-  if (t < 0.16) return 1.0 - ((t - 0.06) / 0.10) * 0.65
-  return 0.35
+  const PERIOD = 2500
+  const t = (((Date.now() + phaseMs) % PERIOD) + PERIOD) % PERIOD / PERIOD
+  if (t < 0.024) return 1.0                                       // ~60 ms peak
+  if (t < 0.080) return 1.0 - ((t - 0.024) / 0.056) * 0.7         // ~140 ms decay
+  return 0.30
 }
 
 // Add a point primitive at a wing-tip offset that tracks the aircraft's pose
@@ -97,19 +102,22 @@ function addWingtipStrobe(viewer, getAircraftEntity, localOffset, color, phaseMs
       return Cesium.Cartesian3.add(pos, dW, result || reusableResult)
     }, false),
     point: {
+      // 4 px baseline → 12 px peak (was 5 → 23). Sized so the strobe
+      // reads as a nav light next to the model, not a flare that
+      // dominates the model's silhouette at close follow distances.
       pixelSize: new Cesium.CallbackProperty(
-        () => 5 + strobeBrightness(phaseMs) * 18,
+        () => 4 + strobeBrightness(phaseMs) * 8,
         false,
       ),
       color: new Cesium.CallbackProperty(
-        () => color.withAlpha(0.4 + strobeBrightness(phaseMs) * 0.6),
+        () => color.withAlpha(0.35 + strobeBrightness(phaseMs) * 0.4),
         false,
       ),
       outlineColor: new Cesium.CallbackProperty(
-        () => color.withAlpha(strobeBrightness(phaseMs) * 0.6),
+        () => color.withAlpha(strobeBrightness(phaseMs) * 0.35),
         false,
       ),
-      outlineWidth: 4,
+      outlineWidth: 2,
       // Render through terrain — the lights stay visible even when the
       // wing tip would otherwise be occluded by a hill at low altitude.
       disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -444,10 +452,28 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const LEFT_WT  = new Cesium.Cartesian3(-0.4, -4.85, 0.30)
       const RIGHT_WT = new Cesium.Cartesian3(-0.4,  4.85, 0.30)
       const navAircraftEntityGetter = () => aircraftEntity
-      addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
+      const leftStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
                        Cesium.Color.fromCssColorString('#ff2020'), 0)
-      addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
+      const rightStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
                        Cesium.Color.fromCssColorString('#20ff60'), 250)
+
+      // Debug hooks: lets the user isolate visual issues by turning off
+      // the strobes (and altitude stem) and seeing if the model still
+      // appears to deform. Console:
+      //   window.__toggleStrobes()  // hide/show wingtip strobes
+      //   window.__toggleAircraft() // hide/show aircraft model
+      if (typeof window !== 'undefined') {
+        window.__toggleStrobes = () => {
+          const next = !leftStrobe.show
+          leftStrobe.show = next; rightStrobe.show = next
+          return next ? 'strobes ON' : 'strobes OFF'
+        }
+        window.__toggleAircraft = () => {
+          if (!aircraftEntity) return 'aircraft entity not yet loaded'
+          aircraftEntity.show = !aircraftEntity.show
+          return aircraftEntity.show ? 'aircraft ON' : 'aircraft OFF'
+        }
+      }
     }).catch(err => console.error('aircraft GLB build failed:', err))
 
     // Altitude stem
@@ -472,12 +498,106 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     // ── Per-frame: trajectory heading + pitch + camera ────────────────────────
     const smooth = { pos: null, hdg: 0, dist: 500 }
     let lastHudUpdate = 0
+    // Reused per-frame scratch buffers for the manual-mode lookAtTransform
+    // pattern — avoids allocating Cesium primitives at 60 fps.
+    const manualOffsetScratch = new Cesium.Cartesian3()
+    const manualTransformScratch = new Cesium.Matrix4()
+
+    // ── Fly-away guard state ─────────────────────────────────────────────────
+    // Counts consecutive frames in which the camera/smooth state has gone
+    // CATASTROPHICALLY bad (NaN/Infinity, or camera 30+ km from aircraft).
+    // Tight thresholds + long debounce so that legitimate transients (the
+    // initial flyTo settling, scrub teleports, brief speedFactor spikes)
+    // never trip it — only genuine state corruption does.
+    //
+    // We deliberately DO NOT trigger on smooth.dist being merely "out of
+    // range" — that's an invariant violation worth flagging in tests, but
+    // the production lerp clamps it back into range within a few frames
+    // on its own. Reacting too aggressively here was causing visible
+    // 1 Hz flicker on healthy scenes, which is worse than the bug it's
+    // supposed to fix.
+    // Counters live on a single object so __viewerForceReset (test
+    // hook) can clear them in one spot. lastResetMs in particular needs
+    // to be re-zeroable so the harness can re-arm the guard between
+    // named cases without waiting out the full 5 s cooldown.
+    const guard = { streak: 0, count: 0, lastResetMs: 0 }
+    const FLY_AWAY_DEBOUNCE = 30          // ~500 ms at 60 fps; ~3 s at 10 fps
+    const FLY_AWAY_COOLDOWN_MS = 5000
 
     viewer.scene.preRender.addEventListener(() => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
       const r  = interpRows(rows, vt)
       if (!r || r._lat == null) return
       curRowRef.current = r
+
+      // ── Fly-away detection + auto-recovery ───────────────────────────────
+      // Defensive net for the rare cases where camera state goes wild —
+      // NaN propagating through smooth.pos / smooth.dist, or a runaway
+      // lerp pushing the camera into orbit. When state has been bad for
+      // N consecutive frames, force a clean reset back to auto mode.
+      // Both modes are watched, with looser thresholds in manual since
+      // a user might intentionally zoom out far.
+      {
+        const nowMs = performance.now()
+        const inCooldown = (nowMs - guard.lastResetMs) < FLY_AWAY_COOLDOWN_MS
+        if (smooth.pos != null && !inCooldown) {
+          const acPos = aircraftEntity?.position?.getValue?.(viewer.clock.currentTime) ?? null
+          const camPos = viewer.camera.positionWC
+          const camToAc = acPos ? Cesium.Cartesian3.distance(camPos, acPos) : null
+
+          // Catastrophic-only checks. We trigger ONLY on:
+          //   - genuinely non-finite numbers (NaN / Infinity), which never
+          //     show up in a healthy scene; and
+          //   - camera-to-aircraft distance well past anything the auto
+          //     follow can produce: max smooth.dist (5 km) + scrub
+          //     transient (~few km) is comfortably under 30 km / 200 km.
+          const distBad = !Number.isFinite(smooth.dist)
+          const hdgBad  = !Number.isFinite(smooth.hdg)
+          const posBad  = !Number.isFinite(smooth.pos.x) || !Number.isFinite(smooth.pos.y) || !Number.isFinite(smooth.pos.z)
+          const camBad  = !Number.isFinite(camPos.x) || !Number.isFinite(camPos.y) || !Number.isFinite(camPos.z)
+          const farLimit = autoRef.current ? 30000 : 200000
+          const camTooFar = camToAc != null && Number.isFinite(camToAc) && camToAc > farLimit
+
+          if (distBad || hdgBad || posBad || camBad || camTooFar) {
+            guard.streak++
+            if (guard.streak >= FLY_AWAY_DEBOUNCE) {
+              guard.streak = 0
+              guard.count++
+              guard.lastResetMs = nowMs
+              if (typeof window !== 'undefined') window.__flyAwayCount = guard.count
+              console.warn('[GlobeView] fly-away detected — resetting to auto', {
+                smoothDist: smooth.dist, hdg: smooth.hdg, camToAc,
+                distBad, hdgBad, posBad, camBad, camTooFar,
+              })
+              // Clear smooth state — pos=null forces re-init from the
+              // aircraft target on the next frame, dist/hdg back to safe
+              // defaults, override flag cleared so auto-distance lerp
+              // re-engages.
+              smooth.pos = null
+              smooth.hdg = 0
+              smooth.dist = 500
+              smooth.userDistOverride = false
+              smooth.lastReal = null
+              smooth.lastVt = null
+              // Force auto mode if the user was in manual — fly-aways
+              // typically happen when manual orbit gets confused, and
+              // forcing back to auto is the only way to re-anchor. The
+              // lookAtTransform(IDENTITY) call ONLY runs when we're
+              // actually leaving manual; calling it in auto would clobber
+              // the per-frame lookAt and produce a one-frame visual jump.
+              if (!autoRef.current) {
+                autoRef.current = true
+                setAutoMode(true)
+                try {
+                  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
+                } catch (_) {}
+              }
+            }
+          } else {
+            guard.streak = 0
+          }
+        }
+      }
 
       // GPS index
       let gi = 0
@@ -507,7 +627,56 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const now = performance.now()
       if (now - lastHudUpdate > 100) { lastHudUpdate = now; updateHud(hudRef.current, r) }
 
-      if (!autoRef.current) return
+      if (!autoRef.current) {
+        // Manual mode — keep the orbit anchored to the aircraft. Approach:
+        // re-apply the SAME transform (ENU at the aircraft) every frame,
+        // letting nav-button camera methods (zoomIn/zoomOut/rotate*/tilt*)
+        // and screenSpaceCameraController orbit-input modify the camera's
+        // local position in this frame. The aircraft's position changes,
+        // but the LOCAL-frame ENU axes at the aircraft are a continuous
+        // function of position, so updating the transform each frame gives
+        // smooth tracking AS LONG AS the camera's local position stays
+        // bounded. We hard-clamp the local-offset magnitude here as a
+        // safety net — once it exceeds ~12 km the lookAtTransform re-project
+        // amplifies wildly (every subsequent frame's _setTransform pre-
+        // serves world position then we OVERRIDE with a now-stale-frame
+        // local offset, which is the root cause of the 1+ million-metre
+        // runaway the fuzz first surfaced).
+        const altManual = Math.max(0, r['Alt(m)'] || 0)
+        const tgtManual = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, altManual)
+        const localOffset = Cesium.Cartesian3.clone(viewer.camera.position, manualOffsetScratch)
+        const offMag = Math.hypot(localOffset.x, localOffset.y, localOffset.z)
+        const MAX_MANUAL_OFFSET = 5000  // 5 km — generous orbit, well within INV-2 (10km)
+        if (offMag > MAX_MANUAL_OFFSET || !Number.isFinite(offMag)) {
+          // Reset to a sane offset — this is the runtime "I detected a
+          // fly-away in manual mode, snap me back to a viewable orbit"
+          // that the test harness verifies via INV-2 / G-cases.
+          const k = (Number.isFinite(offMag) && offMag > 0) ? MAX_MANUAL_OFFSET / offMag : 1
+          localOffset.x = (Number.isFinite(localOffset.x) ? localOffset.x : 0) * k
+          localOffset.y = (Number.isFinite(localOffset.y) ? localOffset.y : -500) * k
+          localOffset.z = (Number.isFinite(localOffset.z) ? localOffset.z : 200) * k
+        }
+        if (typeof window !== 'undefined' && window.__camTrace) {
+          const cw = viewer.camera.positionWC
+          window.__camTrace.push({
+            t: performance.now().toFixed(0),
+            mode: 'manual',
+            offMag: offMag.toFixed(1),
+            localX: localOffset.x.toFixed(1),
+            localY: localOffset.y.toFixed(1),
+            localZ: localOffset.z.toFixed(1),
+            wcX: cw.x.toFixed(0),
+            wcY: cw.y.toFixed(0),
+            wcZ: cw.z.toFixed(0),
+          })
+          if (window.__camTrace.length > 200) window.__camTrace.shift()
+        }
+        if (Number.isFinite(localOffset.x) && Number.isFinite(localOffset.y) && Number.isFinite(localOffset.z)) {
+          const tform = Cesium.Transforms.eastNorthUpToFixedFrame(tgtManual, undefined, manualTransformScratch)
+          viewer.camera.lookAtTransform(tform, localOffset)
+        }
+        return
+      }
 
       const alt    = Math.max(0, r['Alt(m)'] || 0)
       const spdMs  = (r['GSpd(kmh)'] || 0) / 3.6
@@ -535,7 +704,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         smooth.pos  = target.clone()
         smooth.hdg  = targetHdg
         const camDist = Cesium.Cartesian3.distance(viewer.camera.position, smooth.pos)
-        smooth.dist = Math.max(150, Math.min(600, camDist))
+        // If the camera position came in as NaN (e.g. recovering from a
+        // corrupted state), camDist is NaN — clamp falls through to
+        // NaN which then poisons the next frame. Default to 500 m.
+        const safe = Number.isFinite(camDist) ? camDist : 500
+        smooth.dist = Math.max(150, Math.min(600, safe))
       } else if (speedFactor > 200) {
         // Big jump (scrub or initial seek) — teleport rather than chase.
         // Threshold raised from 50 → 200 so normal high-speed playback
@@ -598,19 +771,51 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       },
     })
 
-    // Mouse drag → manual mode: camera still follows aircraft but user
-    // orbits/zooms freely via Cesium's ScreenSpaceCameraController.
-    // We use Cesium.trackedEntity which keeps the camera locked onto
-    // the moving aircraft while Cesium handles input.
+    // Mouse drag → manual mode. Camera still follows the aircraft, but
+    // the user orbits / zooms freely via Cesium's ScreenSpaceCameraController.
+    // We DELIBERATELY DO NOT use viewer.trackedEntity any more — Cesium
+    // derives a default camera offset from the entity's bounding sphere,
+    // and our `minimumPixelSize: 48` model inflates that sphere wildly
+    // when zoomed out, sometimes snapping the camera hundreds of km away
+    // on first manual entry (root cause of the reported intermittent
+    // fly-aways). Instead, lookAtTransform centred on the aircraft's
+    // current position seeds the orbit, and the manual-mode branch in
+    // preRender keeps the transform synced to the moving aircraft.
     const releaseAuto = () => {
+      if (typeof window !== 'undefined') {
+        window.__releaseAutoCalls = (window.__releaseAutoCalls || 0) + 1
+      }
       if (!autoRef.current) return
       autoRef.current = false
       setAutoMode(false)
-      viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
-      if (aircraftEntity) { viewer.trackedEntity = aircraftEntity; viewer.camera.constrainedAxis = undefined }
+      // CRITICAL: don't call viewer.camera.lookAtTransform(...) here.
+      // releaseAuto runs synchronously inside the mousedown event;
+      // Cesium's ScreenSpaceCameraController has already captured the
+      // start of a drag and is waiting for mouse-move deltas. Mutating
+      // the camera transform mid-event corrupts SSCC's drag math, so
+      // the very first mouse-drag after entering manual via mouse does
+      // nothing — but a subsequent mouse-drag works because the early-
+      // return above skips this handler.
+      //
+      // The auto-mode lookAt that just ran on the previous preRender
+      // frame already left the camera in an ENU-aligned local frame at
+      // smooth.pos, which is close enough to the aircraft that the
+      // manual-mode preRender block's per-frame lookAtTransform reads
+      // a sensible local offset on its first run and the camera stays
+      // anchored. No explicit handover needed.
+      viewer.camera.constrainedAxis = undefined
     }
     const el = containerRef.current
-    el.addEventListener('mousedown', releaseAuto)
+    // Register on BOTH mousedown and pointerdown, AND use capture phase.
+    // Cesium's ScreenSpaceEventHandler attaches pointer-event listeners
+    // on the canvas and stops propagation in the bubble phase, so a
+    // bubble-phase mousedown listener on the parent container never
+    // hears real puppeteer/desktop drag gestures (only DOM-synthesized
+    // ones). Capture-phase + pointerdown wins both: it fires before
+    // Cesium can swallow the event, and on every input mode (mouse,
+    // pen, touch) including modern Chrome's pointer-only path.
+    el.addEventListener('pointerdown', releaseAuto, true)
+    el.addEventListener('mousedown', releaseAuto, true)
 
     // Wheel in auto mode does NOT release auto — it just adjusts the
     // follow distance. The previous behaviour (wheel → manual mode)
@@ -639,6 +844,125 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     el.addEventListener('wheel', onWheelAuto, { passive: false })
 
     stateRef.current = { viewer, smooth, getAircraftEntity: () => aircraftEntity }
+
+    // Test hook: exposes a snapshot reader on window so the headless test
+    // harness (see tests/harness/) can inspect camera + smooth state and
+    // assert invariants after every simulated action. No production user
+    // ever queries this; the property is named with a __ prefix as an
+    // explicit "internal / dev" marker. Reading it has zero side effects.
+    if (typeof window !== 'undefined') {
+      window.__viewerState = () => {
+        const s = stateRef.current
+        if (!s) return null
+        const ac = s.getAircraftEntity?.()
+        const acPos = ac?.position?.getValue?.(s.viewer.clock.currentTime) ?? null
+        const camPos = s.viewer.camera.positionWC
+        return {
+          autoMode: autoRef.current,
+          smooth: {
+            dist: s.smooth.dist,
+            hdg: s.smooth.hdg,
+            posX: s.smooth.pos?.x,
+            posY: s.smooth.pos?.y,
+            posZ: s.smooth.pos?.z,
+            userDistOverride: !!s.smooth.userDistOverride,
+          },
+          camera: {
+            x: camPos.x, y: camPos.y, z: camPos.z,
+            // Cesium-tracked heading + pitch (radians). Tests use these
+            // to verify that drag/rotate actually moves the camera, which
+            // smooth.hdg can't catch in manual mode (smooth.hdg only
+            // updates from the auto-follow block).
+            heading: s.viewer.camera.heading,
+            pitch: s.viewer.camera.pitch,
+            // Whether the camera has an active orbit transform (non-IDENTITY).
+            // SSCC needs this to be true for mouse-drag to rotate around
+            // the target instead of around the globe centre.
+            hasOrbitTransform: !Cesium.Matrix4.equals(
+              s.viewer.camera.transform, Cesium.Matrix4.IDENTITY,
+            ),
+          },
+          aircraft: acPos ? { x: acPos.x, y: acPos.y, z: acPos.z } : null,
+          camToAircraftMeters: acPos
+            ? Cesium.Cartesian3.distance(camPos, acPos)
+            : null,
+          trackedEntity: !!s.viewer.trackedEntity,
+          flyAwayCount: window.__flyAwayCount ?? 0,
+        }
+      }
+      // Test-only hook: lets the harness deliberately corrupt camera state
+      // so the fly-away guard's recovery path can be exercised end-to-end.
+      // No production user ever calls this (the __ prefix marks it as
+      // internal), and reading it has no effect — only invocation does.
+      window.__viewerCorrupt = (kind = 'dist') => {
+        const s = stateRef.current
+        if (!s) return false
+        if (kind === 'dist') s.smooth.dist = 99999
+        else if (kind === 'distNaN') s.smooth.dist = NaN
+        else if (kind === 'hdgNaN') s.smooth.hdg = NaN
+        else if (kind === 'posNaN' && s.smooth.pos) {
+          s.smooth.pos.x = NaN; s.smooth.pos.y = NaN; s.smooth.pos.z = NaN
+        }
+        return true
+      }
+      // Test-only hook: hard-reset the smooth/auto state. The harness
+      // calls this between named cases so corruption from one test
+      // never bleeds into the next. Production code never calls this —
+      // toggle the .globe-auto-btn for the user-visible reset path.
+      window.__viewerForceReset = () => {
+        const s = stateRef.current
+        if (!s) return false
+        s.smooth.pos = null
+        s.smooth.hdg = 0
+        s.smooth.dist = 500
+        s.smooth.userDistOverride = false
+        s.smooth.lastReal = null
+        s.smooth.lastVt = null
+        // Trajectory refs feed targetHdg/targetPitch in preRender. If a
+        // prior corruption (G2 distNaN) propagated NaN into them, the
+        // next auto-frame computes NaN heading and lookAt poisons the
+        // camera again. Reset them too.
+        if (!Number.isFinite(trajHdgRef.current))   trajHdgRef.current = 0
+        if (!Number.isFinite(trajPitchRef.current)) trajPitchRef.current = 0
+        if (!autoRef.current) {
+          autoRef.current = true
+          setAutoMode(true)
+        }
+        // If a previous test corrupted the camera (G2 sets
+        // smooth.dist=NaN which propagates through camera.lookAt's
+        // internal math, leaving camera.position/heading as NaN),
+        // restore a finite state via setView. setView with destination
+        // + orientation explicitly resets the camera and is the
+        // documented way to do this in Cesium without disturbing
+        // SSCC's orbit-mode flag (which lookAt() does corrupt).
+        try {
+          s.viewer.trackedEntity = undefined
+          const cp = s.viewer.camera.position
+          const broken = !Number.isFinite(cp.x) || !Number.isFinite(cp.y) || !Number.isFinite(cp.z) ||
+                         !Number.isFinite(s.viewer.camera.heading)
+          if (broken) {
+            const r = curRowRef.current
+            if (r && r._lat != null) {
+              const alt = Math.max(0, r['Alt(m)'] || 0)
+              s.viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt + 500),
+                orientation: { heading: 0, pitch: -Math.PI / 4, roll: 0 },
+              })
+            }
+          }
+        } catch (_) {}
+        // Re-arm the fly-away guard immediately. Otherwise the inter-
+        // case gap (~2 s) is shorter than the cooldown (5 s) and
+        // back-to-back G-cases share their cooldowns: G1 recovers,
+        // then G2/G3/G4 get blocked because guard.lastResetMs is still
+        // recent.
+        guard.streak = 0
+        guard.count = 0
+        guard.lastResetMs = 0
+        window.__flyAwayCount = 0
+        return true
+      }
+    }
     curRowRef.current = gpsRows[0]
 
     // Force Cesium to recompute its canvas backing buffer when the wrap
@@ -666,11 +990,20 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
 
     return () => {
       cancelled = true
-      el.removeEventListener('mousedown', releaseAuto)
+      el.removeEventListener('pointerdown', releaseAuto, true)
+      el.removeEventListener('mousedown', releaseAuto, true)
       el.removeEventListener('wheel', onWheelAuto)
       document.removeEventListener('fullscreenchange', onFsChange)
       resizeObserver?.disconnect()
       stateRef.current = null
+      if (typeof window !== 'undefined') {
+        delete window.__viewerState
+        delete window.__viewerCorrupt
+        delete window.__viewerForceReset
+        delete window.__flyAwayCount
+        delete window.__toggleStrobes
+        delete window.__toggleAircraft
+      }
       if (glbUrlRef.current) { URL.revokeObjectURL(glbUrlRef.current); glbUrlRef.current = null }
       try { viewer.destroy() } catch (_) {}
     }
@@ -684,15 +1017,28 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     const s = stateRef.current
     if (!s) return
     if (!next) {
-      s.viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
-      const ac = s.getAircraftEntity?.()
-      if (ac) { s.viewer.trackedEntity = ac; s.viewer.camera.constrainedAxis = undefined }
+      // Going manual — handover via lookAtTransform (no trackedEntity, see
+      // releaseAuto comment for why).
+      const r = curRowRef.current
+      if (r && r._lat != null) {
+        const alt = Math.max(0, r['Alt(m)'] || 0)
+        const tgt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
+        const tform = Cesium.Transforms.eastNorthUpToFixedFrame(tgt)
+        s.viewer.camera.lookAtTransform(
+          tform,
+          new Cesium.HeadingPitchRange(
+            Cesium.Math.toRadians(s.smooth.hdg + 180),
+            Cesium.Math.toRadians(-18),
+            Math.max(150, Math.min(800, s.smooth.dist || 500)),
+          ),
+        )
+      }
+      s.viewer.camera.constrainedAxis = undefined
     } else {
-      // Back to auto: release trackedEntity and any residual orbit transform.
-      // Also clear the userDistOverride flag so the speed/altitude-driven
-      // auto distance lerp re-engages — explicit opt-in to "drive my zoom
-      // for me" via this button is the way back into the smart-default world.
-      s.viewer.trackedEntity = undefined
+      // Back to auto — release the orbit transform and clear the
+      // userDistOverride flag so the speed/altitude-driven auto distance
+      // lerp re-engages. The smooth.pos=null forces a fresh re-init from
+      // the aircraft target on the next preRender frame.
       s.viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
       s.smooth.pos = null
       s.smooth.userDistOverride = false
@@ -706,28 +1052,58 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     if (autoRef.current) {
       autoRef.current = false
       setAutoMode(false)
-      s.viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)
-      const ac = s.getAircraftEntity?.()
-      if (ac) { s.viewer.trackedEntity = ac; s.viewer.camera.constrainedAxis = undefined }
+      // Same lookAtTransform handover as the mousedown path — see the
+      // comment on releaseAuto above for why we avoid viewer.trackedEntity.
+      const r = curRowRef.current
+      if (r && r._lat != null) {
+        const alt = Math.max(0, r['Alt(m)'] || 0)
+        const tgt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
+        const tform = Cesium.Transforms.eastNorthUpToFixedFrame(tgt)
+        s.viewer.camera.lookAtTransform(
+          tform,
+          new Cesium.HeadingPitchRange(
+            Cesium.Math.toRadians(s.smooth.hdg + 180),
+            Cesium.Math.toRadians(-18),
+            Math.max(150, Math.min(800, s.smooth.dist || 500)),
+          ),
+        )
+      }
+      s.viewer.camera.constrainedAxis = undefined
     }
     return s.viewer
   }
+  // Shared rAF handle for press-and-hold nav buttons. Lives on a ref so it
+  // survives the re-render that happens when ensureManual() calls
+  // setAutoMode(false). Earlier this was a closure local to navHeld(),
+  // which meant a re-render between mouse-down and mouse-up replaced the
+  // onUp handler with a fresh closure whose `raf` was null — the original
+  // rAF chain kept running indefinitely (catastrophic when the action is
+  // zoomOut: camera drifts off into space at 8 m/frame for the rest of
+  // the session). Using a ref makes cancellation visible across renders.
+  const navRafRef = useRef(null)
   const navHeld = (fn) => {
-    // press-and-hold: fire repeatedly while mouse is down
-    let raf = null
     const tick = () => {
       const v = ensureManual()
       if (v) fn(v.camera)
-      raf = requestAnimationFrame(tick)
+      navRafRef.current = requestAnimationFrame(tick)
     }
-    const onDown = (e) => { e.preventDefault(); tick() }
-    const onUp = () => { if (raf) cancelAnimationFrame(raf); raf = null }
+    const stop = () => {
+      if (navRafRef.current != null) {
+        cancelAnimationFrame(navRafRef.current)
+        navRafRef.current = null
+      }
+    }
+    const onDown = (e) => {
+      e.preventDefault()
+      stop() // belt-and-braces: cancel any stale chain before starting a new one
+      tick()
+    }
     return {
       onMouseDown: onDown,
-      onMouseUp: onUp,
-      onMouseLeave: onUp,
+      onMouseUp: stop,
+      onMouseLeave: stop,
       onTouchStart: onDown,
-      onTouchEnd: onUp,
+      onTouchEnd: stop,
     }
   }
 

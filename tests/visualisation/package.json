@@ -1,0 +1,14 @@
+{
+  "name": "edgetx-viewer-visualisation-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node harness.js",
+    "fuzz": "node harness.js --fuzz",
+    "fuzz:mobile": "node harness.js --fuzz --mobile",
+    "replay": "node harness.js --replay"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

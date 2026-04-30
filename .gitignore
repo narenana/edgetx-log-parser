@@ -16,3 +16,10 @@ debug_bbl*.mjs
 release/*.blockmap
 release/*.yml
 release/*.yaml
+
+# Visualisation harness — local-only artefacts (failure dumps + npm install)
+tests/visualisation/fuzz-failures/
+tests/visualisation/node_modules/
+tests/visualisation/probe-*.js
+tests/visualisation/toggle-probe/
+tests/visualisation/toggle-probe.js
