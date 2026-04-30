@@ -17,6 +17,19 @@ const FM_COLORS = {
 }
 function fmColor(m) { return FM_COLORS[m] || '#7aa2f7' }
 
+// Cross-section for a thin extruded path tube. Cesium's PolylineVolume
+// extrudes this 2D shape along a series of 3D positions to make a
+// pipe/cylinder. 8 segments is enough to read as round at typical zoom
+// without inflating the geometry.
+function tubeCircleShape(radiusMeters = 1.5, segments = 8) {
+  const pts = []
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2
+    pts.push(new Cesium.Cartesian2(Math.cos(a) * radiusMeters, Math.sin(a) * radiusMeters))
+  }
+  return pts
+}
+
 // Catmull-Rom smooth a Cartesian3[] array
 function catmullRomSmooth(pts, steps = 8) {
   if (pts.length < 2) return pts
@@ -368,31 +381,104 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           .then(p => viewer.imageryLayers.addImageryProvider(p))
       )
 
-    // FM-coloured flight path
-    let prevFM = null, segPts = []
-    const flush = () => {
-      if (segPts.length < 2) return
+    // ── Flight path tube ─────────────────────────────────────────────────
+    // Past = FM-coloured opaque tubes (full vibrancy, the rich
+    // information about what flight mode you were in is preserved).
+    // Future = light-gray semi-transparent tube laid OVER the FM tubes,
+    // covering the still-to-come portion so it visually fades. The
+    // future tube has a slightly larger radius than the FM tubes so its
+    // opaque core hides the colored geometry behind it cleanly.
+    //
+    // Implementation:
+    //  1. Build the entire smoothed path once.
+    //  2. Walk pathRows segmenting on FM transitions; for each segment,
+    //     add a static PolylineVolume with that mode's colour.
+    //  3. Add ONE PolylineVolume for the future overlay; its `positions`
+    //     property is a CallbackProperty that returns
+    //     pathPositions.slice(tubeIdx) every render. We cache by idx so
+    //     Cesium only re-tessellates when the cursor crosses a smoothed-
+    //     position boundary (~5 k boundaries per log, plenty cheap).
+    const SMOOTH_STEPS = 8
+    const pathPositions = (() => {
+      const pts = pathRows.map(r =>
+        Cesium.Cartesian3.fromDegrees(
+          r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
+        ),
+      )
+      return catmullRomSmooth(pts, SMOOTH_STEPS)
+    })()
+    const FM_TUBE_RADIUS = 1.4
+    const FUTURE_TUBE_RADIUS = 1.6 // bigger to opaquely cover FM colours
+    const fmTubeShape = tubeCircleShape(FM_TUBE_RADIUS, 8)
+    const futureTubeShape = tubeCircleShape(FUTURE_TUBE_RADIUS, 8)
+    const FUTURE_COLOR = Cesium.Color.fromCssColorString('#d8d8d8').withAlpha(0.55)
+
+    // Walk pathRows, grouping consecutive entries that share an FM,
+    // building one static PolylineVolume per segment. We use the
+    // catmull-rom-smoothed slice spanning each group's pathRows index
+    // range so the per-segment geometry matches the unified pathPositions
+    // array used for the future overlay.
+    let segStart = 0
+    let prevFM = pathRows[0]?.FM || 'UNKNOWN'
+    const flushFmSegment = (endRowIdx) => {
+      // Map row indices [segStart, endRowIdx] → smoothed indices.
+      // The catmull-rom output has SMOOTH_STEPS samples between each
+      // pair of input points, so pathRows[i] aligns with smoothed[i*SMOOTH_STEPS].
+      const lo = segStart * SMOOTH_STEPS
+      const hi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
+      if (hi - lo < 2) return
       viewer.entities.add({
-        polyline: {
-          positions: catmullRomSmooth(segPts.slice()), clampToGround: false, width: 3,
-          material: new Cesium.PolylineGlowMaterialProperty({
-            glowPower: 0.25,
-            color: Cesium.Color.fromCssColorString(fmColor(prevFM)),
-          }),
+        polylineVolume: {
+          positions: pathPositions.slice(lo, hi),
+          shape: fmTubeShape,
+          material: Cesium.Color.fromCssColorString(fmColor(prevFM)),
         },
       })
     }
-    // Use the downsampled `pathRows` here, not `gpsRows`. See the
-    // useMemo above for why — feeding the smoother all 7000+ rows
-    // from the BBL mapper makes it produce visible waves at every GPS
-    // frame boundary instead of a clean curve.
-    for (const r of pathRows) {
-      const fm = r['FM'] || 'UNKNOWN'
-      const pt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0))
-      if (fm !== prevFM) { flush(); segPts = segPts.length ? [segPts[segPts.length - 1]] : []; prevFM = fm }
-      segPts.push(pt)
+    for (let i = 1; i < pathRows.length; i++) {
+      const fm = pathRows[i].FM || 'UNKNOWN'
+      if (fm !== prevFM) {
+        flushFmSegment(i)        // close out the segment ending at i-1
+        segStart = i - 1         // next segment starts at the boundary so
+                                 // the tubes visually overlap a bit
+        prevFM = fm
+      }
     }
-    flush()
+    flushFmSegment(pathRows.length - 1) // tail segment
+
+    // pathRows sorted ascending by _tSec — binary-search for the
+    // vt-aligned index. tubeIdxRef.current is the smoothed-position index
+    // where past meets future.
+    const tubeIdxRef = { current: 0 }
+    const updateTubeIdx = () => {
+      const vt = virtualTimeRef?.current ?? rows[0]._tSec
+      let lo = 0, hi = pathRows.length - 1
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (pathRows[mid]._tSec < vt) lo = mid + 1
+        else hi = mid
+      }
+      tubeIdxRef.current = Math.min(pathPositions.length - 1, lo * SMOOTH_STEPS)
+    }
+    updateTubeIdx()
+
+    const futureCache = { idx: -1, arr: pathPositions.slice() }
+    viewer.entities.add({
+      polylineVolume: {
+        positions: new Cesium.CallbackProperty(() => {
+          const i = tubeIdxRef.current
+          if (i !== futureCache.idx) {
+            futureCache.idx = i
+            futureCache.arr = i <= pathPositions.length - 2
+              ? pathPositions.slice(i)
+              : pathPositions.slice(pathPositions.length - 2)
+          }
+          return futureCache.arr
+        }, false),
+        shape: futureTubeShape,
+        material: FUTURE_COLOR,
+      },
+    })
 
     const addDot = (r, color) => viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0)),
@@ -529,6 +615,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const r  = interpRows(rows, vt)
       if (!r || r._lat == null) return
       curRowRef.current = r
+
+      // Move the past/future tube split to match the current virtual
+      // time. Cheap (binary-search over ~600 rows) and only the cache
+      // miss inside the CallbackProperty triggers re-tessellation.
+      updateTubeIdx()
 
       // ── Fly-away detection + auto-recovery ───────────────────────────────
       // Defensive net for the rare cases where camera state goes wild —
