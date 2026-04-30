@@ -395,7 +395,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
     const FM_LINE_WIDTH = 4
-    const FUTURE_LINE_WIDTH = 2  // half of past — visually de-emphasises what's still to come
+    const FUTURE_LINE_WIDTH = 1  // hairline — subordinates the upcoming path to the FM-coloured trail
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
     // pathRows sorted ascending by _tSec — binary-search for the
