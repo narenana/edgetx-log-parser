@@ -68,14 +68,19 @@ function lerpHdg(from, to, t) {
   return from + diff * t
 }
 
-// Strobe pulse — returns 0..1 over a 1.1 s cycle. Sharp 70 ms peak with a
-// short fade tail, then a 0.35 baseline (steady-on position light glow).
-// `phaseMs` shifts the cycle so port and starboard can alternate.
+// Strobe pulse — returns 0..1 over a 2.5 s cycle. Brief 60 ms peak and
+// short fade tail, then a 0.30 baseline. Earlier the cycle was 1.1 s
+// with a peak that — combined with the strobe primitive's 23 px peak
+// pixelSize — read as "model deforming every second" at typical
+// follow distances where the model is only ~20 px wide. Stretching
+// the period and lowering both peak/baseline keeps the nav-light
+// effect without dominating the visible model.
 function strobeBrightness(phaseMs = 0) {
-  const t = (((Date.now() + phaseMs) % 1100) + 1100) % 1100 / 1100
-  if (t < 0.06) return 1.0
-  if (t < 0.16) return 1.0 - ((t - 0.06) / 0.10) * 0.65
-  return 0.35
+  const PERIOD = 2500
+  const t = (((Date.now() + phaseMs) % PERIOD) + PERIOD) % PERIOD / PERIOD
+  if (t < 0.024) return 1.0                                       // ~60 ms peak
+  if (t < 0.080) return 1.0 - ((t - 0.024) / 0.056) * 0.7         // ~140 ms decay
+  return 0.30
 }
 
 // Add a point primitive at a wing-tip offset that tracks the aircraft's pose
@@ -97,19 +102,22 @@ function addWingtipStrobe(viewer, getAircraftEntity, localOffset, color, phaseMs
       return Cesium.Cartesian3.add(pos, dW, result || reusableResult)
     }, false),
     point: {
+      // 4 px baseline → 12 px peak (was 5 → 23). Sized so the strobe
+      // reads as a nav light next to the model, not a flare that
+      // dominates the model's silhouette at close follow distances.
       pixelSize: new Cesium.CallbackProperty(
-        () => 5 + strobeBrightness(phaseMs) * 18,
+        () => 4 + strobeBrightness(phaseMs) * 8,
         false,
       ),
       color: new Cesium.CallbackProperty(
-        () => color.withAlpha(0.4 + strobeBrightness(phaseMs) * 0.6),
+        () => color.withAlpha(0.35 + strobeBrightness(phaseMs) * 0.4),
         false,
       ),
       outlineColor: new Cesium.CallbackProperty(
-        () => color.withAlpha(strobeBrightness(phaseMs) * 0.6),
+        () => color.withAlpha(strobeBrightness(phaseMs) * 0.35),
         false,
       ),
-      outlineWidth: 4,
+      outlineWidth: 2,
       // Render through terrain — the lights stay visible even when the
       // wing tip would otherwise be occluded by a hill at low altitude.
       disableDepthTestDistance: Number.POSITIVE_INFINITY,
