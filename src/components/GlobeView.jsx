@@ -17,19 +17,6 @@ const FM_COLORS = {
 }
 function fmColor(m) { return FM_COLORS[m] || '#7aa2f7' }
 
-// Cross-section for a thin extruded path tube. Cesium's PolylineVolume
-// extrudes this 2D shape along a series of 3D positions to make a
-// pipe/cylinder. 8 segments is enough to read as round at typical zoom
-// without inflating the geometry.
-function tubeCircleShape(radiusMeters = 1.5, segments = 8) {
-  const pts = []
-  for (let i = 0; i < segments; i++) {
-    const a = (i / segments) * Math.PI * 2
-    pts.push(new Cesium.Cartesian2(Math.cos(a) * radiusMeters, Math.sin(a) * radiusMeters))
-  }
-  return pts
-}
-
 // Catmull-Rom smooth a Cartesian3[] array
 function catmullRomSmooth(pts, steps = 8) {
   if (pts.length < 2) return pts
@@ -381,23 +368,23 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           .then(p => viewer.imageryLayers.addImageryProvider(p))
       )
 
-    // ── Flight path tube ─────────────────────────────────────────────────
-    // Past = FM-coloured opaque tubes (full vibrancy, the rich
-    // information about what flight mode you were in is preserved).
-    // Future = light-gray semi-transparent tube laid OVER the FM tubes,
-    // covering the still-to-come portion so it visually fades. The
-    // future tube has a slightly larger radius than the FM tubes so its
-    // opaque core hides the colored geometry behind it cleanly.
+    // ── Flight path: FM-coloured past + faded gray future ────────────────
+    // Cheap implementation: regular Polylines (screen-space strokes), no
+    // 3D extrusion. PolylineVolume turned out to be far too expensive —
+    // tessellating a multi-thousand-position volume on every cursor
+    // change tanked the framerate. Polylines render as GPU-friendly
+    // thick lines and are essentially free to update.
     //
-    // Implementation:
-    //  1. Build the entire smoothed path once.
-    //  2. Walk pathRows segmenting on FM transitions; for each segment,
-    //     add a static PolylineVolume with that mode's colour.
-    //  3. Add ONE PolylineVolume for the future overlay; its `positions`
-    //     property is a CallbackProperty that returns
-    //     pathPositions.slice(tubeIdx) every render. We cache by idx so
-    //     Cesium only re-tessellates when the cursor crosses a smoothed-
-    //     position boundary (~5 k boundaries per log, plenty cheap).
+    //  • Per-FM static polyline (covers the WHOLE path) — drawn first,
+    //    so FM colours are visible underneath wherever nothing's on top.
+    //  • Single gray-future polyline (positions = pathPositions[idx..end])
+    //    drawn AFTER the FM polylines, slightly wider, opaque-ish gray.
+    //    Wherever the future overlay is present it covers the FM colour
+    //    underneath; wherever it isn't (i.e. the past segment), the FM
+    //    colour shows through.
+    //
+    // Width is in pixels, so the visual thickness is consistent across
+    // zoom — no ill-defined "tube radius in metres" to tune.
     const SMOOTH_STEPS = 8
     const pathPositions = (() => {
       const pts = pathRows.map(r =>
@@ -407,44 +394,40 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    const FM_TUBE_RADIUS = 1.4
-    const FUTURE_TUBE_RADIUS = 1.6 // bigger to opaquely cover FM colours
-    const fmTubeShape = tubeCircleShape(FM_TUBE_RADIUS, 8)
-    const futureTubeShape = tubeCircleShape(FUTURE_TUBE_RADIUS, 8)
-    const FUTURE_COLOR = Cesium.Color.fromCssColorString('#d8d8d8').withAlpha(0.55)
+    const FM_LINE_WIDTH = 5
+    const FUTURE_LINE_WIDTH = 7 // wider so it cleanly covers FM colours behind
+    // Opaque light-gray. Cesium draws translucent polylines AFTER opaque
+    // ones in a separate pass, but the blend math at line widths in the
+    // 5-7 px range still leaves the FM colours dominant — using a fully
+    // opaque colour gives the unambiguous "future fades to gray" effect
+    // the user is asking for.
+    const FUTURE_COLOR = Cesium.Color.fromCssColorString('#cdcdcd')
 
-    // Walk pathRows, grouping consecutive entries that share an FM,
-    // building one static PolylineVolume per segment. We use the
-    // catmull-rom-smoothed slice spanning each group's pathRows index
-    // range so the per-segment geometry matches the unified pathPositions
-    // array used for the future overlay.
+    // Per-FM-segment static polylines covering the entire path.
     let segStart = 0
     let prevFM = pathRows[0]?.FM || 'UNKNOWN'
     const flushFmSegment = (endRowIdx) => {
-      // Map row indices [segStart, endRowIdx] → smoothed indices.
-      // The catmull-rom output has SMOOTH_STEPS samples between each
-      // pair of input points, so pathRows[i] aligns with smoothed[i*SMOOTH_STEPS].
       const lo = segStart * SMOOTH_STEPS
       const hi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
       if (hi - lo < 2) return
       viewer.entities.add({
-        polylineVolume: {
+        polyline: {
           positions: pathPositions.slice(lo, hi),
-          shape: fmTubeShape,
+          width: FM_LINE_WIDTH,
           material: Cesium.Color.fromCssColorString(fmColor(prevFM)),
+          clampToGround: false,
         },
       })
     }
     for (let i = 1; i < pathRows.length; i++) {
       const fm = pathRows[i].FM || 'UNKNOWN'
       if (fm !== prevFM) {
-        flushFmSegment(i)        // close out the segment ending at i-1
-        segStart = i - 1         // next segment starts at the boundary so
-                                 // the tubes visually overlap a bit
+        flushFmSegment(i)
+        segStart = i - 1
         prevFM = fm
       }
     }
-    flushFmSegment(pathRows.length - 1) // tail segment
+    flushFmSegment(pathRows.length - 1)
 
     // pathRows sorted ascending by _tSec — binary-search for the
     // vt-aligned index. tubeIdxRef.current is the smoothed-position index
@@ -462,9 +445,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     }
     updateTubeIdx()
 
+    // Future overlay polyline. Cheap to update — Cesium just streams the
+    // new vertex array to the GPU; no tessellation happens for polylines.
     const futureCache = { idx: -1, arr: pathPositions.slice() }
     viewer.entities.add({
-      polylineVolume: {
+      polyline: {
         positions: new Cesium.CallbackProperty(() => {
           const i = tubeIdxRef.current
           if (i !== futureCache.idx) {
@@ -475,8 +460,9 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           }
           return futureCache.arr
         }, false),
-        shape: futureTubeShape,
+        width: FUTURE_LINE_WIDTH,
         material: FUTURE_COLOR,
+        clampToGround: false,
       },
     })
 
