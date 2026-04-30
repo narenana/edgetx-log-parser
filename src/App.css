@@ -397,6 +397,9 @@ body {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  /* Reserve space for the fixed bottom dock so chart bodies above it
+     don't sit behind it. Adjusted per-viewport in @media blocks. */
+  padding-bottom: 110px;
 }
 
 .dashboard-main {
@@ -751,11 +754,27 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
+/* Sticky playback dock. Always pinned to the bottom of the viewport
+   regardless of size — short landscape views (e.g. tablet landscape)
+   used to clip the timeline scrubber when the dock was a flex-flow
+   sibling of dashboard-main, because some browser chrome heights leave
+   .dashboard with less vertical room than the dock needs. position:
+   fixed pulls the dock out of flow so the chart container above just
+   shrinks; the scrubber is therefore always reachable.
+   `.dashboard` reserves bottom padding equal to the dock height (set
+   per-viewport below) so chart bodies never sit behind it. */
 .dashboard-bottom {
-  flex: none;
-  background: var(--bg2);
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--dock-bg, var(--bg2));
   border-top: 1px solid var(--border);
   padding: 6px 12px 8px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 -4px 14px var(--shadow-overlay, rgba(0,0,0,0.06));
 }
 
 /* ── Stats panel ── */
@@ -802,7 +821,7 @@ body {
 
 /* ── Flight mode bar ── */
 .fm-bar-wrap {
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 .fm-label {
   font-size: 10px;
@@ -872,7 +891,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .play-btn,
@@ -1168,20 +1187,10 @@ body {
      longer a flex-grow container with a viewport-scaled height. */
   .chart-panel { min-height: 160px; }
 
-  /* Sticky playback dock — always reachable while scrolling charts. The
-     `app` padding-bottom above reserves space so charts aren't hidden. */
+  /* Tighter dock padding at narrow widths — the position: fixed
+     treatment is now the default (see top-level .dashboard-bottom). */
   .dashboard-bottom {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 50;
     padding: 8px 10px max(8px, env(safe-area-inset-bottom)) 10px;
-    background: var(--dock-bg);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    border-top: 1px solid var(--border);
-    box-shadow: 0 -6px 20px var(--shadow-overlay);
   }
 
   .drop-samples { flex-direction: column; align-items: stretch; max-width: 280px; }
