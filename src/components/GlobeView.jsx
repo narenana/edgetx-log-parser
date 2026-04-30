@@ -394,44 +394,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    const FM_LINE_WIDTH = 5
-    const FUTURE_LINE_WIDTH = 7 // wider so it cleanly covers FM colours behind
-    // Opaque light-gray. Cesium draws translucent polylines AFTER opaque
-    // ones in a separate pass, but the blend math at line widths in the
-    // 5-7 px range still leaves the FM colours dominant — using a fully
-    // opaque colour gives the unambiguous "future fades to gray" effect
-    // the user is asking for.
-    const FUTURE_COLOR = Cesium.Color.fromCssColorString('#cdcdcd')
-
-    // Per-FM-segment static polylines covering the entire path.
-    let segStart = 0
-    let prevFM = pathRows[0]?.FM || 'UNKNOWN'
-    const flushFmSegment = (endRowIdx) => {
-      const lo = segStart * SMOOTH_STEPS
-      const hi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
-      if (hi - lo < 2) return
-      viewer.entities.add({
-        polyline: {
-          positions: pathPositions.slice(lo, hi),
-          width: FM_LINE_WIDTH,
-          material: Cesium.Color.fromCssColorString(fmColor(prevFM)),
-          clampToGround: false,
-        },
-      })
-    }
-    for (let i = 1; i < pathRows.length; i++) {
-      const fm = pathRows[i].FM || 'UNKNOWN'
-      if (fm !== prevFM) {
-        flushFmSegment(i)
-        segStart = i - 1
-        prevFM = fm
-      }
-    }
-    flushFmSegment(pathRows.length - 1)
+    const FM_LINE_WIDTH = 4
+    const FUTURE_LINE_WIDTH = 5
+    const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
     // pathRows sorted ascending by _tSec — binary-search for the
     // vt-aligned index. tubeIdxRef.current is the smoothed-position index
-    // where past meets future.
+    // where past meets future. Declared early so the FM-segment
+    // CallbackProperty closures below can capture the same ref.
     const tubeIdxRef = { current: 0 }
     const updateTubeIdx = () => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
@@ -445,8 +415,64 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     }
     updateTubeIdx()
 
-    // Future overlay polyline. Cheap to update — Cesium just streams the
-    // new vertex array to the GPU; no tessellation happens for polylines.
+    // Per-FM-segment polylines that DYNAMICALLY clip to the cursor.
+    // Each segment has fixed [smLo, smHi] bounds in pathPositions; per
+    // frame the rendered slice is pathPositions[smLo .. min(smHi, idx)],
+    // and the polyline simply doesn't render when the cursor hasn't
+    // reached the segment yet (length < 2). Combined with the future
+    // overlay below — which only covers idx..end — the path has zero
+    // overlap between FM and gray, so FM colours never bleed through.
+    const fmSegments = [] // { smLo, smHi, color, cache: { idx, arr } }
+    {
+      let segStart = 0
+      let prevFM = pathRows[0]?.FM || 'UNKNOWN'
+      const pushSeg = (endRowIdx) => {
+        const smLo = segStart * SMOOTH_STEPS
+        const smHi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
+        if (smHi - smLo < 2) return
+        fmSegments.push({
+          smLo, smHi,
+          color: Cesium.Color.fromCssColorString(fmColor(prevFM)),
+          cache: { idx: -1, arr: [] },
+        })
+      }
+      for (let i = 1; i < pathRows.length; i++) {
+        const fm = pathRows[i].FM || 'UNKNOWN'
+        if (fm !== prevFM) {
+          pushSeg(i)
+          segStart = i - 1
+          prevFM = fm
+        }
+      }
+      pushSeg(pathRows.length - 1)
+    }
+    for (const seg of fmSegments) {
+      viewer.entities.add({
+        polyline: {
+          positions: new Cesium.CallbackProperty(() => {
+            const idx = tubeIdxRef.current
+            // visibleHi = how far the cursor has advanced inside this segment.
+            // If idx hasn't reached smLo at all, visibleHi == smLo and the
+            // slice is empty (Cesium silently skips polylines with <2 pts).
+            const visibleHi = Math.max(seg.smLo, Math.min(seg.smHi, idx))
+            if (visibleHi !== seg.cache.idx) {
+              seg.cache.idx = visibleHi
+              seg.cache.arr = visibleHi - seg.smLo >= 2
+                ? pathPositions.slice(seg.smLo, visibleHi)
+                : []
+            }
+            return seg.cache.arr
+          }, false),
+          width: FM_LINE_WIDTH,
+          material: seg.color,
+          clampToGround: false,
+        },
+      })
+    }
+
+    // Future overlay polyline. Renders only positions[idx..end] — the
+    // FM polylines render only positions[..idx] — so the two have zero
+    // overlap. No depth-fight, no FM colour bleed.
     const futureCache = { idx: -1, arr: pathPositions.slice() }
     viewer.entities.add({
       polyline: {
