@@ -539,17 +539,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           // Our nose is at -Z, so at HPR=0 nose points West.
           // HPR heading CW from North: West→North needs +π/2 offset.
           //
-          // Pitch comes from the telemetry stream (the actual aircraft
-          // attitude), NOT from the trajectory slope. They diverge in
-          // every interesting case — high AOA, stalls, knife-edge —
-          // and the user expects the model to match what the HUD/log
-          // says the pitch is. Sign is negated because Cesium HPR pitch
-          // is measured around the local +X axis, which after our
-          // glTF nose-axis remap (-Z → forward) flips the perceived
-          // sign relative to standard "nose up = positive pitch".
+          // Pitch uses the smoothed trajectory slope (trajPitchRef) —
+          // even though the telemetry stream has _pitchDeg, feeding it
+          // raw makes the model jitter every frame on noisy logs and
+          // ruins the smoothness of the visualisation. trajPitchRef is
+          // updated with damping in preRender below.
           const hpr = new Cesium.HeadingPitchRoll(
             trajHdgRef.current * D2R + Math.PI / 2,
-            -(r?._pitchDeg ?? 0) * D2R,
+            trajPitchRef.current * D2R,
             -(r?._rollDeg ?? 0) * D2R
           )
           return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
