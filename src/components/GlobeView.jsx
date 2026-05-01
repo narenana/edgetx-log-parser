@@ -311,6 +311,10 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   const curRowRef     = useRef(null)
   const trajHdgRef    = useRef(0)
   const trajPitchRef  = useRef(0)
+  // Smoothed copy of the telemetry _pitchDeg. Used for the model's
+  // attitude (matches the HUD), kept separate from trajPitchRef which
+  // tracks trajectory slope.
+  const attitudePitchRef = useRef(0)
   const autoRef       = useRef(true)
   const hudRef        = useRef(null)
   const glbUrlRef     = useRef(null)
@@ -368,31 +372,136 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           .then(p => viewer.imageryLayers.addImageryProvider(p))
       )
 
-    // FM-coloured flight path
-    let prevFM = null, segPts = []
-    const flush = () => {
-      if (segPts.length < 2) return
-      viewer.entities.add({
-        polyline: {
-          positions: catmullRomSmooth(segPts.slice()), clampToGround: false, width: 3,
-          material: new Cesium.PolylineGlowMaterialProperty({
-            glowPower: 0.25,
-            color: Cesium.Color.fromCssColorString(fmColor(prevFM)),
+    // ── Flight path: FM-coloured past + faded gray future ────────────────
+    // Single Primitive with per-vertex colours via PolylineColorAppearance.
+    // ONE polyline → no z-fight, no draw-order ambiguity. Past vertices
+    // get the FM colour for their flight mode; future vertices get
+    // gray. Recreating the primitive when the cursor crosses a
+    // smoothed-position boundary swaps the past/future colour split.
+    //
+    // Cost: ~5-10ms per recreate (geometry build + GPU upload),
+    // throttled to 30Hz max ⇒ ~150-300ms/sec total = 15-30% of one
+    // frame budget. With static FM polylines now being a memory of a
+    // simpler architecture, this is the cleanest balance of visual
+    // correctness and performance we've found.
+    const SMOOTH_STEPS = 8
+    const pathPositions = (() => {
+      const pts = pathRows.map(r =>
+        Cesium.Cartesian3.fromDegrees(
+          r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
+        ),
+      )
+      return catmullRomSmooth(pts, SMOOTH_STEPS)
+    })()
+    const FM_LINE_WIDTH = 4
+    const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
+
+    // Pre-compute FM colour per smoothed-position index. Each pathRow
+    // generates SMOOTH_STEPS smoothed positions; the FM mode of that
+    // pathRow's segment determines all SMOOTH_STEPS colours.
+    const pathFmColors = new Array(pathPositions.length)
+    {
+      let segStart = 0
+      let prevFM = pathRows[0]?.FM || 'UNKNOWN'
+      const fillSeg = (endRowIdx) => {
+        const color = Cesium.Color.fromCssColorString(fmColor(prevFM))
+        const lo = segStart * SMOOTH_STEPS
+        const hi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
+        for (let j = lo; j < hi; j++) pathFmColors[j] = color
+      }
+      for (let i = 1; i < pathRows.length; i++) {
+        const fm = pathRows[i].FM || 'UNKNOWN'
+        if (fm !== prevFM) {
+          fillSeg(i)
+          segStart = i - 1
+          prevFM = fm
+        }
+      }
+      fillSeg(pathRows.length - 1)
+      // Backfill any tail not covered by the loop
+      const fallback = Cesium.Color.fromCssColorString(fmColor('UNKNOWN'))
+      for (let i = 0; i < pathFmColors.length; i++) {
+        if (!pathFmColors[i]) pathFmColors[i] = fallback
+      }
+    }
+
+    // tubeIdxRef tracks the smoothed-position index where past meets
+    // future. Binary-search pathRows by _tSec, then interpolate
+    // within the bracket so the split lands at the aircraft's actual
+    // position (not one pathRow ahead).
+    const tubeIdxRef = { current: 0 }
+    const updateTubeIdx = () => {
+      const vt = virtualTimeRef?.current ?? rows[0]._tSec
+      let lo = 0, hi = pathRows.length - 1
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (pathRows[mid]._tSec < vt) lo = mid + 1
+        else hi = mid
+      }
+      let smIdx
+      if (lo === 0) {
+        smIdx = 0
+      } else {
+        const t0 = pathRows[lo - 1]._tSec
+        const t1 = pathRows[lo]._tSec
+        const frac = t1 > t0 ? (vt - t0) / (t1 - t0) : 0
+        const clamped = frac < 0 ? 0 : frac > 1 ? 1 : frac
+        smIdx = (lo - 1) * SMOOTH_STEPS + Math.floor(clamped * SMOOTH_STEPS)
+      }
+      tubeIdxRef.current = Math.min(pathPositions.length - 1, smIdx)
+    }
+    updateTubeIdx()
+
+    // Single-polyline path Primitive. Recreate when the cursor
+    // crosses a smoothed-position boundary; throttle to 30Hz.
+    let pathPrimitive = null
+    let pathPrimIdx = -1
+    let lastPathUpdateMs = 0
+    const PATH_UPDATE_THROTTLE_MS = 33  // 30Hz max
+    const buildPathColors = (cursorIdx) => {
+      const out = new Array(pathPositions.length)
+      for (let i = 0; i < out.length; i++) {
+        out[i] = i < cursorIdx ? pathFmColors[i] : FUTURE_COLOR
+      }
+      return out
+    }
+    const buildPathPrimitive = (cursorIdx) => {
+      const colors = buildPathColors(cursorIdx)
+      return new Cesium.Primitive({
+        geometryInstances: new Cesium.GeometryInstance({
+          geometry: new Cesium.PolylineGeometry({
+            positions: pathPositions,
+            width: FM_LINE_WIDTH,
+            colors,
+            colorsPerVertex: true,
+            vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
           }),
-        },
+        }),
+        appearance: new Cesium.PolylineColorAppearance({
+          translucent: false,
+        }),
+        asynchronous: false,
+        releaseGeometryInstances: false,
       })
     }
-    // Use the downsampled `pathRows` here, not `gpsRows`. See the
-    // useMemo above for why — feeding the smoother all 7000+ rows
-    // from the BBL mapper makes it produce visible waves at every GPS
-    // frame boundary instead of a clean curve.
-    for (const r of pathRows) {
-      const fm = r['FM'] || 'UNKNOWN'
-      const pt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0))
-      if (fm !== prevFM) { flush(); segPts = segPts.length ? [segPts[segPts.length - 1]] : []; prevFM = fm }
-      segPts.push(pt)
+    const updatePathPrimitive = () => {
+      const i = tubeIdxRef.current
+      if (i === pathPrimIdx) return
+      const nowMs = performance.now()
+      if (nowMs - lastPathUpdateMs < PATH_UPDATE_THROTTLE_MS) return
+      lastPathUpdateMs = nowMs
+      pathPrimIdx = i
+      if (pathPrimitive) {
+        try { viewer.scene.primitives.remove(pathPrimitive) } catch (_) {}
+        pathPrimitive = null
+      }
+      pathPrimitive = buildPathPrimitive(i)
+      viewer.scene.primitives.add(pathPrimitive)
     }
-    flush()
+    // Build first version with cursor at start (everything is future).
+    pathPrimitive = buildPathPrimitive(0)
+    viewer.scene.primitives.add(pathPrimitive)
+    pathPrimIdx = 0
 
     const addDot = (r, color) => viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0)),
@@ -423,9 +532,17 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           // Cesium glTF 2.0: forwardAxis=+Z → mapped to East at HPR=0.
           // Our nose is at -Z, so at HPR=0 nose points West.
           // HPR heading CW from North: West→North needs +π/2 offset.
+          //
+          // Pitch from telemetry, smoothed in preRender (attitudePitchRef).
+          // SIGN NEGATED: the +π/2 heading offset that compensates for
+          // our -Z nose convention also flips the pitch axis relative to
+          // Cesium's standard. Telemetry +pitch (nose up) → HPR -pitch
+          // → after the offset/quaternion math, model nose ends up up.
+          // Verified visually: HUD shows PCH +10° while ascending and
+          // the model nose now points above the horizon.
           const hpr = new Cesium.HeadingPitchRoll(
             trajHdgRef.current * D2R + Math.PI / 2,
-            trajPitchRef.current * D2R,
+            -attitudePitchRef.current * D2R,
             -(r?._rollDeg ?? 0) * D2R
           )
           return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
@@ -530,6 +647,13 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       if (!r || r._lat == null) return
       curRowRef.current = r
 
+      // Move the past/future split to match the current virtual time.
+      // Cheap (binary-search over ~600 rows). updatePathPrimitive
+      // rebuilds the single-polyline path primitive only when the
+      // smoothed-position idx changes AND the 30Hz throttle allows.
+      updateTubeIdx()
+      updatePathPrimitive()
+
       // ── Fly-away detection + auto-recovery ───────────────────────────────
       // Defensive net for the rare cases where camera state goes wild —
       // NaN propagating through smooth.pos / smooth.dist, or a runaway
@@ -622,6 +746,16 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           const newPitch = Math.atan2((gp2['Alt(m)'] ?? 0) - (gp1['Alt(m)'] ?? 0), hd) / D2R
           trajPitchRef.current += (newPitch - trajPitchRef.current) * 0.05
         }
+      }
+
+      // Smoothed telemetry pitch — used for the model's actual attitude.
+      // 0.05 damping (matching trajPitchRef) was the value the user
+      // confirmed felt smooth pre-pitch-change. Stronger damping like
+      // 0.20 made the model visibly snap toward each new telemetry
+      // sample, reading as stutter even though the numerical motion
+      // was continuous.
+      if (Number.isFinite(r?._pitchDeg)) {
+        attitudePitchRef.current += (r._pitchDeg - attitudePitchRef.current) * 0.05
       }
 
       const now = performance.now()
