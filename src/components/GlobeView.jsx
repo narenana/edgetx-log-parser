@@ -373,27 +373,17 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
 
     // ── Flight path: FM-coloured past + faded gray future ────────────────
-    // Primitive-based rendering (not Entity API) so we can control
-    // the order in which polylines draw to the framebuffer.
+    // Single Primitive with per-vertex colours via PolylineColorAppearance.
+    // ONE polyline → no z-fight, no draw-order ambiguity. Past vertices
+    // get the FM colour for their flight mode; future vertices get
+    // gray. Recreating the primitive when the cursor crosses a
+    // smoothed-position boundary swaps the past/future colour split.
     //
-    // Architecture:
-    //   • One static Primitive per FM segment (built once at log load)
-    //   • One dynamic Primitive for the gray future overlay,
-    //     rebuilt every time the cursor crosses a smoothed-position
-    //     boundary
-    //
-    // viewer.scene.primitives renders primitives in addition order.
-    // FM primitives go in first, future primitive last → future draws
-    // on top of FM in the framebuffer regardless of world depth, which
-    // solves the same-depth z-fight that plagued the entity-API
-    // implementation.
-    //
-    // Cost model:
-    //   • Static FM primitives → free per frame
-    //   • Dynamic future primitive → recreated only when smoothed-
-    //     position idx changes (~5/sec at 1×, throttled to 30Hz max)
-    //   • Each recreate ~1ms for a 4800-vertex polyline
-    //   • Net: well under 5% CPU on the path-render budget
+    // Cost: ~5-10ms per recreate (geometry build + GPU upload),
+    // throttled to 30Hz max ⇒ ~150-300ms/sec total = 15-30% of one
+    // frame budget. With static FM polylines now being a memory of a
+    // simpler architecture, this is the cleanest balance of visual
+    // correctness and performance we've found.
     const SMOOTH_STEPS = 8
     const pathPositions = (() => {
       const pts = pathRows.map(r =>
@@ -404,8 +394,36 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
     const FM_LINE_WIDTH = 4
-    const FUTURE_LINE_WIDTH = 4
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
+
+    // Pre-compute FM colour per smoothed-position index. Each pathRow
+    // generates SMOOTH_STEPS smoothed positions; the FM mode of that
+    // pathRow's segment determines all SMOOTH_STEPS colours.
+    const pathFmColors = new Array(pathPositions.length)
+    {
+      let segStart = 0
+      let prevFM = pathRows[0]?.FM || 'UNKNOWN'
+      const fillSeg = (endRowIdx) => {
+        const color = Cesium.Color.fromCssColorString(fmColor(prevFM))
+        const lo = segStart * SMOOTH_STEPS
+        const hi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
+        for (let j = lo; j < hi; j++) pathFmColors[j] = color
+      }
+      for (let i = 1; i < pathRows.length; i++) {
+        const fm = pathRows[i].FM || 'UNKNOWN'
+        if (fm !== prevFM) {
+          fillSeg(i)
+          segStart = i - 1
+          prevFM = fm
+        }
+      }
+      fillSeg(pathRows.length - 1)
+      // Backfill any tail not covered by the loop
+      const fallback = Cesium.Color.fromCssColorString(fmColor('UNKNOWN'))
+      for (let i = 0; i < pathFmColors.length; i++) {
+        if (!pathFmColors[i]) pathFmColors[i] = fallback
+      }
+    }
 
     // tubeIdxRef tracks the smoothed-position index where past meets
     // future. Binary-search pathRows by _tSec, then interpolate
@@ -434,103 +452,56 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     }
     updateTubeIdx()
 
-    // Helper: build a polyline primitive for [positions, color, width].
-    // alwaysOnTop=true sets the appearance's renderState depthTest to
-    // ALWAYS, which forces this primitive to draw over anything at the
-    // same world depth. Used for the future overlay so it cleanly
-    // covers FM polylines beneath it without a z-fight.
-    const buildPolylinePrimitive = (positions, color, width, alwaysOnTop = false) => {
-      if (!positions || positions.length < 2) return null
-      const appearanceOpts = {
-        material: Cesium.Material.fromType('Color', { color }),
-        translucent: false,
+    // Single-polyline path Primitive. Recreate when the cursor
+    // crosses a smoothed-position boundary; throttle to 30Hz.
+    let pathPrimitive = null
+    let pathPrimIdx = -1
+    let lastPathUpdateMs = 0
+    const PATH_UPDATE_THROTTLE_MS = 33  // 30Hz max
+    const buildPathColors = (cursorIdx) => {
+      const out = new Array(pathPositions.length)
+      for (let i = 0; i < out.length; i++) {
+        out[i] = i < cursorIdx ? pathFmColors[i] : FUTURE_COLOR
       }
-      if (alwaysOnTop) {
-        // Custom render state: depth test always passes, but still
-        // write depth so later primitives behave correctly. Disabled
-        // depth writes on the future polyline give the cleanest
-        // result — future never gets occluded by anything else added
-        // after it.
-        appearanceOpts.renderState = {
-          depthTest: { enabled: true, func: 7 /* DepthFunction.ALWAYS */ },
-          depthMask: false,
-          blending: Cesium.BlendingState.ALPHA_BLEND,
-        }
-      }
+      return out
+    }
+    const buildPathPrimitive = (cursorIdx) => {
+      const colors = buildPathColors(cursorIdx)
       return new Cesium.Primitive({
         geometryInstances: new Cesium.GeometryInstance({
           geometry: new Cesium.PolylineGeometry({
-            positions,
-            width,
-            vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT,
+            positions: pathPositions,
+            width: FM_LINE_WIDTH,
+            colors,
+            colorsPerVertex: true,
+            vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
           }),
         }),
-        appearance: new Cesium.PolylineMaterialAppearance(appearanceOpts),
+        appearance: new Cesium.PolylineColorAppearance({
+          translucent: false,
+        }),
         asynchronous: false,
         releaseGeometryInstances: false,
       })
     }
-
-    // Static FM primitives — one per FM segment, built once.
-    {
-      let segStart = 0
-      let prevFM = pathRows[0]?.FM || 'UNKNOWN'
-      const pushSeg = (endRowIdx) => {
-        const smLo = segStart * SMOOTH_STEPS
-        const smHi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
-        if (smHi - smLo < 2) return
-        const prim = buildPolylinePrimitive(
-          pathPositions.slice(smLo, smHi),
-          Cesium.Color.fromCssColorString(fmColor(prevFM)),
-          FM_LINE_WIDTH,
-        )
-        if (prim) viewer.scene.primitives.add(prim)
-      }
-      for (let i = 1; i < pathRows.length; i++) {
-        const fm = pathRows[i].FM || 'UNKNOWN'
-        if (fm !== prevFM) {
-          pushSeg(i)
-          segStart = i - 1
-          prevFM = fm
-        }
-      }
-      pushSeg(pathRows.length - 1)
-    }
-
-    // Dynamic future overlay primitive — recreated when the cursor
-    // crosses a smoothed-position boundary. It's added to the scene's
-    // primitive collection AFTER the FM primitives, so framebuffer
-    // order guarantees it draws on top regardless of world depth.
-    let futurePrimitive = null
-    let futurePrimIdx = -1
-    let lastFutureUpdateMs = 0
-    const FUTURE_UPDATE_THROTTLE_MS = 33  // 30Hz max
-    const updateFuturePrimitive = () => {
+    const updatePathPrimitive = () => {
       const i = tubeIdxRef.current
-      if (i === futurePrimIdx) return
+      if (i === pathPrimIdx) return
       const nowMs = performance.now()
-      if (nowMs - lastFutureUpdateMs < FUTURE_UPDATE_THROTTLE_MS) return
-      lastFutureUpdateMs = nowMs
-      futurePrimIdx = i
-
-      // Tear down old
-      if (futurePrimitive) {
-        try { viewer.scene.primitives.remove(futurePrimitive) } catch (_) {}
-        futurePrimitive = null
+      if (nowMs - lastPathUpdateMs < PATH_UPDATE_THROTTLE_MS) return
+      lastPathUpdateMs = nowMs
+      pathPrimIdx = i
+      if (pathPrimitive) {
+        try { viewer.scene.primitives.remove(pathPrimitive) } catch (_) {}
+        pathPrimitive = null
       }
-      // Build new (skip if cursor at end of path). alwaysOnTop=true
-      // makes the future polyline win over FM at identical depth.
-      if (i < pathPositions.length - 1) {
-        futurePrimitive = buildPolylinePrimitive(
-          pathPositions.slice(i),
-          FUTURE_COLOR,
-          FUTURE_LINE_WIDTH,
-          true,
-        )
-        if (futurePrimitive) viewer.scene.primitives.add(futurePrimitive)
-      }
+      pathPrimitive = buildPathPrimitive(i)
+      viewer.scene.primitives.add(pathPrimitive)
     }
-    updateFuturePrimitive()
+    // Build first version with cursor at start (everything is future).
+    pathPrimitive = buildPathPrimitive(0)
+    viewer.scene.primitives.add(pathPrimitive)
+    pathPrimIdx = 0
 
     const addDot = (r, color) => viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0)),
@@ -677,11 +648,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       curRowRef.current = r
 
       // Move the past/future split to match the current virtual time.
-      // Cheap (binary-search over ~600 rows). updateFuturePrimitive
-      // rebuilds the gray future Primitive only when the smoothed-
-      // position idx changes AND the 30Hz throttle allows.
+      // Cheap (binary-search over ~600 rows). updatePathPrimitive
+      // rebuilds the single-polyline path primitive only when the
+      // smoothed-position idx changes AND the 30Hz throttle allows.
       updateTubeIdx()
-      updateFuturePrimitive()
+      updatePathPrimitive()
 
       // ── Fly-away detection + auto-recovery ───────────────────────────────
       // Defensive net for the rare cases where camera state goes wild —
