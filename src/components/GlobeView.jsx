@@ -398,12 +398,18 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    // The future overlay shares pathPositions with the FM polylines.
-    // Earlier I tried using un-smoothed pathRows here for cheaper
-    // tessellation, but the future polyline then traces a different
-    // (linear) path than the smoothed FM polylines below it, so the
-    // overlay no longer cleanly covers the FM colours where the curves
-    // diverge. Same source array → guaranteed alignment.
+    // Offset positions for the future overlay — 2 metres higher than
+    // the FM polylines so depth test cleanly orders them. Without
+    // this they sit at identical world depth and Cesium picks an
+    // arbitrary winner per pixel, leaving FM colours bleeding through
+    // the supposed-to-be-gray future zone.
+    const FUTURE_ALT_OFFSET = 2
+    const futurePathPositions = pathPositions.map(p => {
+      const carto = Cesium.Cartographic.fromCartesian(p)
+      return Cesium.Cartesian3.fromRadians(
+        carto.longitude, carto.latitude, carto.height + FUTURE_ALT_OFFSET,
+      )
+    })
     const FM_LINE_WIDTH = 4
     // Future stroke must be at least as wide as the FM stroke so it
     // cleanly covers the underlying FM polyline in the future zone.
@@ -481,22 +487,21 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       pushSeg(pathRows.length - 1)
     }
 
-    // Future overlay polyline. Same source array as the FM polylines
-    // (pathPositions, smoothed) so the curves align perfectly and the
-    // overlay actually covers the FM colour below it. Cache by idx so
-    // we only re-slice when the cursor crosses a smoothed-position
-    // boundary; reference equality on the cached array reference lets
-    // Cesium's PolylineCollection skip the GPU rebuild on no-op frames.
-    const futureCache = { idx: -1, arr: pathPositions.slice() }
+    // Future overlay polyline. Slices futurePathPositions (smoothed
+    // path + 2m altitude offset) so it sits geometrically ABOVE the
+    // FM polylines, depth-test ordering guarantees it draws on top
+    // wherever they overlap. Cache by idx to skip re-slicing when the
+    // cursor hasn't crossed a smoothed-position boundary.
+    const futureCache = { idx: -1, arr: futurePathPositions.slice() }
     viewer.entities.add({
       polyline: {
         positions: new Cesium.CallbackProperty(() => {
           const i = tubeIdxRef.current
           if (i !== futureCache.idx) {
             futureCache.idx = i
-            futureCache.arr = i <= pathPositions.length - 2
-              ? pathPositions.slice(i)
-              : pathPositions.slice(pathPositions.length - 2)
+            futureCache.arr = i <= futurePathPositions.length - 2
+              ? futurePathPositions.slice(i)
+              : futurePathPositions.slice(futurePathPositions.length - 2)
           }
           return futureCache.arr
         }, false),
