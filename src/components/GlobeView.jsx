@@ -543,13 +543,16 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           // Our nose is at -Z, so at HPR=0 nose points West.
           // HPR heading CW from North: West→North needs +π/2 offset.
           //
-          // Pitch from telemetry, smoothed in preRender (attitudePitchRef)
-          // so per-row noise doesn't jitter the model. The smoothing
-          // step also handles the missing-value case so HPR never gets
-          // NaN.
+          // Pitch from telemetry, smoothed in preRender (attitudePitchRef).
+          // SIGN NEGATED: the +π/2 heading offset that compensates for
+          // our -Z nose convention also flips the pitch axis relative to
+          // Cesium's standard. Telemetry +pitch (nose up) → HPR -pitch
+          // → after the offset/quaternion math, model nose ends up up.
+          // Verified visually: HUD shows PCH +10° while ascending and
+          // the model nose now points above the horizon.
           const hpr = new Cesium.HeadingPitchRoll(
             trajHdgRef.current * D2R + Math.PI / 2,
-            attitudePitchRef.current * D2R,
+            -attitudePitchRef.current * D2R,
             -(r?._rollDeg ?? 0) * D2R
           )
           return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
