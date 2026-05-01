@@ -328,6 +328,24 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   // aircraft entity and camera target locks them together visually.
   // Initial null → seeded from first row's alt to avoid a jump from 0.
   const smoothAltRef = useRef(null)
+
+  // ── Path-following aircraft pose (cosmetic / mocked) ─────────────────
+  // Position + heading + pitch + roll are derived from the smoothed
+  // pathPositions curve, NOT from telemetry. Telemetry altitude/pitch/
+  // roll have per-sample noise that visibly jitters the model even after
+  // EMA smoothing. This pose model treats the path as ground truth:
+  //   - position: lerp along consecutive pathPositions by fractional idx
+  //   - heading: tangent direction of the path at the cursor
+  //   - pitch: slope of the path (rise vs run) over a small window
+  //   - roll: simulated bank, derived from heading-change rate
+  // Since position and orientation come from the SAME smooth curve,
+  // there is no relative motion between aircraft and path — the bob,
+  // wing-jitter, and pitch-snap that telemetry-driven attitude caused
+  // are all gone by construction.
+  const aircraftPosRef = useRef(null)
+  const aircraftHdgRef = useRef(0)    // compass degrees
+  const aircraftPitchRef = useRef(0)  // degrees, +up
+  const aircraftRollRef = useRef(0)   // degrees, +right wing down
   const autoRef       = useRef(true)
   const hudRef        = useRef(null)
   const glbUrlRef     = useRef(null)
@@ -439,10 +457,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     }
 
     // tubeIdxRef tracks the smoothed-position index where past meets
-    // future. Binary-search pathRows by _tSec, then interpolate
-    // within the bracket so the split lands at the aircraft's actual
-    // position (not one pathRow ahead).
+    // future. tubeFracIdxRef is the FRACTIONAL version (e.g. 234.7)
+    // used for the aircraft pose so position lerps smoothly across
+    // sub-vertex distances. Both come from the same vt → pathRows
+    // → pathPositions binary search.
     const tubeIdxRef = { current: 0 }
+    const tubeFracIdxRef = { current: 0 }
     const updateTubeIdx = () => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
       let lo = 0, hi = pathRows.length - 1
@@ -451,19 +471,91 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         if (pathRows[mid]._tSec < vt) lo = mid + 1
         else hi = mid
       }
-      let smIdx
+      let fIdx
       if (lo === 0) {
-        smIdx = 0
+        fIdx = 0
       } else {
         const t0 = pathRows[lo - 1]._tSec
         const t1 = pathRows[lo]._tSec
         const frac = t1 > t0 ? (vt - t0) / (t1 - t0) : 0
         const clamped = frac < 0 ? 0 : frac > 1 ? 1 : frac
-        smIdx = (lo - 1) * SMOOTH_STEPS + Math.floor(clamped * SMOOTH_STEPS)
+        fIdx = (lo - 1) * SMOOTH_STEPS + clamped * SMOOTH_STEPS
       }
-      tubeIdxRef.current = Math.min(pathPositions.length - 1, smIdx)
+      const maxIdx = pathPositions.length - 1
+      tubeFracIdxRef.current = Math.min(maxIdx, fIdx)
+      tubeIdxRef.current = Math.min(maxIdx, Math.floor(fIdx))
     }
     updateTubeIdx()
+
+    // ── Path-following aircraft pose update ──────────────────────────────
+    // Reused scratch buffers to avoid allocating per frame.
+    const _scratchPos = new Cesium.Cartesian3()
+    const _scratchA = new Cesium.Cartesian3()
+    const _scratchB = new Cesium.Cartesian3()
+    const _scratchEnu = new Cesium.Cartesian3()
+    const _scratchM4 = new Cesium.Matrix4()
+    const _scratchM4Inv = new Cesium.Matrix4()
+    // Window size (in smoothed-position indices) for tangent + slope
+    // calculations. Bigger = smoother but laggier; ~0.5s at typical
+    // playback should be plenty for a stable, smooth attitude.
+    const POSE_WINDOW = 6
+    let lastPoseVt = null
+    const updateAircraftPose = () => {
+      const fracIdx = tubeFracIdxRef.current
+      const i = Math.floor(fracIdx)
+      const f = fracIdx - i
+      const lastIdx = pathPositions.length - 1
+      const i0 = Math.max(0, Math.min(i, lastIdx))
+      const i1 = Math.max(0, Math.min(i + 1, lastIdx))
+
+      // Position: lerp between two adjacent smoothed points.
+      Cesium.Cartesian3.lerp(pathPositions[i0], pathPositions[i1], f, _scratchPos)
+      if (!aircraftPosRef.current) aircraftPosRef.current = new Cesium.Cartesian3()
+      Cesium.Cartesian3.clone(_scratchPos, aircraftPosRef.current)
+
+      // Tangent for heading + pitch from the path itself, computed over
+      // a small window so noise on individual smoothed points doesn't
+      // bend it. behindI/aheadI bracket the cursor.
+      const behindI = Math.max(0, i - POSE_WINDOW)
+      const aheadI = Math.min(lastIdx, i + POSE_WINDOW)
+      const behind = pathPositions[behindI]
+      const ahead = pathPositions[aheadI]
+
+      // ECEF delta → local ENU at `behind` so we can pull heading from
+      // east/north components and pitch from up/horizontal.
+      Cesium.Cartesian3.subtract(ahead, behind, _scratchA)
+      Cesium.Transforms.eastNorthUpToFixedFrame(behind, undefined, _scratchM4)
+      Cesium.Matrix4.inverseTransformation(_scratchM4, _scratchM4Inv)
+      Cesium.Matrix4.multiplyByPointAsVector(_scratchM4Inv, _scratchA, _scratchEnu)
+      const east = _scratchEnu.x, north = _scratchEnu.y, up = _scratchEnu.z
+      const horiz = Math.hypot(east, north)
+      if (horiz > 0.5) {
+        // Heading: compass-CW-from-north. atan2(east, north) gives that.
+        const newHdg = ((Math.atan2(east, north) * 180 / Math.PI) + 360) % 360
+        const dHdg = ((newHdg - aircraftHdgRef.current + 540) % 360) - 180
+        aircraftHdgRef.current = (aircraftHdgRef.current + dHdg * 0.20 + 360) % 360
+
+        // Pitch: rise / run, in degrees.
+        const newPitch = Math.atan2(up, horiz) * 180 / Math.PI
+        aircraftPitchRef.current += (newPitch - aircraftPitchRef.current) * 0.10
+
+        // Roll: simulated bank from heading-change rate. Positive
+        // turn-rate → bank right (positive roll). Scale to keep the
+        // bank in a believable range; cap at ±35°. Roll lerps so it
+        // doesn't snap on transient jitter.
+        const vt = virtualTimeRef?.current ?? rows[0]._tSec
+        if (lastPoseVt != null) {
+          const dt = vt - lastPoseVt
+          if (dt > 0) {
+            const dHdgPerSec = dHdg / dt
+            const targetRoll = Math.max(-35, Math.min(35, dHdgPerSec * 0.45))
+            aircraftRollRef.current += (targetRoll - aircraftRollRef.current) * 0.08
+          }
+        }
+        lastPoseVt = vt
+      }
+    }
+    updateAircraftPose()
 
     // Single-polyline path Primitive. Recreate when the cursor
     // crosses a smoothed-position boundary; throttle to 30Hz.
@@ -542,32 +634,28 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       glbUrlRef.current = url
 
       aircraftEntity = viewer.entities.add({
+        // Position + orientation come from the path-following pose
+        // (aircraftPosRef / Hdg/Pitch/RollRef), updated each frame in
+        // preRender from the smoothed path geometry. Telemetry pitch /
+        // roll / altitude noise no longer reach the model.
         position: new Cesium.CallbackProperty(() => {
-          const r = curRowRef.current
-          if (!r || r._lat == null) return Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
-          return Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0))
+          return aircraftPosRef.current ||
+            Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
         }, false),
         orientation: new Cesium.CallbackProperty(() => {
-          const r = curRowRef.current
-          const pos = r?._lat != null
-            ? Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0))
-            : Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
-
-          // Cesium glTF 2.0: forwardAxis=+Z → mapped to East at HPR=0.
-          // Our nose is at -Z, so at HPR=0 nose points West.
-          // HPR heading CW from North: West→North needs +π/2 offset.
-          //
-          // Pitch from telemetry, smoothed in preRender (attitudePitchRef).
-          // SIGN NEGATED: the +π/2 heading offset that compensates for
-          // our -Z nose convention also flips the pitch axis relative to
-          // Cesium's standard. Telemetry +pitch (nose up) → HPR -pitch
-          // → after the offset/quaternion math, model nose ends up up.
-          // Verified visually: HUD shows PCH +10° while ascending and
-          // the model nose now points above the horizon.
+          const pos = aircraftPosRef.current ||
+            Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
+          // Heading: compass-CW-from-north → +π/2 offset to compensate
+          // for our glTF nose pointing -Z (becomes -X in Cesium model
+          // frame). Pitch sign is negated (same nose-axis remap flips
+          // perceived pitch direction). Roll is positive=right-wing-down
+          // by aerospace convention; HPR's roll is the same direction
+          // when nose is at default +X, but with our +π/2 heading
+          // offset the roll axis flips → negate.
           const hpr = new Cesium.HeadingPitchRoll(
-            trajHdgRef.current * D2R + Math.PI / 2,
-            -attitudePitchRef.current * D2R,
-            -attitudeRollRef.current * D2R,
+            aircraftHdgRef.current * D2R + Math.PI / 2,
+            -aircraftPitchRef.current * D2R,
+            -aircraftRollRef.current * D2R,
           )
           return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
         }, false),
@@ -687,6 +775,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       // rebuilds the single-polyline path primitive only when the
       // smoothed-position idx changes AND the 30Hz throttle allows.
       updateTubeIdx()
+      updateAircraftPose()
       updatePathPrimitive()
 
       // ── Fly-away detection + auto-recovery ───────────────────────────────
@@ -852,8 +941,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
 
       const alt    = Math.max(0, r['Alt(m)'] || 0)
       const spdMs  = (r['GSpd(kmh)'] || 0) / 3.6
-      const target = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
-      const targetHdg  = trajHdgRef.current
+      // Camera tracks the path-following aircraft position, NOT the raw
+      // telemetry-derived position. This locks the camera to the model
+      // visually — there's no relative motion that could read as bob/
+      // jitter, because both sides come from the same smoothed curve.
+      const target = aircraftPosRef.current
+        ? Cesium.Cartesian3.clone(aircraftPosRef.current, new Cesium.Cartesian3())
+        : Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
+      const targetHdg  = aircraftHdgRef.current
       const targetDist = Math.max(150, Math.min(600, spdMs * 5 + alt * 1.5 + 150))
 
       // Detect playback speed by measuring how much virtual time
