@@ -373,22 +373,27 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
 
     // ── Flight path: FM-coloured past + faded gray future ────────────────
-    // Cheap implementation: regular Polylines (screen-space strokes), no
-    // 3D extrusion. PolylineVolume turned out to be far too expensive —
-    // tessellating a multi-thousand-position volume on every cursor
-    // change tanked the framerate. Polylines render as GPU-friendly
-    // thick lines and are essentially free to update.
+    // Primitive-based rendering (not Entity API) so we can control
+    // the order in which polylines draw to the framebuffer.
     //
-    //  • Per-FM static polyline (covers the WHOLE path) — drawn first,
-    //    so FM colours are visible underneath wherever nothing's on top.
-    //  • Single gray-future polyline (positions = pathPositions[idx..end])
-    //    drawn AFTER the FM polylines, slightly wider, opaque-ish gray.
-    //    Wherever the future overlay is present it covers the FM colour
-    //    underneath; wherever it isn't (i.e. the past segment), the FM
-    //    colour shows through.
+    // Architecture:
+    //   • One static Primitive per FM segment (built once at log load)
+    //   • One dynamic Primitive for the gray future overlay,
+    //     rebuilt every time the cursor crosses a smoothed-position
+    //     boundary
     //
-    // Width is in pixels, so the visual thickness is consistent across
-    // zoom — no ill-defined "tube radius in metres" to tune.
+    // viewer.scene.primitives renders primitives in addition order.
+    // FM primitives go in first, future primitive last → future draws
+    // on top of FM in the framebuffer regardless of world depth, which
+    // solves the same-depth z-fight that plagued the entity-API
+    // implementation.
+    //
+    // Cost model:
+    //   • Static FM primitives → free per frame
+    //   • Dynamic future primitive → recreated only when smoothed-
+    //     position idx changes (~5/sec at 1×, throttled to 30Hz max)
+    //   • Each recreate ~1ms for a 4800-vertex polyline
+    //   • Net: well under 5% CPU on the path-render budget
     const SMOOTH_STEPS = 8
     const pathPositions = (() => {
       const pts = pathRows.map(r =>
@@ -398,29 +403,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    // Future overlay re-uses pathPositions directly (no altitude
-    // offset). Render-order ambiguity at identical depth is solved
-    // via disableDepthTestDistance on the polyline below — the
-    // 2m-offset variant we tried first showed both lines as visibly
-    // separate strokes from the auto-mode side-on camera angle.
     const FM_LINE_WIDTH = 4
-    // Future stroke must be at least as wide as the FM stroke so it
-    // cleanly covers the underlying FM polyline in the future zone.
-    // Going thinner (the original "1 px hairline" intent) lets FM
-    // colours leak around the gray, defeating the past/future split.
     const FUTURE_LINE_WIDTH = 4
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
-    // pathRows sorted ascending by _tSec — binary-search for the
-    // vt-aligned index, then interpolate WITHIN the bracketing pair so
-    // the split lands exactly at the aircraft's actual position rather
-    // than at the next pathRow boundary (which could be up to ~1 s of
-    // path AHEAD of the aircraft, making the FM-coloured "past" appear
-    // to lead the model).
     // tubeIdxRef tracks the smoothed-position index where past meets
-    // future. Binary-search pathRows by _tSec, then interpolate WITHIN
-    // the bracket so the split lands at the aircraft's actual position
-    // (not one pathRow ahead).
+    // future. Binary-search pathRows by _tSec, then interpolate
+    // within the bracket so the split lands at the aircraft's actual
+    // position (not one pathRow ahead).
     const tubeIdxRef = { current: 0 }
     const updateTubeIdx = () => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
@@ -444,15 +434,29 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     }
     updateTubeIdx()
 
-    // Per-FM-segment STATIC polylines covering the whole path. No
-    // CallbackProperty — built once at log load. This was previously
-    // dynamic (sliced to the cursor each frame) to avoid FM colour
-    // bleed through the gray future, but per-segment CallbackProperty
-    // evaluations dropped the frame rate from 60fps to ~22fps and
-    // produced visible stutter. The future overlay below is wider than
-    // the FM polylines and rendered after, which covers the FM colour
-    // in the future zone with the negligible side-effect of a few
-    // pixels of FM peeking out at the very edges.
+    // Helper: build a polyline primitive for [positions, color, width].
+    // Uses asynchronous: false so the primitive is ready to render
+    // immediately (no flicker waiting for a worker).
+    const buildPolylinePrimitive = (positions, color, width) => {
+      if (!positions || positions.length < 2) return null
+      return new Cesium.Primitive({
+        geometryInstances: new Cesium.GeometryInstance({
+          geometry: new Cesium.PolylineGeometry({
+            positions,
+            width,
+            vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT,
+          }),
+        }),
+        appearance: new Cesium.PolylineMaterialAppearance({
+          material: Cesium.Material.fromType('Color', { color }),
+          translucent: false,
+        }),
+        asynchronous: false,
+        releaseGeometryInstances: false,
+      })
+    }
+
+    // Static FM primitives — one per FM segment, built once.
     {
       let segStart = 0
       let prevFM = pathRows[0]?.FM || 'UNKNOWN'
@@ -460,14 +464,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         const smLo = segStart * SMOOTH_STEPS
         const smHi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
         if (smHi - smLo < 2) return
-        viewer.entities.add({
-          polyline: {
-            positions: pathPositions.slice(smLo, smHi),
-            width: FM_LINE_WIDTH,
-            material: Cesium.Color.fromCssColorString(fmColor(prevFM)),
-            clampToGround: false,
-          },
-        })
+        const prim = buildPolylinePrimitive(
+          pathPositions.slice(smLo, smHi),
+          Cesium.Color.fromCssColorString(fmColor(prevFM)),
+          FM_LINE_WIDTH,
+        )
+        if (prim) viewer.scene.primitives.add(prim)
       }
       for (let i = 1; i < pathRows.length; i++) {
         const fm = pathRows[i].FM || 'UNKNOWN'
@@ -480,40 +482,38 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       pushSeg(pathRows.length - 1)
     }
 
-    // Future overlay polyline. Same source as FM polylines so the
-    // curves align perfectly. Cache by idx to skip re-slicing on
-    // no-op frames.
-    //
-    // disableDepthTestDistance: Number.POSITIVE_INFINITY forces this
-    // polyline to render in front of everything regardless of depth.
-    // Without it, two same-depth opaque polylines z-fight per pixel
-    // and FM colours leak through. The earlier altitude-offset fix
-    // worked depth-test-wise but created two visibly separate strokes
-    // from the auto-mode side camera angle. Disabling depth test on
-    // ONLY the future polyline keeps the visual a single overlapping
-    // line; the aircraft model passes underneath the polyline by 4 px
-    // for one frame as the cursor crosses it (a much smaller cost
-    // than the two-line problem).
-    const futureCache = { idx: -1, arr: pathPositions.slice() }
-    viewer.entities.add({
-      polyline: {
-        positions: new Cesium.CallbackProperty(() => {
-          const i = tubeIdxRef.current
-          if (i !== futureCache.idx) {
-            futureCache.idx = i
-            futureCache.arr = i <= pathPositions.length - 2
-              ? pathPositions.slice(i)
-              : pathPositions.slice(pathPositions.length - 2)
-          }
-          return futureCache.arr
-        }, false),
-        width: FUTURE_LINE_WIDTH,
-        material: FUTURE_COLOR,
-        clampToGround: false,
-        // Skip depth test → always draw on top of FM polylines
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      },
-    })
+    // Dynamic future overlay primitive — recreated when the cursor
+    // crosses a smoothed-position boundary. It's added to the scene's
+    // primitive collection AFTER the FM primitives, so framebuffer
+    // order guarantees it draws on top regardless of world depth.
+    let futurePrimitive = null
+    let futurePrimIdx = -1
+    let lastFutureUpdateMs = 0
+    const FUTURE_UPDATE_THROTTLE_MS = 33  // 30Hz max
+    const updateFuturePrimitive = () => {
+      const i = tubeIdxRef.current
+      if (i === futurePrimIdx) return
+      const nowMs = performance.now()
+      if (nowMs - lastFutureUpdateMs < FUTURE_UPDATE_THROTTLE_MS) return
+      lastFutureUpdateMs = nowMs
+      futurePrimIdx = i
+
+      // Tear down old
+      if (futurePrimitive) {
+        try { viewer.scene.primitives.remove(futurePrimitive) } catch (_) {}
+        futurePrimitive = null
+      }
+      // Build new (skip if cursor at end of path)
+      if (i < pathPositions.length - 1) {
+        futurePrimitive = buildPolylinePrimitive(
+          pathPositions.slice(i),
+          FUTURE_COLOR,
+          FUTURE_LINE_WIDTH,
+        )
+        if (futurePrimitive) viewer.scene.primitives.add(futurePrimitive)
+      }
+    }
+    updateFuturePrimitive()
 
     const addDot = (r, color) => viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0)),
@@ -659,10 +659,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       if (!r || r._lat == null) return
       curRowRef.current = r
 
-      // Move the past/future tube split to match the current virtual
-      // time. Cheap (binary-search over ~600 rows) and only the cache
-      // miss inside the CallbackProperty triggers re-tessellation.
+      // Move the past/future split to match the current virtual time.
+      // Cheap (binary-search over ~600 rows). updateFuturePrimitive
+      // rebuilds the gray future Primitive only when the smoothed-
+      // position idx changes AND the 30Hz throttle allows.
       updateTubeIdx()
+      updateFuturePrimitive()
 
       // ── Fly-away detection + auto-recovery ───────────────────────────────
       // Defensive net for the rare cases where camera state goes wild —
