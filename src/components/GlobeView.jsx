@@ -435,15 +435,28 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     updateTubeIdx()
 
     // Helper: build a polyline primitive for [positions, color, width].
-    //
-    // translucent: true puts BOTH FM and future primitives in the
-    // translucent draw pass, where Cesium uses LEQUAL depth comparison
-    // and disables depth writes — so later-added primitives win on
-    // identical depth. (Opaque pass uses strict LESS, which left
-    // earlier-drawn FM polylines visible despite the future being
-    // added after.) Colour alpha is still 1.0 so visually opaque.
-    const buildPolylinePrimitive = (positions, color, width) => {
+    // alwaysOnTop=true sets the appearance's renderState depthTest to
+    // ALWAYS, which forces this primitive to draw over anything at the
+    // same world depth. Used for the future overlay so it cleanly
+    // covers FM polylines beneath it without a z-fight.
+    const buildPolylinePrimitive = (positions, color, width, alwaysOnTop = false) => {
       if (!positions || positions.length < 2) return null
+      const appearanceOpts = {
+        material: Cesium.Material.fromType('Color', { color }),
+        translucent: false,
+      }
+      if (alwaysOnTop) {
+        // Custom render state: depth test always passes, but still
+        // write depth so later primitives behave correctly. Disabled
+        // depth writes on the future polyline give the cleanest
+        // result — future never gets occluded by anything else added
+        // after it.
+        appearanceOpts.renderState = {
+          depthTest: { enabled: true, func: 7 /* DepthFunction.ALWAYS */ },
+          depthMask: false,
+          blending: Cesium.BlendingState.ALPHA_BLEND,
+        }
+      }
       return new Cesium.Primitive({
         geometryInstances: new Cesium.GeometryInstance({
           geometry: new Cesium.PolylineGeometry({
@@ -452,10 +465,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
             vertexFormat: Cesium.PolylineMaterialAppearance.VERTEX_FORMAT,
           }),
         }),
-        appearance: new Cesium.PolylineMaterialAppearance({
-          material: Cesium.Material.fromType('Color', { color }),
-          translucent: true,
-        }),
+        appearance: new Cesium.PolylineMaterialAppearance(appearanceOpts),
         asynchronous: false,
         releaseGeometryInstances: false,
       })
@@ -508,12 +518,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         try { viewer.scene.primitives.remove(futurePrimitive) } catch (_) {}
         futurePrimitive = null
       }
-      // Build new (skip if cursor at end of path)
+      // Build new (skip if cursor at end of path). alwaysOnTop=true
+      // makes the future polyline win over FM at identical depth.
       if (i < pathPositions.length - 1) {
         futurePrimitive = buildPolylinePrimitive(
           pathPositions.slice(i),
           FUTURE_COLOR,
           FUTURE_LINE_WIDTH,
+          true,
         )
         if (futurePrimitive) viewer.scene.primitives.add(futurePrimitive)
       }
