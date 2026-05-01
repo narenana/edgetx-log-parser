@@ -398,17 +398,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    // Coarser positions for the FUTURE overlay only — the FM polylines
-    // (built from pathPositions, smoothed) are static and rendered once,
-    // so they keep the higher fidelity for the past trail. The future
-    // overlay re-tessellates each cursor change; using the un-smoothed
-    // pathRows here gives a 6-8x cheaper update (~600 vs ~4800 vertices)
-    // which is what gets us from ~30fps back toward 60fps.
-    const futurePositions = pathRows.map(r =>
-      Cesium.Cartesian3.fromDegrees(
-        r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
-      ),
-    )
+    // The future overlay shares pathPositions with the FM polylines.
+    // Earlier I tried using un-smoothed pathRows here for cheaper
+    // tessellation, but the future polyline then traces a different
+    // (linear) path than the smoothed FM polylines below it, so the
+    // overlay no longer cleanly covers the FM colours where the curves
+    // diverge. Same source array → guaranteed alignment.
     const FM_LINE_WIDTH = 4
     // Future stroke must be at least as wide as the FM stroke so it
     // cleanly covers the underlying FM polyline in the future zone.
@@ -423,10 +418,10 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     // than at the next pathRow boundary (which could be up to ~1 s of
     // path AHEAD of the aircraft, making the FM-coloured "past" appear
     // to lead the model).
-    // tubeIdxRef tracks the pathRow index where past meets future. The
-    // future overlay slices futurePositions (un-smoothed pathRows-level
-    // resolution, ~600 vertices) — much cheaper to re-tessellate than
-    // the smoothed pathPositions used for the static FM polylines.
+    // tubeIdxRef tracks the smoothed-position index where past meets
+    // future. Binary-search pathRows by _tSec, then interpolate WITHIN
+    // the bracket so the split lands at the aircraft's actual position
+    // (not one pathRow ahead).
     const tubeIdxRef = { current: 0 }
     const updateTubeIdx = () => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
@@ -436,12 +431,17 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         if (pathRows[mid]._tSec < vt) lo = mid + 1
         else hi = mid
       }
-      // lo = first pathRows index with _tSec >= vt; the aircraft is
-      // BETWEEN pathRows[lo-1] and pathRows[lo]. Use lo-1 so the future
-      // overlay starts strictly behind the aircraft (a tiny FM "tail"
-      // remains visible just behind the model — preferable to having
-      // the gray cover the model itself).
-      tubeIdxRef.current = Math.max(0, lo - 1)
+      let smIdx
+      if (lo === 0) {
+        smIdx = 0
+      } else {
+        const t0 = pathRows[lo - 1]._tSec
+        const t1 = pathRows[lo]._tSec
+        const frac = t1 > t0 ? (vt - t0) / (t1 - t0) : 0
+        const clamped = frac < 0 ? 0 : frac > 1 ? 1 : frac
+        smIdx = (lo - 1) * SMOOTH_STEPS + Math.floor(clamped * SMOOTH_STEPS)
+      }
+      tubeIdxRef.current = Math.min(pathPositions.length - 1, smIdx)
     }
     updateTubeIdx()
 
@@ -481,22 +481,22 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       pushSeg(pathRows.length - 1)
     }
 
-    // Future overlay polyline. Slices futurePositions (pathRows-level
-    // resolution, no catmull-rom smoothing) so per-cursor-change
-    // re-tessellation only ships ~600 vertices instead of ~4800. The
-    // overlay covers the static FM polylines below it across the
-    // future zone, so visual smoothness on this layer is less
-    // important than its update cost.
-    const futureCache = { idx: -1, arr: futurePositions.slice() }
+    // Future overlay polyline. Same source array as the FM polylines
+    // (pathPositions, smoothed) so the curves align perfectly and the
+    // overlay actually covers the FM colour below it. Cache by idx so
+    // we only re-slice when the cursor crosses a smoothed-position
+    // boundary; reference equality on the cached array reference lets
+    // Cesium's PolylineCollection skip the GPU rebuild on no-op frames.
+    const futureCache = { idx: -1, arr: pathPositions.slice() }
     viewer.entities.add({
       polyline: {
         positions: new Cesium.CallbackProperty(() => {
           const i = tubeIdxRef.current
           if (i !== futureCache.idx) {
             futureCache.idx = i
-            futureCache.arr = i <= futurePositions.length - 2
-              ? futurePositions.slice(i)
-              : futurePositions.slice(futurePositions.length - 2)
+            futureCache.arr = i <= pathPositions.length - 2
+              ? pathPositions.slice(i)
+              : pathPositions.slice(pathPositions.length - 2)
           }
           return futureCache.arr
         }, false),
