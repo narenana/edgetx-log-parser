@@ -319,6 +319,15 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   // value goes straight into the orientation HPR each frame, and on
   // noisy logs the wings visibly jitter every few frames.
   const attitudeRollRef = useRef(0)
+  // Smoothed altitude. Telemetry _altitude often has small per-row noise
+  // that interpRows linearly interpolates between samples — this puts
+  // tiny vertical wiggles on the aircraft position. Without smoothing,
+  // the camera target (which IS smoothed via smooth.pos) lags, and the
+  // aircraft visibly bobs up-down between frames against the camera.
+  // Smoothing the altitude HERE and feeding the same value to both
+  // aircraft entity and camera target locks them together visually.
+  // Initial null → seeded from first row's alt to avoid a jump from 0.
+  const smoothAltRef = useRef(null)
   const autoRef       = useRef(true)
   const hudRef        = useRef(null)
   const glbUrlRef     = useRef(null)
@@ -660,6 +669,17 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
       const r  = interpRows(rows, vt)
       if (!r || r._lat == null) return
+      // Smooth the altitude in place on the (locally-owned) row object
+      // so both the aircraft entity (via curRowRef) and the camera
+      // target (via the local r) see the same value. 0.20 damping ⇒
+      // ~5-frame convergence = 165 ms at 30 fps; visible lag is well
+      // under a metre at typical playback speeds and the bob disappears.
+      const rawAlt = r['Alt(m)']
+      if (Number.isFinite(rawAlt)) {
+        if (smoothAltRef.current == null) smoothAltRef.current = rawAlt
+        else smoothAltRef.current += (rawAlt - smoothAltRef.current) * 0.20
+        r['Alt(m)'] = smoothAltRef.current
+      }
       curRowRef.current = r
 
       // Move the past/future split to match the current virtual time.
