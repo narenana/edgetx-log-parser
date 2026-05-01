@@ -315,6 +315,10 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   // attitude (matches the HUD), kept separate from trajPitchRef which
   // tracks trajectory slope.
   const attitudePitchRef = useRef(0)
+  // Smoothed copy of telemetry _rollDeg. Without this the raw row
+  // value goes straight into the orientation HPR each frame, and on
+  // noisy logs the wings visibly jitter every few frames.
+  const attitudeRollRef = useRef(0)
   const autoRef       = useRef(true)
   const hudRef        = useRef(null)
   const glbUrlRef     = useRef(null)
@@ -457,7 +461,13 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     let pathPrimitive = null
     let pathPrimIdx = -1
     let lastPathUpdateMs = 0
-    const PATH_UPDATE_THROTTLE_MS = 33  // 30Hz max
+    // 10Hz max — primitive recreation costs ~5-10ms each (CPU geometry
+    // build + GPU upload). At 30Hz it ate enough of the per-frame
+    // budget to drop rendering from 60fps to ~22fps. 10Hz still feels
+    // responsive (the past/future split lags playback by at most 100ms,
+    // imperceptible at typical playback speeds) and frees ~70ms/sec of
+    // CPU back for the rest of the scene.
+    const PATH_UPDATE_THROTTLE_MS = 100
     const buildPathColors = (cursorIdx) => {
       const out = new Array(pathPositions.length)
       for (let i = 0; i < out.length; i++) {
@@ -543,7 +553,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           const hpr = new Cesium.HeadingPitchRoll(
             trajHdgRef.current * D2R + Math.PI / 2,
             -attitudePitchRef.current * D2R,
-            -(r?._rollDeg ?? 0) * D2R
+            -attitudeRollRef.current * D2R,
           )
           return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
         }, false),
@@ -756,6 +766,9 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       // was continuous.
       if (Number.isFinite(r?._pitchDeg)) {
         attitudePitchRef.current += (r._pitchDeg - attitudePitchRef.current) * 0.05
+      }
+      if (Number.isFinite(r?._rollDeg)) {
+        attitudeRollRef.current += (r._rollDeg - attitudeRollRef.current) * 0.05
       }
 
       const now = performance.now()
