@@ -435,8 +435,13 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     updateTubeIdx()
 
     // Helper: build a polyline primitive for [positions, color, width].
-    // Uses asynchronous: false so the primitive is ready to render
-    // immediately (no flicker waiting for a worker).
+    //
+    // translucent: true puts BOTH FM and future primitives in the
+    // translucent draw pass, where Cesium uses LEQUAL depth comparison
+    // and disables depth writes — so later-added primitives win on
+    // identical depth. (Opaque pass uses strict LESS, which left
+    // earlier-drawn FM polylines visible despite the future being
+    // added after.) Colour alpha is still 1.0 so visually opaque.
     const buildPolylinePrimitive = (positions, color, width) => {
       if (!positions || positions.length < 2) return null
       return new Cesium.Primitive({
@@ -449,7 +454,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         }),
         appearance: new Cesium.PolylineMaterialAppearance({
           material: Cesium.Material.fromType('Color', { color }),
-          translucent: false,
+          translucent: true,
         }),
         asynchronous: false,
         releaseGeometryInstances: false,
