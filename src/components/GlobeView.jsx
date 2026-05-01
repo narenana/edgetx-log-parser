@@ -398,18 +398,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    // Offset positions for the future overlay — 2 metres higher than
-    // the FM polylines so depth test cleanly orders them. Without
-    // this they sit at identical world depth and Cesium picks an
-    // arbitrary winner per pixel, leaving FM colours bleeding through
-    // the supposed-to-be-gray future zone.
-    const FUTURE_ALT_OFFSET = 2
-    const futurePathPositions = pathPositions.map(p => {
-      const carto = Cesium.Cartographic.fromCartesian(p)
-      return Cesium.Cartesian3.fromRadians(
-        carto.longitude, carto.latitude, carto.height + FUTURE_ALT_OFFSET,
-      )
-    })
+    // Future overlay re-uses pathPositions directly (no altitude
+    // offset). Render-order ambiguity at identical depth is solved
+    // via disableDepthTestDistance on the polyline below — the
+    // 2m-offset variant we tried first showed both lines as visibly
+    // separate strokes from the auto-mode side-on camera angle.
     const FM_LINE_WIDTH = 4
     // Future stroke must be at least as wide as the FM stroke so it
     // cleanly covers the underlying FM polyline in the future zone.
@@ -487,27 +480,38 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       pushSeg(pathRows.length - 1)
     }
 
-    // Future overlay polyline. Slices futurePathPositions (smoothed
-    // path + 2m altitude offset) so it sits geometrically ABOVE the
-    // FM polylines, depth-test ordering guarantees it draws on top
-    // wherever they overlap. Cache by idx to skip re-slicing when the
-    // cursor hasn't crossed a smoothed-position boundary.
-    const futureCache = { idx: -1, arr: futurePathPositions.slice() }
+    // Future overlay polyline. Same source as FM polylines so the
+    // curves align perfectly. Cache by idx to skip re-slicing on
+    // no-op frames.
+    //
+    // disableDepthTestDistance: Number.POSITIVE_INFINITY forces this
+    // polyline to render in front of everything regardless of depth.
+    // Without it, two same-depth opaque polylines z-fight per pixel
+    // and FM colours leak through. The earlier altitude-offset fix
+    // worked depth-test-wise but created two visibly separate strokes
+    // from the auto-mode side camera angle. Disabling depth test on
+    // ONLY the future polyline keeps the visual a single overlapping
+    // line; the aircraft model passes underneath the polyline by 4 px
+    // for one frame as the cursor crosses it (a much smaller cost
+    // than the two-line problem).
+    const futureCache = { idx: -1, arr: pathPositions.slice() }
     viewer.entities.add({
       polyline: {
         positions: new Cesium.CallbackProperty(() => {
           const i = tubeIdxRef.current
           if (i !== futureCache.idx) {
             futureCache.idx = i
-            futureCache.arr = i <= futurePathPositions.length - 2
-              ? futurePathPositions.slice(i)
-              : futurePathPositions.slice(futurePathPositions.length - 2)
+            futureCache.arr = i <= pathPositions.length - 2
+              ? pathPositions.slice(i)
+              : pathPositions.slice(pathPositions.length - 2)
           }
           return futureCache.arr
         }, false),
         width: FUTURE_LINE_WIDTH,
         material: FUTURE_COLOR,
         clampToGround: false,
+        // Skip depth test → always draw on top of FM polylines
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
     })
 
