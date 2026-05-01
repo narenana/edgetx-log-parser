@@ -754,11 +754,13 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       }
 
       // Smoothed telemetry pitch — used for the model's actual attitude.
-      // Heavier damping than trajPitchRef so per-row noise doesn't make
-      // the model jitter, but light enough to feel responsive (~5 frames
-      // to converge on a step change).
+      // 0.05 damping (matching trajPitchRef) was the value the user
+      // confirmed felt smooth pre-pitch-change. Stronger damping like
+      // 0.20 made the model visibly snap toward each new telemetry
+      // sample, reading as stutter even though the numerical motion
+      // was continuous.
       if (Number.isFinite(r?._pitchDeg)) {
-        attitudePitchRef.current += (r._pitchDeg - attitudePitchRef.current) * 0.20
+        attitudePitchRef.current += (r._pitchDeg - attitudePitchRef.current) * 0.05
       }
 
       const now = performance.now()
