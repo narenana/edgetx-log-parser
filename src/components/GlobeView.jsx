@@ -501,12 +501,17 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       if (nowMs - lastPathUpdateMs < PATH_UPDATE_THROTTLE_MS) return
       lastPathUpdateMs = nowMs
       pathPrimIdx = i
-      if (pathPrimitive) {
-        try { viewer.scene.primitives.remove(pathPrimitive) } catch (_) {}
-        pathPrimitive = null
+      // Build + add the NEW primitive first, then remove the old one.
+      // The previous order (remove-then-add) created a one-frame gap
+      // where no path was rendered, perceptible as a flicker every
+      // 100ms during playback.
+      const newPrim = buildPathPrimitive(i)
+      viewer.scene.primitives.add(newPrim)
+      const oldPrim = pathPrimitive
+      pathPrimitive = newPrim
+      if (oldPrim) {
+        try { viewer.scene.primitives.remove(oldPrim) } catch (_) {}
       }
-      pathPrimitive = buildPathPrimitive(i)
-      viewer.scene.primitives.add(pathPrimitive)
     }
     // Build first version with cursor at start (everything is future).
     pathPrimitive = buildPathPrimitive(0)
