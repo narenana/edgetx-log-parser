@@ -991,10 +991,17 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           smooth.dist = targetDist
         }
       } else {
-        const posDamp = Math.min(1, 0.05 * speedFactor)
         const hdgDamp = Math.min(1, 0.004 * speedFactor)
         const distDamp = Math.min(1, 0.008 * speedFactor)
-        Cesium.Cartesian3.lerp(smooth.pos, target, posDamp, smooth.pos)
+        // Camera position locks DIRECTLY to the aircraft position —
+        // no per-frame damping. The previous lerp (5%/frame at 1×)
+        // left the camera lagging the aircraft a tiny bit each frame,
+        // and the gap shifted between frames as smooth.pos chased
+        // target. That gap was the visible aircraft "vibration" the
+        // user reported. Aircraft and target both come from the same
+        // path-following pose so locking them together produces no
+        // relative motion.
+        Cesium.Cartesian3.clone(target, smooth.pos)
         // Heading: deadband so small drifts/turns don't rotate the camera.
         // Only follow if offset > 45°, and then at the speed-scaled rate.
         const hdgDelta = ((targetHdg - smooth.hdg + 540) % 360) - 180
