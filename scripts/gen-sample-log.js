@@ -75,123 +75,213 @@ function arcPoint(centerE, centerN, R, startPhi, endPhi, u, leftTurn = true) {
 
 // ── Fixed-wing flight ──────────────────────────────────────────────────────
 //
-// Standard left-traffic rectangular circuit with rounded turns.
-// Closes the loop — touchdown at the same coordinates as takeoff.
+// Two climbing left-traffic circuits → SE diversion + climb to 200m →
+// hard-left U-turn → NW inbound → standard left-traffic descending
+// pattern + landing. Closes the loop — touchdown a few metres past
+// takeoff. Total ≈ 7.8 minutes.
 //
-// Geometry (looking down from above, north up, east right):
+// Field-circuit geometry (looking down, north up, east right):
 //
-//       (-380, 450) ←————— downwind ←————— (380, 450)
-//            ╱                                    ╲
-//   base   ╱                                       ╲   crosswind
-//        ╱                                          ╲
-//   (-430, 50)                                  (430, 50)
-//        ╲                                          ╱
-//      ╱                                          ╱
-//   (-380, 0)←—— final ——←—— ────────► takeoff ╱
-//                      ↓
-//                 ↘ touchdown at (0, 0) ↗
+//                downwind leg (W) ────────►
+//        (-380, 250) ←───────── (380, 250)
+//             ╱                       ╲
+//      base ╱                           ╲ x-wind
+//   (-430, 200)                   (430, 200)
+//        ╲                           ╱
+//         ╲                         ╱
+//   (-430, 50)                  (430, 50)
+//        ╱                           ╲
+//      ╱                               ╲
+//   (-380, 0) ───── final ←────────► (380, 0)
+//          ↓                           ↑
+//          touchdown (35, 3)   takeoff (0,0)
+//
+// The two takeoff laps gain altitude on the NORTH side. After the 2nd
+// final turn the plane climbs east past origin, banks 45° right and
+// flies SE for ~50 s to peak altitude (200 m). A hard-left U-turn at
+// the far end (R=280 m) brings it back NW; the inbound leg is sized so
+// that a 45° left turn at its end deposits the plane right onto the
+// downwind line for a single descending circuit + final approach.
 
 function buildFixedWingFlight() {
-  const TOTAL = 240 // s — close enough to a real circuit, easy to follow
+  const TOTAL = 468 // s
   const start = new Date('2024-09-15T14:23:00Z').getTime()
   const out = []
 
-  // ── Phase table — each phase has its own evaluator ──
-  // duration | mode | type | params...
-  // Sum of durations = TOTAL.
-
-  // Tweakable dims
-  const CRUISE_ALT = 80
-  const CRUISE_SPD = 65
-  const TURN_R = 50
-  // Climb / descent end-altitudes
-  const CLIMB_END = 80
-  const APPROACH_START = 30
-
-  // Path waypoints (E, N, alt, gspd) at phase boundaries:
-  //   W0  takeoff start  (0, 0, 0)            heading 90
-  //   W1  rotation       (40, 0, 0)
-  //   W2  end climb-out  (380, 0, 80)
-  //   W3  end CW turn    (430, 50, 80)        heading 0  (north)
-  //   W4  end x-wind leg (430, 450, 80)
-  //   W5  end DW turn    (380, 500, 80)       heading 270 (west)
-  //   W6  end downwind   (-380, 500, 80)
-  //   W7  end base turn  (-430, 450, 75)      heading 180 (south)
-  //   W8  end base leg   (-430, 50, 50)
-  //   W9  end final turn (-380, 0, 35)        heading 90 (east, lined up)
-  //   W10 touchdown      (0, 0, 0)
-  //
-  // Turn geometry: each rounded corner uses a quarter-circle arc with
-  // radius TURN_R = 50m centred so it tangents both the incoming and
-  // outgoing legs. For example, the crosswind turn from (380,0) heading
-  // east to (430,50) heading north has its centre at (380, 50).
+  const TURN_R = 50  // field-circuit corner radius
+  const DIV_R = 280  // diversion U-turn radius (gentler — wider sweep)
 
   const phases = [
+    // ── Pre-flight & takeoff ──
     // 0–8  pre-takeoff hold
-    { dur: 8,  mode: 'MANU', kind: 'static', E: 0, N: 0, alt: 0, gspd: 0, hdg: 90, pitch: 0, roll: 0 },
+    { dur: 8, mode: 'MANU', kind: 'static', E: 0, N: 0, alt: 0, gspd: 0, hdg: 90, pitch: 0, roll: 0 },
 
-    // 8–13  takeoff roll, ground accel
-    { dur: 5,  mode: 'ANGL', kind: 'line',
-      fromE: 0, fromN: 0, toE: 40, toN: 0,
-      fromAlt: 0, toAlt: 0, fromGspd: 0, toGspd: 50, hdg: 90, pitch: 0.05, roll: 0 },
+    // 8–13  takeoff roll
+    { dur: 5, mode: 'ANGL', kind: 'line',
+      fromE: 0, fromN: 0, toE: 50, toN: 0,
+      fromAlt: 0, toAlt: 0, fromGspd: 0, toGspd: 65, hdg: 90, pitch: 0.05, roll: 0 },
 
-    // 13–37  climb-out east, alt 0→80
-    { dur: 24, mode: 'ANGL', kind: 'line',
-      fromE: 40, fromN: 0, toE: 380, toN: 0,
-      fromAlt: 0, toAlt: CLIMB_END, fromGspd: 50, toGspd: CRUISE_SPD, hdg: 90,
-      pitch: 0.18, roll: 0 },
+    // 13–28  initial climb-out east, alt 0→50, spd 65→90
+    { dur: 15, mode: 'ANGL', kind: 'line',
+      fromE: 50, fromN: 0, toE: 380, toN: 0,
+      fromAlt: 0, toAlt: 50, fromGspd: 65, toGspd: 90, hdg: 90, pitch: 0.18, roll: 0 },
 
-    // 37–47  crosswind turn (90°→0°), banked left
-    { dur: 10, mode: 'ANGL', kind: 'arc',
+    // ══ Climbing left circuit #1 (alt 50 → 115 m) ══
+
+    // 28–36  crosswind turn (E → N)
+    { dur: 8, mode: 'ANGL', kind: 'arc',
       centerE: 380, centerN: 50, R: TURN_R, startPhi: 180, endPhi: 90,
-      alt: CRUISE_ALT, gspd: 60, pitch: 0.04, roll: -0.42 },
+      fromAlt: 50, toAlt: 60, gspd: 90, pitch: 0.06, roll: -0.42 },
 
-    // 47–66  crosswind leg (north)
-    { dur: 19, mode: 'CRUZ', kind: 'line',
-      fromE: 430, fromN: 50, toE: 430, toN: 450,
-      alt: CRUISE_ALT, fromGspd: 60, toGspd: CRUISE_SPD, hdg: 0, pitch: 0.02, roll: 0 },
+    // 36–42  x-wind leg N
+    { dur: 6, mode: 'ANGL', kind: 'line',
+      fromE: 430, fromN: 50, toE: 430, toN: 200,
+      fromAlt: 60, toAlt: 70, gspd: 90, hdg: 0, pitch: 0.05, roll: 0 },
 
-    // 66–76  downwind turn (0°→270°)
-    { dur: 10, mode: 'CRUZ', kind: 'arc',
-      centerE: 380, centerN: 450, R: TURN_R, startPhi: 90, endPhi: 0,
-      alt: CRUISE_ALT, gspd: 60, pitch: 0.02, roll: -0.42 },
+    // 42–50  downwind turn (N → W)
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: 380, centerN: 200, R: TURN_R, startPhi: 90, endPhi: 0,
+      fromAlt: 70, toAlt: 80, gspd: 90, pitch: 0.04, roll: -0.42 },
 
-    // 76–116  downwind leg (west)
-    { dur: 40, mode: 'CRUZ', kind: 'line',
-      fromE: 380, fromN: 500, toE: -380, toN: 500,
-      alt: CRUISE_ALT, gspd: CRUISE_SPD, hdg: 270, pitch: 0.02, roll: 0 },
+    // 50–80  downwind leg W
+    { dur: 30, mode: 'CRUZ', kind: 'line',
+      fromE: 380, fromN: 250, toE: -380, toN: 250,
+      fromAlt: 80, toAlt: 95, fromGspd: 90, toGspd: 95, hdg: 270, pitch: 0.04, roll: 0 },
 
-    // 116–126  base turn (270°→180°), starting descent
-    { dur: 10, mode: 'CRUZ', kind: 'arc',
-      centerE: -380, centerN: 450, R: TURN_R, startPhi: 0, endPhi: 270,
-      fromAlt: CRUISE_ALT, toAlt: CRUISE_ALT - 5, gspd: 60, pitch: -0.02, roll: -0.40 },
+    // 80–88  base turn (W → S) — true 90° left turn (lerp 360→270)
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: -380, centerN: 200, R: TURN_R, startPhi: 360, endPhi: 270,
+      fromAlt: 95, toAlt: 100, gspd: 95, pitch: 0.04, roll: -0.42 },
 
-    // 126–146  base leg (south, descending)
-    { dur: 20, mode: 'CRUZ', kind: 'line',
-      fromE: -430, fromN: 450, toE: -430, toN: 50,
-      fromAlt: CRUISE_ALT - 5, toAlt: 50,
-      fromGspd: 60, toGspd: 55, hdg: 180, pitch: -0.05, roll: 0 },
+    // 88–94  base leg S
+    { dur: 6, mode: 'CRUZ', kind: 'line',
+      fromE: -430, fromN: 200, toE: -430, toN: 50,
+      fromAlt: 100, toAlt: 110, gspd: 95, hdg: 180, pitch: 0.04, roll: 0 },
 
-    // 146–158  final turn (180°→90°), continuing descent
-    { dur: 12, mode: 'ANGL', kind: 'arc',
+    // 94–102  final turn (S → E)
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
       centerE: -380, centerN: 50, R: TURN_R, startPhi: 270, endPhi: 180,
-      fromAlt: 50, toAlt: APPROACH_START, gspd: 50, pitch: -0.05, roll: -0.30 },
+      fromAlt: 110, toAlt: 115, gspd: 95, pitch: 0.04, roll: -0.42 },
 
-    // 158–215  final approach (east), descending to flare height. Slight
-    // crosstrack offset (+3 N) so the landing isn't pixel-perfectly aligned
-    // with the takeoff line — feels more like a real flight.
-    { dur: 57, mode: 'ANGL', kind: 'line',
+    // 102–132  straight east through field, climb 115→130
+    { dur: 30, mode: 'CRUZ', kind: 'line',
+      fromE: -380, fromN: 0, toE: 380, toN: 0,
+      fromAlt: 115, toAlt: 130, gspd: 95, hdg: 90, pitch: 0.04, roll: 0 },
+
+    // ══ Climbing left circuit #2 (alt 130 → 170 m) ══
+
+    // 132–140  crosswind turn
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: 380, centerN: 50, R: TURN_R, startPhi: 180, endPhi: 90,
+      fromAlt: 130, toAlt: 135, gspd: 95, pitch: 0.04, roll: -0.42 },
+
+    // 140–146  x-wind leg N
+    { dur: 6, mode: 'CRUZ', kind: 'line',
+      fromE: 430, fromN: 50, toE: 430, toN: 200,
+      fromAlt: 135, toAlt: 140, gspd: 95, hdg: 0, pitch: 0.04, roll: 0 },
+
+    // 146–154  downwind turn
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: 380, centerN: 200, R: TURN_R, startPhi: 90, endPhi: 0,
+      fromAlt: 140, toAlt: 145, gspd: 95, pitch: 0.02, roll: -0.42 },
+
+    // 154–184  downwind leg W
+    { dur: 30, mode: 'CRUZ', kind: 'line',
+      fromE: 380, fromN: 250, toE: -380, toN: 250,
+      fromAlt: 145, toAlt: 155, gspd: 95, hdg: 270, pitch: 0.02, roll: 0 },
+
+    // 184–192  base turn
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: -380, centerN: 200, R: TURN_R, startPhi: 360, endPhi: 270,
+      fromAlt: 155, toAlt: 160, gspd: 95, pitch: 0.02, roll: -0.42 },
+
+    // 192–198  base leg S
+    { dur: 6, mode: 'CRUZ', kind: 'line',
+      fromE: -430, fromN: 200, toE: -430, toN: 50,
+      fromAlt: 160, toAlt: 165, gspd: 95, hdg: 180, pitch: 0.02, roll: 0 },
+
+    // 198–206  final turn
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: -380, centerN: 50, R: TURN_R, startPhi: 270, endPhi: 180,
+      fromAlt: 165, toAlt: 170, gspd: 95, pitch: 0.02, roll: -0.42 },
+
+    // ══ Diversion: SE outbound → 200 m climb → hard-left U-turn → NW inbound ══
+
+    // 206–220  climb-out east, alt 170→185, spd 95→105
+    { dur: 14, mode: 'CRUZ', kind: 'line',
+      fromE: -380, fromN: 0, toE: 40, toN: 0,
+      fromAlt: 170, toAlt: 185, fromGspd: 95, toGspd: 105, hdg: 90, pitch: 0.05, roll: 0 },
+
+    // 220–227  right turn 45° to SE (R=80), alt 185→190
+    { dur: 7, mode: 'CRUZ', kind: 'arc', leftTurn: false,
+      centerE: 40, centerN: -80, R: 80, startPhi: 0, endPhi: 45,
+      fromAlt: 185, toAlt: 190, gspd: 105, pitch: 0.04, roll: 0.42 },
+
+    // 227–262  SE outbound, climb 190→200, spd 105→115
+    //   (97, -23) → (854, -780)  [≈1.07 km at hdg 135]
+    { dur: 35, mode: 'CRUZ', kind: 'line',
+      fromE: 97, fromN: -23, toE: 854, toN: -780,
+      fromAlt: 190, toAlt: 200, fromGspd: 105, toGspd: 115, hdg: 135, pitch: 0.05, roll: 0 },
+
+    // 262–272  SE cruise — hold 200 m, 115 km/h
+    //   (854, -780) → (1080, -1006)
+    { dur: 10, mode: 'CRUZ', kind: 'line',
+      fromE: 854, fromN: -780, toE: 1080, toN: -1006,
+      alt: 200, gspd: 115, hdg: 135, pitch: 0, roll: 0 },
+
+    // 272–301  hard-left U-turn 180° (R=DIV_R), hdg 135 → 315
+    //   centre (1278, -808). lerp 225→45 (CCW). end at (1476, -610).
+    { dur: 29, mode: 'CRUZ', kind: 'arc',
+      centerE: 1278, centerN: -808, R: DIV_R, startPhi: 225, endPhi: 45,
+      alt: 200, fromGspd: 115, toGspd: 105, pitch: 0, roll: -0.50 },
+
+    // 301–344  NW inbound, descend 200→125, spd 105→90
+    //   (1476, -610) → (631, 235)  [≈1.20 km at hdg 315]
+    { dur: 43, mode: 'CRUZ', kind: 'line',
+      fromE: 1476, fromN: -610, toE: 631, toN: 235,
+      fromAlt: 200, toAlt: 125, fromGspd: 105, toGspd: 90, hdg: 315, pitch: -0.10, roll: 0 },
+
+    // ══ Standard descending left-traffic pattern ══
+
+    // 344–352  left turn 45° NW → W (R=50)
+    //   centre (596, 200). lerp 45→0. end at (596, 250) hdg 270.
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: 596, centerN: 200, R: TURN_R, startPhi: 45, endPhi: 0,
+      fromAlt: 125, toAlt: 120, gspd: 90, pitch: -0.04, roll: -0.42 },
+
+    // 352–393  downwind W (descending), (596, 250) → (-380, 250), alt 120→80
+    { dur: 41, mode: 'CRUZ', kind: 'line',
+      fromE: 596, fromN: 250, toE: -380, toN: 250,
+      fromAlt: 120, toAlt: 80, fromGspd: 90, toGspd: 80, hdg: 270, pitch: -0.04, roll: 0 },
+
+    // 393–401  base turn (W → S), alt 80→65
+    { dur: 8, mode: 'CRUZ', kind: 'arc',
+      centerE: -380, centerN: 200, R: TURN_R, startPhi: 360, endPhi: 270,
+      fromAlt: 80, toAlt: 65, gspd: 80, pitch: -0.04, roll: -0.42 },
+
+    // 401–407  base leg S, alt 65→50, decel 80→75
+    { dur: 6, mode: 'CRUZ', kind: 'line',
+      fromE: -430, fromN: 200, toE: -430, toN: 50,
+      fromAlt: 65, toAlt: 50, fromGspd: 80, toGspd: 75, hdg: 180, pitch: -0.04, roll: 0 },
+
+    // 407–415  final turn (S → E), alt 50→35, spd 75→65
+    { dur: 8, mode: 'ANGL', kind: 'arc',
+      centerE: -380, centerN: 50, R: TURN_R, startPhi: 270, endPhi: 180,
+      fromAlt: 50, toAlt: 35, fromGspd: 75, toGspd: 65, pitch: -0.05, roll: -0.40 },
+
+    // ── Final approach + landing ──
+
+    // 415–443  final approach east, (-380, 0) → (-25, 2), alt 35→3
+    { dur: 28, mode: 'ANGL', kind: 'line',
       fromE: -380, fromN: 0, toE: -25, toN: 2,
-      fromAlt: APPROACH_START, toAlt: 3,
-      fromGspd: 50, toGspd: 42, hdg: 90, pitch: -0.07, roll: 0 },
+      fromAlt: 35, toAlt: 3, fromGspd: 65, toGspd: 42, hdg: 90, pitch: -0.07, roll: 0 },
 
-    // 215–225  flare + touchdown a few metres past the takeoff line
+    // 443–453  flare + touchdown
     { dur: 10, mode: 'LAND', kind: 'line',
       fromE: -25, fromN: 2, toE: 12, toN: 3,
-      fromAlt: 3, toAlt: 0,
-      fromGspd: 42, toGspd: 22, hdg: 90, pitch: 0.04, roll: 0 },
+      fromAlt: 3, toAlt: 0, fromGspd: 42, toGspd: 22, hdg: 90, pitch: 0.04, roll: 0 },
 
-    // 225–240  ground roll, decel to stop ~35 m east of takeoff start
+    // 453–468  ground roll, decel to stop
     { dur: 15, mode: 'LAND', kind: 'line',
       fromE: 12, fromN: 3, toE: 35, toN: 3,
       alt: 0, fromGspd: 22, toGspd: 0, hdg: 90, pitch: 0, roll: 0 },
@@ -281,12 +371,12 @@ function resolvePhase(p, u) {
   }
   if (p.kind === 'arc') {
     const eu = easeInOut(u)
-    const a = arcPoint(p.centerE, p.centerN, p.R, p.startPhi, p.endPhi, eu, true)
+    const a = arcPoint(p.centerE, p.centerN, p.R, p.startPhi, p.endPhi, eu, p.leftTurn !== false)
     return {
       E: a.E,
       N: a.N,
       alt: p.fromAlt != null ? lerp(p.fromAlt, p.toAlt, u) : p.alt,
-      gspd: p.gspd,
+      gspd: p.fromGspd != null ? lerp(p.fromGspd, p.toGspd, u) : p.gspd,
       hdg: a.hdg,
       pitch: p.pitch,
       roll: p.roll * Math.sin(u * Math.PI), // bank in/out smoothly across the arc
