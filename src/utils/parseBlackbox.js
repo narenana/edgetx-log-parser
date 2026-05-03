@@ -10,11 +10,45 @@
  * If the worker doesn't say `ready` within 4 s we assume it's wedged
  * and fall back to parsing on the main thread (briefly blocking the
  * UI but at least the user gets a result).
+ *
+ * IMPORTANT: the fallback only runs when the worker fails to *spawn*
+ * (timeout, blocked CSP, etc.). If the worker spawned fine and replied
+ * with a real parse error, we don't fall back — the bytes were
+ * transferred via postMessage and the underlying ArrayBuffer is now
+ * detached on the main thread, so trying to re-parse it on this side
+ * just throws "detached ArrayBuffer" and masks the actual error from
+ * the WASM parser.
  */
 
 import init, { parseBlackbox as wasmParseBlackbox } from 'blackbox-parser'
 import wasmUrl from 'blackbox-parser/blackbox_parser_bg.wasm?url'
 import { mapToViewerLog } from './blackbox-mapper'
+
+/**
+ * Translate raw WASM error strings into something a human can act on.
+ * We keep the raw message available via diag (worker posts it before
+ * the error event), so the throwaway-friendly version doesn't lose
+ * info — just stops scaring users with Rust enum dumps.
+ */
+function friendlyErrorMessage(raw) {
+  if (!raw || typeof raw !== 'string') return String(raw)
+  // Header parse error: UnsupportedFirmwareVersion(Inav(FirmwareVersion { major: 9, minor: 0, patch: 1 }))
+  const m = raw.match(
+    /UnsupportedFirmwareVersion\((Inav|Betaflight|Cleanflight)\(FirmwareVersion \{ major: (\d+), minor: (\d+), patch: (\d+) \}\)\)/,
+  )
+  if (m) {
+    const [, fw, maj, min, patch] = m
+    const ceiling =
+      fw === 'Inav' ? '8.x' : fw === 'Betaflight' ? '4.5.x' : 'this firmware'
+    const fwDisplay = fw === 'Inav' ? 'iNAV' : fw
+    return (
+      `${fwDisplay} ${maj}.${min}.${patch} isn't supported by the parser yet ` +
+      `(latest supported: ${ceiling}). The blackbox-log Rust crate behind ` +
+      `the WASM module needs to be updated to recognise this firmware version.`
+    )
+  }
+  return raw
+}
 
 const BLACKBOX_MAGIC = 'H Product:Blackbox'
 export function looksLikeBlackbox(uint8) {
@@ -71,15 +105,31 @@ function getWorker() {
  * @param {(line: string) => void} [onDiag]
  */
 export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
-  // Try the worker first.
+  // Stage 1: spawn worker and wait for it to declare ready. If this part
+  // fails (timeout, CSP, OOM, …), the worker never received the bytes, so
+  // it's safe to fall back to the main-thread parser using the same
+  // buffer.
+  let worker
   try {
-    const { worker, ready } = getWorker()
-    await ready
-    return await parseViaWorker(worker, bytes, filename, onProgress, onDiag)
+    const w = getWorker()
+    await w.ready
+    worker = w.worker
   } catch (err) {
     if (onDiag) onDiag(`worker unavailable: ${err.message}; falling back to main thread`)
-    // Worker dead — fall back so the user still gets a result.
-    return parseOnMainThread(bytes, filename, onProgress, onDiag)
+    try {
+      return await parseOnMainThread(bytes, filename, onProgress, onDiag)
+    } catch (mainErr) {
+      throw new Error(friendlyErrorMessage(mainErr && mainErr.message ? mainErr.message : String(mainErr)))
+    }
+  }
+
+  // Stage 2: hand bytes to the worker (transfers + detaches the buffer).
+  // If the worker emits a real parse error, propagate it — DO NOT fall
+  // back to main-thread parsing, because the buffer is detached.
+  try {
+    return await parseViaWorker(worker, bytes, filename, onProgress, onDiag)
+  } catch (err) {
+    throw new Error(friendlyErrorMessage(err && err.message ? err.message : String(err)))
   }
 }
 
