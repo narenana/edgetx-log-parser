@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
+import GaugeCluster from './gauges/GaugeCluster'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
 // renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
@@ -43,24 +44,6 @@ function gpsBearing(lat1, lon1, lat2, lon2) {
   const y = Math.sin(dλ)*Math.cos(φ2)
   const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(dλ)
   return (Math.atan2(y,x)/D2R + 360) % 360
-}
-
-function updateHud(el, r) {
-  if (!el || !r) return
-  const fm   = r['FM'] || '—'
-  const alt  = r['Alt(m)'] ?? 0
-  const vspd = r['VSpd(m/s)'] ?? 0
-  const spd  = r['GSpd(kmh)'] ?? 0
-  const hdg  = r['Hdg(°)'] ?? 0
-  el.innerHTML = [
-    `<span style="color:${fmColor(fm)};font-weight:700">${fm}</span>`,
-    `<span style="color:#9ece6a">ALT</span> ${alt.toFixed(1)}<small>m</small>`,
-    `<span style="color:#7dcfff">V/S</span> ${vspd >= 0 ? '+' : ''}${vspd.toFixed(1)}<small>m/s</small>`,
-    `<span style="color:#f7768e">PCH</span> ${(r._pitchDeg ?? 0).toFixed(1)}°`,
-    `<span style="color:#7aa2f7">RLL</span> ${(r._rollDeg ?? 0).toFixed(1)}°`,
-    `<span style="color:#e0af68">HDG</span> ${hdg.toFixed(0)}°`,
-    `<span style="color:#ff9e64">SPD</span> ${spd.toFixed(0)}<small>km/h</small>`,
-  ].join('<br/>')
 }
 
 function lerpHdg(from, to, t) {
@@ -347,7 +330,6 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   const aircraftPitchRef = useRef(0)  // degrees, +up
   const aircraftRollRef = useRef(0)   // degrees, +right wing down
   const autoRef       = useRef(true)
-  const hudRef        = useRef(null)
   const glbUrlRef     = useRef(null)
   const [autoMode, setAutoMode] = useState(true)
 
@@ -726,7 +708,6 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
 
     // ── Per-frame: trajectory heading + pitch + camera ────────────────────────
     const smooth = { pos: null, hdg: 0, dist: 500 }
-    let lastHudUpdate = 0
     // Reused per-frame scratch buffers for the manual-mode lookAtTransform
     // pattern — avoids allocating Cesium primitives at 60 fps.
     const manualOffsetScratch = new Cesium.Cartesian3()
@@ -885,8 +866,9 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         attitudeRollRef.current += (r._rollDeg - attitudeRollRef.current) * 0.05
       }
 
-      const now = performance.now()
-      if (now - lastHudUpdate > 100) { lastHudUpdate = now; updateHud(hudRef.current, r) }
+      // HUD updates are handled by GaugeCluster, which owns its own rAF
+      // and drives the SVG cockpit instruments via interpRows(rows, vt).
+      // Nothing to do here.
 
       if (!autoRef.current) {
         // Manual mode — keep the orbit anchored to the aircraft. Approach:
@@ -1398,7 +1380,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      <div ref={hudRef} className="globe-hud" />
+      <GaugeCluster rows={rows} virtualTimeRef={virtualTimeRef} />
       <button
         className={`globe-auto-btn${autoMode ? ' active' : ''}`}
         onClick={toggleAuto}

@@ -1,0 +1,79 @@
+/* ── Cockpit gauge cluster ───────────────────────────────────────────────── */
+/* Replaces the legacy text HUD on the globe view. Anchored bottom-left,
+ * non-interactive (so globe drag still works through it), with a subtle
+ * dark background panel that ties the cluster together visually.
+ */
+
+.gauge-cluster {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(8, 12, 22, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(36, 48, 68, 0.6);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+  /* Slight offset so a heavy backdrop doesn't fight any other absolute
+   * children of .globe-wrap (auto/manual button, nav widget). */
+  z-index: 5;
+}
+
+/* Each individual gauge SVG. Slight inset shadow on the bezel makes
+ * the dial face look recessed, like a real instrument panel. */
+.gauge {
+  display: block;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+/* Attitude indicator is the focal point — bumped up half a step. */
+.gauge-attitude {
+  /* Already 110 px in the SVG. Just adds a bit of vertical breathing
+   * room so it sits centred against the 90 px flanking gauges. */
+  margin: 0 2px;
+}
+
+/* ── Mobile: shrink + stack ─────────────────────────────────────────────── */
+/* On narrow screens the 5-gauge horizontal strip is too wide. Hide the
+ * battery and heading gauges (they're informational extras), and shrink
+ * the rest with a CSS transform so the airspeed/attitude/altimeter trio
+ * still fits in landscape. */
+@media (max-width: 640px) {
+  .gauge-cluster {
+    bottom: 6px;
+    left: 6px;
+    gap: 2px;
+    padding: 4px 6px;
+    transform: scale(0.7);
+    transform-origin: bottom left;
+  }
+}
+
+@media (max-width: 480px) {
+  .gauge-cluster {
+    transform: scale(0.55);
+  }
+  /* Drop the secondary gauges on very narrow screens to avoid the cluster
+   * crossing the centre of the globe. */
+  .gauge-cluster .gauge-heading,
+  .gauge-cluster .gauge-battery {
+    display: none;
+  }
+}
+
+/* ── Light theme adjustments ───────────────────────────────────────────── */
+/* The dark cockpit gauges stay dark in light mode by design — that's
+ * what real instrument panels look like, regardless of cabin lighting.
+ * Just bump the panel border so it doesn't disappear against light
+ * imagery. */
+[data-theme="light"] .gauge-cluster {
+  background: rgba(8, 12, 22, 0.65);
+  border-color: rgba(36, 48, 68, 0.85);
+}
