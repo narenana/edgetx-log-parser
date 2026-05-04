@@ -1,23 +1,37 @@
 /**
  * Main-thread shim for the blackbox parser.
  *
- * Spawns a Web Worker (see `blackbox-worker.js`) on first call and
- * routes all parsing through it. The worker's message handler is
- * registered before WASM init starts, so the worker can reply with
- * `ready` + `diag` events even while it's still initializing — gives us
- * an early failure signal if init hangs.
+ * Three layers, in order of preference:
  *
- * If the worker doesn't say `ready` within 4 s we assume it's wedged
- * and fall back to parsing on the main thread (briefly blocking the
- * UI but at least the user gets a result).
+ *   1. Rust→WASM parser running in a Web Worker (default, fastest).
+ *      Source: vendor/blackbox-parser/ (the `blackbox-log` Rust crate
+ *      compiled to WASM via wasm-pack).
  *
- * IMPORTANT: the fallback only runs when the worker fails to *spawn*
- * (timeout, blocked CSP, etc.). If the worker spawned fine and replied
- * with a real parse error, we don't fall back — the bytes were
+ *   2. Same Rust parser on the main thread, used only when the Web
+ *      Worker fails to spawn (CSP, timeout, OOM at worker boot).
+ *      Briefly freezes the UI but at least the user gets a result.
+ *
+ *   3. iNAV's C blackbox-tools parser compiled with Emscripten. Loaded
+ *      lazily — its bundle is fetched only after the Rust parser has
+ *      rejected a file. Slower to first-parse on a fresh page (one-off
+ *      WASM init) but accepts a wider range of iNAV variants. See
+ *      `parseBlackboxC.js` and vendor/blackbox-parser-c/.
+ *
+ * The C fallback was added 2026-05-04 after an A/B run across 56 real
+ * iNAV logs showed one (a MATEKF405SE on iNAV 8.0.0) that the Rust
+ * parser rejects with `MalformedFrameDef(Intra)` but the C parser
+ * opens cleanly. Rather than fork the Rust crate around upstream
+ * issues, we keep both parsers and let the user fall through to C
+ * when Rust says no.
+ *
+ * IMPORTANT: the *Rust main-thread* fallback (layer 2) only runs when
+ * the worker fails to spawn. If the worker spawned fine and replied
+ * with a parse error, we don't fall back to layer 2 — the bytes were
  * transferred via postMessage and the underlying ArrayBuffer is now
- * detached on the main thread, so trying to re-parse it on this side
- * just throws "detached ArrayBuffer" and masks the actual error from
- * the WASM parser.
+ * detached on the main thread, so re-parsing on this side throws
+ * "detached ArrayBuffer" and masks the actual error from WASM. We
+ * fall through to the C parser (layer 3) instead, using a copy of
+ * the bytes kept aside before the worker transfer.
  */
 
 import init, { parseBlackbox as wasmParseBlackbox } from 'blackbox-parser'
@@ -105,10 +119,15 @@ function getWorker() {
  * @param {(line: string) => void} [onDiag]
  */
 export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
-  // Stage 1: spawn worker and wait for it to declare ready. If this part
-  // fails (timeout, CSP, OOM, …), the worker never received the bytes, so
-  // it's safe to fall back to the main-thread parser using the same
-  // buffer.
+  // Keep a copy of the bytes before we hand them off — postMessage's
+  // transfer list will detach the original. The C-parser fallback (and
+  // any future re-attempt) needs a live buffer.
+  const bytesForFallback = bytes.slice()
+
+  // Stage 1: spawn the Rust-WASM worker and wait for it to declare ready.
+  // If this part fails (timeout, CSP, OOM, …) the worker never received
+  // bytes, so it's safe to fall back to the Rust main-thread parser
+  // using the same buffer.
   let worker
   try {
     const w = getWorker()
@@ -119,17 +138,49 @@ export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
     try {
       return await parseOnMainThread(bytes, filename, onProgress, onDiag)
     } catch (mainErr) {
-      throw new Error(friendlyErrorMessage(mainErr && mainErr.message ? mainErr.message : String(mainErr)))
+      // Rust main-thread parser also failed. Try the C parser.
+      return await tryCFallback(bytesForFallback, filename, onProgress, onDiag, mainErr)
     }
   }
 
   // Stage 2: hand bytes to the worker (transfers + detaches the buffer).
-  // If the worker emits a real parse error, propagate it — DO NOT fall
-  // back to main-thread parsing, because the buffer is detached.
+  // If the worker emits a parse error, fall through to the C parser
+  // with the saved-aside copy.
   try {
     return await parseViaWorker(worker, bytes, filename, onProgress, onDiag)
   } catch (err) {
-    throw new Error(friendlyErrorMessage(err && err.message ? err.message : String(err)))
+    return await tryCFallback(bytesForFallback, filename, onProgress, onDiag, err)
+  }
+}
+
+/**
+ * Lazy-load and run the C parser. If it succeeds, return its result.
+ * If it also fails, throw the *original* (Rust) error since that's the
+ * one the user is most likely to recognise.
+ */
+async function tryCFallback(bytes, filename, onProgress, onDiag, primaryErr) {
+  const primaryMsg = primaryErr && primaryErr.message ? primaryErr.message : String(primaryErr)
+  if (onDiag) {
+    onDiag(`primary parser failed: ${primaryMsg}`)
+    onDiag('trying alternate parsing technique (C / iNAV blackbox-tools)…')
+  }
+  if (onProgress) onProgress('parsing', 5)
+
+  let cFallback
+  try {
+    cFallback = await import('./parseBlackboxC.js')
+  } catch (loadErr) {
+    if (onDiag) onDiag(`alternate parser bundle failed to load: ${loadErr.message || loadErr}`)
+    throw new Error(friendlyErrorMessage(primaryMsg))
+  }
+
+  try {
+    const log = await cFallback.parseBlackboxBufferC(bytes, filename, onProgress, onDiag)
+    if (onDiag) onDiag('alternate parser succeeded')
+    return log
+  } catch (cErr) {
+    if (onDiag) onDiag(`alternate parser also failed: ${cErr.message || cErr}`)
+    throw new Error(friendlyErrorMessage(primaryMsg))
   }
 }
 
