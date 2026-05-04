@@ -369,10 +369,14 @@ export default function Dashboard({ log, theme = 'light' }) {
               </Suspense>
             </>
           )}
-          <StatsPanel log={log} cursorRow={cursorRow} />
         </div>
 
         <div className="dashboard-right">
+          {/* Combined flight stats — union of the previous below-viz panel
+              and the parse-time modal grid. Lives at the TOP of the right
+              column so it sits above the chart panels and stays in view
+              while the user scrolls through individual chart cards. */}
+          <StatsPanel log={log} cursorRow={cursorRow} />
           <SyncedChart title="Attitude" datasets={attitudeDatasets} labels={labels} yLabel="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
           <SyncedChart title="Altitude & Vertical Speed" datasets={altDatasets} labels={labels} yLabel="m" y1Label="m/s" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
           <SyncedChart title="Speed & Heading" datasets={speedDatasets} labels={labels} yLabel="km/h" y1Label="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
