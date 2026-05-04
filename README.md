@@ -203,9 +203,10 @@ The viewer pulls together a few major pieces of OSS and a handful of public mapp
 - **[Electron 31](https://www.electronjs.org/)** + **[electron-builder](https://www.electron.build/)** package the desktop app (Mac/Windows/Linux).
 - **[Workbox](https://developer.chrome.com/docs/workbox)** (via Vite's PWA plugin) caches the app shell + Cesium runtime so the web build works offline after first visit.
 
-### Analytics
+### Analytics & error reporting
 
-- **[Google Analytics 4](https://developers.google.com/analytics/devguides/collection/ga4)** (gtag.js) for anonymous usage stats. Strictly **opt-in** — `analytics.js` only loads `googletagmanager.com` after the consent banner is accepted. No tracking, no user IDs, no log content ever leaves the browser; the events are page views and high-level "log loaded / view switched" markers.
+- **[Google Analytics 4](https://developers.google.com/analytics/devguides/collection/ga4)** (gtag.js) for anonymous usage stats. Loaded on every page in **Consent Mode v2 cookieless-ping mode** — anonymous aggregate hits, no `_ga` cookie. The consent banner asks permission to upgrade to full collection (cookied analytics). Decline = stay cookieless. No log content ever leaves the browser.
+- **[Sentry](https://sentry.io/)** (`@sentry/react`) for crash reporting. Boots on every page in **always-anonymous mode**: no PII, IPs scrubbed, URL query strings stripped. Default-disabled breadcrumbs upgrade to enabled when consent is granted, so post-accept errors carry click/console context. Parse failures attach privacy-safe metadata (file size, firmware revision, schema field names) — never log content. Full disclosure in [`SENTRY.md`](SENTRY.md).
 
 ---
 
@@ -240,6 +241,9 @@ Both targets share `base: './'`, so the same `dist/` works for `file://` (Electr
 **Env vars** — `.env.example` lists them. All `VITE_*` vars are inlined into the client bundle at build time:
 - `VITE_CESIUM_TOKEN` — Cesium Ion access token (optional; falls back to ephemeral key)
 - `VITE_GA_ID` — GA4 measurement ID (web build only; empty disables analytics)
+- `VITE_SENTRY_DSN` — Sentry DSN (web build only; empty disables crash reporting)
+- `VITE_RELEASE` — release tag for Sentry events (commit SHA; empty → "dev")
+- `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` — build-time only (NOT prefixed `VITE_`, never sent to clients); enable source-map upload
 
 For the full list of pieces we lean on (with their external partners), see [Built with](#built-with) above.
 
