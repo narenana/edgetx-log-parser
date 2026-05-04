@@ -5,6 +5,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
 import GaugeCluster from './gauges/GaugeCluster'
+import ControlsCluster from './gauges/ControlsCluster'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
 // renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
@@ -1381,6 +1382,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
       <GaugeCluster rows={rows} virtualTimeRef={virtualTimeRef} />
+      <ControlsCluster rows={rows} virtualTimeRef={virtualTimeRef} />
       <button
         className={`globe-auto-btn${autoMode ? ' active' : ''}`}
         onClick={toggleAuto}

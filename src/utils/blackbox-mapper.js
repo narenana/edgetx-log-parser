@@ -45,6 +45,17 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
   const i_rssi = idxOf(mainFieldNames, 'rssi')
   const i_motor0 = idxOf(mainFieldNames, 'motor[0]')
   const i_navState = idxOf(mainFieldNames, 'navState')
+  // Pilot input channels — iNAV / Betaflight log post-RC-curves stick
+  // commands as rcCommand[0..3] = roll, pitch, yaw, throttle.
+  // Roll/pitch/yaw range: -500..+500 (centered at 0).
+  // Throttle range:       1000..2000 (raw 1500-µs RC value).
+  // We normalize to (-100..+100) for sticks and (0..100) for throttle —
+  // same shape parseLog.js produces, so the controls UI is firmware-
+  // agnostic.
+  const i_rcRoll  = idxOf(mainFieldNames, 'rcCommand[0]')
+  const i_rcPitch = idxOf(mainFieldNames, 'rcCommand[1]')
+  const i_rcYaw   = idxOf(mainFieldNames, 'rcCommand[2]')
+  const i_rcThr   = idxOf(mainFieldNames, 'rcCommand[3]')
 
   const i_gpsLat = hasGps ? idxOf(gpsFieldNames, 'GPS_coord[0]') : -1
   const i_gpsLon = hasGps ? idxOf(gpsFieldNames, 'GPS_coord[1]') : -1
@@ -104,6 +115,16 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
 
     const vbat = i_vbat >= 0 ? cell(mainFrames, i, i_vbat, mainCols) / 100 : null
     const amperage = i_amp >= 0 ? cell(mainFrames, i, i_amp, mainCols) / 100 : null
+
+    // rcCommand → normalized pilot input. Sticks are ±500 → ±100 %;
+    // throttle is 1000..2000 → 0..100 %. Null when the channel was not
+    // logged (some iNAV configurations strip rcCommand to save flash).
+    const stickRoll  = i_rcRoll  >= 0 ? cell(mainFrames, i, i_rcRoll,  mainCols) / 5 : null
+    const stickPitch = i_rcPitch >= 0 ? cell(mainFrames, i, i_rcPitch, mainCols) / 5 : null
+    const stickYaw   = i_rcYaw   >= 0 ? cell(mainFrames, i, i_rcYaw,   mainCols) / 5 : null
+    const throttlePct = i_rcThr  >= 0
+      ? Math.max(0, Math.min(100, (cell(mainFrames, i, i_rcThr, mainCols) - 1000) / 10))
+      : null
 
     let lat = null,
       lon = null,
@@ -204,6 +225,10 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
       'RQly(%)': null,
       FM: navStateLabel(i_navState >= 0 ? cell(mainFrames, i, i_navState, mainCols) : null),
       'motor[0]': i_motor0 >= 0 ? cell(mainFrames, i, i_motor0, mainCols) : null,
+      _stickRoll:  stickRoll,
+      _stickPitch: stickPitch,
+      _stickYaw:   stickYaw,
+      _throttle:   throttlePct,
     }
   }
   diag(`row loop done in ${(performance.now() - tLoop).toFixed(0)}ms`)

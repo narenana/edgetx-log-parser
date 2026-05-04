@@ -41,5 +41,15 @@ export function interpRows(rows, vt) {
     _pitchDeg:    lerp(a._pitchDeg,    b._pitchDeg),
     _rollDeg:     lerp(a._rollDeg,     b._rollDeg),
     _yawDeg:      lerp(a._yawDeg,      b._yawDeg),
+    // Pilot inputs (stick channel + throttle), normalized in the parsers
+    // to (-100..+100) for sticks and (0..100) for throttle. Lerping
+    // between adjacent samples gives smooth control-stick animation
+    // even at high playback speeds where the source channel rate
+    // (typically 50 Hz on EdgeTX, similar in Betaflight rcCommand
+    // logging) would otherwise visibly step.
+    _stickRoll:   lerp(a._stickRoll,   b._stickRoll),
+    _stickPitch:  lerp(a._stickPitch,  b._stickPitch),
+    _stickYaw:    lerp(a._stickYaw,    b._stickYaw),
+    _throttle:    lerp(a._throttle,    b._throttle),
   }
 }

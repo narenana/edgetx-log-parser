@@ -58,6 +58,26 @@ export function parseEdgeTXLog(text, filename) {
       prevLon = lon
     }
 
+    // ── Pilot inputs from EdgeTX channel columns ───────────────────────
+    // EdgeTX logs four common stick channels at the post-mixer outputs:
+    //   Ail (aileron / roll), Ele (elevator / pitch),
+    //   Thr (throttle),       Rud (rudder / yaw)
+    // Range is -1024..+1024 (centered, with throttle stick-low = -1024).
+    // Normalize to -100..+100 for sticks and 0..100 for throttle so the
+    // viewer's pilot-input UI is firmware-agnostic (matches the same
+    // _stick* fields the blackbox parser produces from rcCommand[0..3]).
+    //
+    // Some EdgeTX setups use longer column names (Aileron / Elevator /
+    // etc) — fall back gracefully so logs from non-default templates
+    // still drive the controls.
+    const ail = r['Ail'] ?? r['Aileron']  ?? null
+    const ele = r['Ele'] ?? r['Elevator'] ?? null
+    const thr = r['Thr'] ?? r['Throttle'] ?? null
+    const rud = r['Rud'] ?? r['Rudder']   ?? null
+    const stickPct = v => (v == null ? null : (v / 1024) * 100)
+    // Throttle: stick-low (-1024) → 0%, stick-high (+1024) → 100%.
+    const thrPct = thr == null ? null : ((thr + 1024) / 2048) * 100
+
     return {
       ...r,
       _i: i,
@@ -68,6 +88,10 @@ export function parseEdgeTXLog(text, filename) {
       _rollDeg: r['Roll(rad)'] != null ? r['Roll(rad)'] * R2D : null,
       _yawDeg: r['Yaw(rad)'] != null ? r['Yaw(rad)'] * R2D : null,
       'Hdg(°)': normHdg(r['Hdg(°)']),
+      _stickRoll:  stickPct(ail),
+      _stickPitch: stickPct(ele),
+      _stickYaw:   stickPct(rud),
+      _throttle:   thrPct,
     }
   })
 

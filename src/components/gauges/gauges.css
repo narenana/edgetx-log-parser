@@ -73,7 +73,68 @@
  * what real instrument panels look like, regardless of cabin lighting.
  * Just bump the panel border so it doesn't disappear against light
  * imagery. */
-[data-theme="light"] .gauge-cluster {
+[data-theme="light"] .gauge-cluster,
+[data-theme="light"] .controls-cluster {
   background: rgba(8, 12, 22, 0.65);
   border-color: rgba(36, 48, 68, 0.85);
+}
+
+/* ── Pilot input cluster ────────────────────────────────────────────────── */
+/* Mirrors the gauge cluster on the opposite (right) side of the globe.
+ * Same panel styling so they read as a matched pair: instruments on the
+ * left, pilot inputs on the right.
+ *
+ * Layout:
+ *   - Throttle lever on the left of the cluster (matches fighter left-
+ *     hand throttle quadrant).
+ *   - Joystick stacked above the yaw pedals on the right (centre-stick
+ *     above the footwell, top-down view).
+ */
+.controls-cluster {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(8, 12, 22, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(36, 48, 68, 0.6);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.controls-stack-right {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+/* Mobile: shrink + stack the controls cluster the same way the gauges
+ * shrink. The joystick + pedals are the most informative pair, so we
+ * keep them visible the longest; throttle hides first when space is
+ * tight (the digital % readout makes its absence less critical). */
+@media (max-width: 640px) {
+  .controls-cluster {
+    bottom: 6px;
+    right: 6px;
+    gap: 2px;
+    padding: 4px 6px;
+    transform: scale(0.7);
+    transform-origin: bottom right;
+  }
+}
+
+@media (max-width: 480px) {
+  .controls-cluster {
+    transform: scale(0.55);
+  }
+  .controls-cluster .gauge-throttle { display: none; }
 }
