@@ -497,6 +497,13 @@ export default function GlobeView({
     const _scratchEnu = new Cesium.Cartesian3()
     const _scratchM4 = new Cesium.Matrix4()
     const _scratchM4Inv = new Cesium.Matrix4()
+    // Sub-vertex lerped behind/ahead positions — must be CONTINUOUS in
+    // fracIdx, otherwise the tangent direction snaps every time fracIdx
+    // crosses an integer (≈ every 250 ms at 1× playback) and the EMA on
+    // hdg/pitch chases the step, producing visible ~3 px wingtip wobble
+    // every few frames.
+    const _scratchBehind = new Cesium.Cartesian3()
+    const _scratchAhead = new Cesium.Cartesian3()
     // Window size (in smoothed-position indices) for tangent + slope
     // calculations. Bigger = smoother but laggier; ~0.5s at typical
     // playback should be plenty for a stable, smooth attitude.
@@ -515,13 +522,24 @@ export default function GlobeView({
       if (!aircraftPosRef.current) aircraftPosRef.current = new Cesium.Cartesian3()
       Cesium.Cartesian3.clone(_scratchPos, aircraftPosRef.current)
 
-      // Tangent for heading + pitch from the path itself, computed over
-      // a small window so noise on individual smoothed points doesn't
-      // bend it. behindI/aheadI bracket the cursor.
-      const behindI = Math.max(0, i - POSE_WINDOW)
-      const aheadI = Math.min(lastIdx, i + POSE_WINDOW)
-      const behind = pathPositions[behindI]
-      const ahead = pathPositions[aheadI]
+      // Tangent endpoints — sub-vertex interpolated so they advance
+      // CONTINUOUSLY with fracIdx. Previously these were `pathPositions[i ±
+      // POSE_WINDOW]` which snapped at integer i; the snap re-introduced
+      // exactly the per-step orientation discontinuity the EMA was
+      // supposed to mask, manifesting as a few-pixel wingtip wobble every
+      // smoothed-position crossing (~once every 250 ms at 1× playback).
+      const behindFrac = Math.max(0, fracIdx - POSE_WINDOW)
+      const aheadFrac  = Math.min(lastIdx, fracIdx + POSE_WINDOW)
+      const bI0 = Math.max(0, Math.min(Math.floor(behindFrac), lastIdx))
+      const bI1 = Math.max(0, Math.min(bI0 + 1, lastIdx))
+      const bF  = behindFrac - bI0
+      const aI0 = Math.max(0, Math.min(Math.floor(aheadFrac), lastIdx))
+      const aI1 = Math.max(0, Math.min(aI0 + 1, lastIdx))
+      const aF  = aheadFrac - aI0
+      Cesium.Cartesian3.lerp(pathPositions[bI0], pathPositions[bI1], bF, _scratchBehind)
+      Cesium.Cartesian3.lerp(pathPositions[aI0], pathPositions[aI1], aF, _scratchAhead)
+      const behind = _scratchBehind
+      const ahead = _scratchAhead
 
       // ECEF delta → local ENU at `behind` so we can pull heading from
       // east/north components and pitch from up/horizontal.
