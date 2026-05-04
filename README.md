@@ -168,6 +168,47 @@ The CSV parser reads standard EdgeTX column names; the blackbox parser reads fie
 
 ---
 
+## Built with
+
+The viewer pulls together a few major pieces of OSS and a handful of public mapping services. Listed by what they do for the app:
+
+### 3D globe and satellite imagery
+
+- **[CesiumJS](https://cesium.com/cesiumjs/)** renders the 3D globe, the auto-following camera, and the flight-path primitive at real altitude.
+- **[Esri ArcGIS World Imagery](https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer)** is the primary satellite-tile source. Free, no token required, used directly via Cesium's `ArcGisMapServerImageryProvider`.
+- **[OpenStreetMap](https://www.openstreetmap.org)** tiles are added as a fallback layer (and also power the 2D map below).
+- **[Cesium Ion](https://cesium.com/ion/)** provides terrain heights when a token is configured (`VITE_CESIUM_TOKEN`); without one, Cesium falls back to its bundled ellipsoid and to Bing-imagery default tiles.
+
+### 2D map
+
+- **[Leaflet](https://leafletjs.com/)** with **[react-leaflet](https://react-leaflet.js.org/)** for the classic-view map and ground track. Tiles come from **OpenStreetMap** with the standard attribution.
+
+### 3D aircraft model
+
+- **[Three.js](https://threejs.org/)** drives the attitude/altitude panel — a 3D aircraft model that responds to pitch, roll, and yaw alongside an altitude tape.
+
+### Charts
+
+- **[Chart.js](https://www.chartjs.org/)** (via **[react-chartjs-2](https://react-chartjs-2.js.org/)**) for the five synced chart panels (attitude, altitude/V-speed, speed/heading, battery, signal). All panels share a single timeline cursor managed imperatively against the chart instances.
+
+### Log parsing
+
+- **[PapaParse](https://www.papaparse.com/)** for the EdgeTX/OpenTX CSV path.
+- **[`blackbox-log`](https://github.com/blackbox-log/blackbox-log)** (Rust crate, Apache-2.0/MIT) compiled to WASM via **[wasm-pack](https://rustwasm.github.io/wasm-pack/)** is the default blackbox parser. Vendored at `vendor/blackbox-parser/`.
+- **[`iNavFlight/blackbox-tools`](https://github.com/iNavFlight/blackbox-tools)** (the canonical C parser, GPL-3.0) compiled to WASM via **[Emscripten](https://emscripten.org/)** is the fallback blackbox parser, lazy-loaded only when the Rust path rejects a file. Vendored at `vendor/blackbox-parser-c/`.
+
+### App framework + packaging
+
+- **[React 18](https://react.dev/)** for the UI, **[Vite 5](https://vitejs.dev/)** as the bundler.
+- **[Electron 31](https://www.electronjs.org/)** + **[electron-builder](https://www.electron.build/)** package the desktop app (Mac/Windows/Linux).
+- **[Workbox](https://developer.chrome.com/docs/workbox)** (via Vite's PWA plugin) caches the app shell + Cesium runtime so the web build works offline after first visit.
+
+### Analytics
+
+- **[Google Analytics 4](https://developers.google.com/analytics/devguides/collection/ga4)** (gtag.js) for anonymous usage stats. Strictly **opt-in** — `analytics.js` only loads `googletagmanager.com` after the consent banner is accepted. No tracking, no user IDs, no log content ever leaves the browser; the events are page views and high-level "log loaded / view switched" markers.
+
+---
+
 ## Development
 
 ```bash
@@ -200,10 +241,12 @@ Both targets share `base: './'`, so the same `dist/` works for `file://` (Electr
 - `VITE_CESIUM_TOKEN` — Cesium Ion access token (optional; falls back to ephemeral key)
 - `VITE_GA_ID` — GA4 measurement ID (web build only; empty disables analytics)
 
-**Stack:** Electron 31 · Vite 5 · React 18 · CesiumJS · Three.js · Leaflet · Chart.js · PapaParse
+For the full list of pieces we lean on (with their external partners), see [Built with](#built-with) above.
 
 ---
 
 ## License
 
-MIT
+GPL-3.0-or-later. See `LICENSE` at the repo root.
+
+The project incorporates `iNavFlight/blackbox-tools` (GPL-3.0) as a vendored fallback parser, which is the strong-copyleft trigger; everything else we depend on (Cesium, Three.js, Leaflet, Chart.js, PapaParse, the `blackbox-log` Rust crate, etc.) ships under permissive licenses (Apache-2.0 / MIT / BSD) that compose into a GPL-3.0 work.
