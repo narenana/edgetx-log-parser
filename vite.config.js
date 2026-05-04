@@ -4,6 +4,7 @@ import cesium from 'vite-plugin-cesium'
 import { VitePWA } from 'vite-plugin-pwa'
 import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 
 // Dual-target build:
 //   VITE_BUILD_TARGET=web      → hosted (Cloudflare Pages, mounted at /log-viewer/
@@ -23,6 +24,18 @@ import topLevelAwait from 'vite-plugin-top-level-await'
 // simple.
 export default defineConfig(() => {
   const isDesktop = process.env.VITE_BUILD_TARGET === 'desktop'
+
+  // Sentry source-map upload. Only runs when an auth token is set (CI /
+  // local with creds in .env.local). Without the token the plugin is
+  // skipped entirely, so dev builds and contributors without Sentry
+  // access still build cleanly. The token must be in the build env
+  // (Cloudflare Pages env vars), not in any committed file.
+  const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
+  const sentryOrg = process.env.SENTRY_ORG
+  const sentryProject = process.env.SENTRY_PROJECT
+  const sentryRelease = process.env.VITE_RELEASE
+  const sentryUploadEnabled =
+    !!sentryAuthToken && !!sentryOrg && !!sentryProject && !isDesktop
 
   const pwa = VitePWA({
     // ⚠️ Self-destroying SW deploy — flushes a stale SW that was caching
@@ -100,7 +113,31 @@ export default defineConfig(() => {
     // wasm + topLevelAwait teach Vite/Rollup to handle the ESM-style WASM
     // import that `wasm-pack build --target bundler` emits — needed by
     // `@narenana/blackbox-parser`. Order matters: wasm before topLevelAwait.
-    plugins: [react(), wasm(), topLevelAwait(), cesium(), ...(isDesktop ? [] : [pwa])],
+    // sentryVitePlugin must come LAST so it sees the final emitted bundle
+    // for source-map upload + release tagging.
+    plugins: [
+      react(),
+      wasm(),
+      topLevelAwait(),
+      cesium(),
+      ...(isDesktop ? [] : [pwa]),
+      ...(sentryUploadEnabled
+        ? [
+            sentryVitePlugin({
+              authToken: sentryAuthToken,
+              org: sentryOrg,
+              project: sentryProject,
+              release: sentryRelease ? { name: sentryRelease } : undefined,
+              telemetry: false,
+              // Plugin's default sourcemaps config uploads dist/**/*.map
+              // and then deletes them so they don't ship to users. Good.
+            }),
+          ]
+        : []),
+    ],
+    // Generate source maps so the Sentry plugin has something to upload.
+    // Without this, stack traces in the Sentry UI stay minified.
+    build: { outDir: 'dist', sourcemap: sentryUploadEnabled ? 'hidden' : false },
     // Vite worker contexts use a separate plugin pipeline. The blackbox
     // parser worker needs the same WASM glue, so re-register both
     // plugins here. Without this the worker build fails with the
@@ -125,6 +162,5 @@ export default defineConfig(() => {
         }
       : {},
     server: { port: 5173, strictPort: true, hmr: { port: 5173 } },
-    build: { outDir: 'dist' },
   }
 })

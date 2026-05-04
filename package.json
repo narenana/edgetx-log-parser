@@ -73,6 +73,8 @@
     }
   },
   "dependencies": {
+    "@sentry/react": "^10.51.0",
+    "@sentry/vite-plugin": "^5.2.1",
     "blackbox-parser": "file:./vendor/blackbox-parser",
     "cesium": "^1.140.0",
     "chart.js": "^4.4.2",

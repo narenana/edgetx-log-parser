@@ -37,6 +37,58 @@
 import init, { parseBlackbox as wasmParseBlackbox } from 'blackbox-parser'
 import wasmUrl from 'blackbox-parser/blackbox_parser_bg.wasm?url'
 import { mapToViewerLog } from './blackbox-mapper'
+import { captureParseError } from './sentry'
+
+/**
+ * Extract privacy-safe metadata from a blackbox header. We use this to tag
+ * parse-failure reports with enough context to reproduce the issue
+ * (firmware version, schema field names) without ever sending log content.
+ *
+ * Reads only the header lines (those starting with "H "); stops at the
+ * first non-header byte. Header is bounded to the first ~16 KB so this is
+ * cheap even for large files.
+ */
+function extractLogMetadata(bytes) {
+  const HEADER_SCAN_LIMIT = 16 * 1024
+  const limit = Math.min(bytes.length, HEADER_SCAN_LIMIT)
+  let firmware = null
+  let product = null
+  let revision = null
+  let fields = null
+
+  let lineStart = 0
+  for (let i = 0; i < limit; i++) {
+    if (bytes[i] !== 0x0a /* \n */) continue
+    // Line is bytes[lineStart .. i] (excluding \n). First two bytes must
+    // be "H " for it to be a header line.
+    if (i - lineStart < 2 || bytes[lineStart] !== 0x48 || bytes[lineStart + 1] !== 0x20) {
+      // First non-H line — header ended.
+      break
+    }
+    // Decode this header line as ASCII (header is ASCII by spec).
+    let line = ''
+    for (let j = lineStart + 2; j < i; j++) line += String.fromCharCode(bytes[j])
+
+    if (line.startsWith('Product:')) product = line.slice(8).trim()
+    else if (line.startsWith('Firmware:')) firmware = line.slice(9).trim()
+    else if (line.startsWith('Firmware revision:')) revision = line.slice(18).trim()
+    else if (line.startsWith('Field I name:') && !fields) {
+      fields = line
+        .slice(13)
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean)
+    }
+    lineStart = i + 1
+  }
+
+  return {
+    product, // e.g. "Blackbox flight data recorder by Nicholas Sherlock"
+    firmware, // e.g. "INAV 9.0.1 (xxx) MATEKF405SE"
+    revision, // e.g. "INAV 9.0.1"
+    fields, // array of field names (column schema)
+  }
+}
 
 /**
  * Translate raw WASM error strings into something a human can act on.
@@ -124,6 +176,11 @@ export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
   // any future re-attempt) needs a live buffer.
   const bytesForFallback = bytes.slice()
 
+  // Snapshot privacy-safe metadata BEFORE the buffer might get detached.
+  // We use this on parse-failure error reports.
+  const fileSize = bytes.length
+  const meta = extractLogMetadata(bytes)
+
   // Stage 1: spawn the Rust-WASM worker and wait for it to declare ready.
   // If this part fails (timeout, CSP, OOM, …) the worker never received
   // bytes, so it's safe to fall back to the Rust main-thread parser
@@ -139,7 +196,9 @@ export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
       return await parseOnMainThread(bytes, filename, onProgress, onDiag)
     } catch (mainErr) {
       // Rust main-thread parser also failed. Try the C parser.
-      return await tryCFallback(bytesForFallback, filename, onProgress, onDiag, mainErr)
+      return await tryCFallback(bytesForFallback, filename, onProgress, onDiag, mainErr, {
+        fileSize, meta, parserChain: 'rust-worker-spawn-failed→rust-main→c',
+      })
     }
   }
 
@@ -149,7 +208,9 @@ export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
   try {
     return await parseViaWorker(worker, bytes, filename, onProgress, onDiag)
   } catch (err) {
-    return await tryCFallback(bytesForFallback, filename, onProgress, onDiag, err)
+    return await tryCFallback(bytesForFallback, filename, onProgress, onDiag, err, {
+      fileSize, meta, parserChain: 'rust-worker→c',
+    })
   }
 }
 
@@ -158,7 +219,7 @@ export async function parseBlackboxBuffer(bytes, filename, onProgress, onDiag) {
  * If it also fails, throw the *original* (Rust) error since that's the
  * one the user is most likely to recognise.
  */
-async function tryCFallback(bytes, filename, onProgress, onDiag, primaryErr) {
+async function tryCFallback(bytes, filename, onProgress, onDiag, primaryErr, ctx) {
   const primaryMsg = primaryErr && primaryErr.message ? primaryErr.message : String(primaryErr)
   if (onDiag) {
     onDiag(`primary parser failed: ${primaryMsg}`)
@@ -171,6 +232,15 @@ async function tryCFallback(bytes, filename, onProgress, onDiag, primaryErr) {
     cFallback = await import('./parseBlackboxC.js')
   } catch (loadErr) {
     if (onDiag) onDiag(`alternate parser bundle failed to load: ${loadErr.message || loadErr}`)
+    // C bundle didn't even load — report the original (Rust) error with
+    // context so we can investigate.
+    captureParseError(primaryErr, {
+      fileSize: ctx?.fileSize,
+      filename: basename(filename),
+      firmware: ctx?.meta?.revision || ctx?.meta?.firmware,
+      fields: ctx?.meta?.fields,
+      parserChain: (ctx?.parserChain || 'rust→c-import-failed'),
+    })
     throw new Error(friendlyErrorMessage(primaryMsg))
   }
 
@@ -180,8 +250,27 @@ async function tryCFallback(bytes, filename, onProgress, onDiag, primaryErr) {
     return log
   } catch (cErr) {
     if (onDiag) onDiag(`alternate parser also failed: ${cErr.message || cErr}`)
+    // Both parsers rejected — this is the interesting case to capture.
+    // We attach the *primary* (Rust) error since that's the more
+    // descriptive enum dump; the C error often just says "no frames".
+    // Also include the C error message in extras for completeness.
+    captureParseError(primaryErr, {
+      fileSize: ctx?.fileSize,
+      filename: basename(filename),
+      firmware: ctx?.meta?.revision || ctx?.meta?.firmware,
+      fields: ctx?.meta?.fields,
+      parserChain: ctx?.parserChain || 'rust→c-both-failed',
+    })
     throw new Error(friendlyErrorMessage(primaryMsg))
   }
+}
+
+// Strip any directory path the browser might have given us. We only ever
+// want the bare filename in the error report.
+function basename(filename) {
+  if (!filename) return null
+  const slash = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'))
+  return slash >= 0 ? filename.slice(slash + 1) : filename
 }
 
 function parseViaWorker(worker, bytes, filename, onProgress, onDiag) {
