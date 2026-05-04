@@ -1252,6 +1252,16 @@ static void flightLogInvalidateStream(flightLog_t *log)
     log->private->mainStreamIsValid = false;
     log->private->mainHistory[1] = 0;
     log->private->mainHistory[2] = 0;
+    // Local patch (narenana fork): also drop the iteration/time
+    // baselines. Otherwise after a stream of corruption (e.g. iNAV 9.0.1
+    // CoreWingF405WingV2 first slow frames written with uninitialised
+    // mspOverrideFlags), the next clean I-frame fails the iteration-jump
+    // validator (current iter is far ahead of the cached lastIter from
+    // before the corruption), invalidating again forever. By resetting
+    // these to the "uninitialised" sentinel, the next I-frame is accepted
+    // unconditionally, which is the right behaviour at a recovery point.
+    log->private->lastMainFrameIteration = (uint32_t) -1;
+    log->private->lastMainFrameTime = -1;
 }
 
 /**
