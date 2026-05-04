@@ -15,10 +15,16 @@
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
+  /* Centred as a group: instruments + RC-transmitter sit in the middle
+   * of the strip rather than pinned to opposite ends. Reads as one
+   * coherent cockpit panel rather than two distant clusters. */
+  justify-content: center;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px;
+  /* Tightened vertical padding — the strip used to take ~110 px of
+   * vertical space below the globe; 4 px top/bottom keeps the gauges
+   * legible while giving the globe more vertical real estate. */
+  padding: 4px 12px;
   background: linear-gradient(180deg, #0e1320 0%, #060a14 100%);
   border-top: 1px solid #1d2638;
   border-bottom: 1px solid #1d2638;
@@ -70,8 +76,7 @@
 @media (max-width: 720px) {
   .cockpit-strip {
     gap: 6px;
-    padding: 4px 6px;
-    justify-content: center;
+    padding: 3px 6px;
   }
   .gauge-cluster,
   .controls-cluster {
@@ -86,15 +91,13 @@
 }
 
 @media (max-width: 480px) {
-  /* On phone-portrait we further shrink everything. The throttle is
-   * the largest single control so it's the next to drop. */
+  /* Phone-portrait — shrink the whole strip; the wrap will naturally
+   * stack the gauge cluster above the RC controller if both don't fit
+   * on one line. */
   .cockpit-strip {
     transform: scale(0.85);
     transform-origin: top center;
     margin-bottom: -10px;
-  }
-  .cockpit-strip .controls-cluster .gauge-throttle {
-    display: none;
   }
 }
 

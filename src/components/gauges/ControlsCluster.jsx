@@ -1,46 +1,43 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react'
-import ThrottleLever from './ThrottleLever'
-import Joystick from './Joystick'
-import YawPedals from './YawPedals'
+import RcController from './RcController'
 
 /**
- * Pilot input cluster — mirror of GaugeCluster, but for what the pilot
- * was COMMANDING (channels) rather than what the aircraft was DOING
- * (telemetry).
+ * Pilot input cluster — what the pilot was COMMANDING via the radio's
+ * stick channels, mirroring the GaugeCluster on the other side that
+ * shows what the AIRCRAFT was DOING. Reading both at once turns a
+ * flight log into "watch the pilot fly the plane."
  *
- * Same architecture: pure SVG view, single imperative `update(row)`
- * method. Driven from GlobeView's preRender so we share Cesium's rAF
- * with everyone else.
+ * The cluster used to render three separate widgets (ThrottleLever +
+ * Joystick + YawPedals). It now renders a single RC-transmitter view
+ * (RcController) — same channel data, but visualised on a recognisable
+ * RadioMaster Pocket-style two-stick remote. One device = one mental
+ * model for the pilot's hands.
  *
- * Source field per control:
- *   ThrottleLever → row._throttle    (0..100)
- *   Joystick      → row._stickRoll, row._stickPitch  (-100..+100 each)
- *   YawPedals     → row._stickYaw    (-100..+100)
+ * Source field per stick (Mode 2 convention):
+ *   LEFT  stick → Y = row._throttle, X = row._stickYaw
+ *   RIGHT stick → Y = row._stickPitch, X = row._stickRoll
  *
- * Logs without pilot-input fields → each control's setter receives
- * null and shows a "NO TLM" overlay.
+ * Logs without pilot-input fields → setSticks receives nulls and the
+ * controller shows a "NO TLM" overlay; sticks freeze centred.
  */
 const ControlsCluster = forwardRef(function ControlsCluster(_props, ref) {
-  const throttleRef = useRef(null)
-  const joystickRef = useRef(null)
-  const pedalsRef = useRef(null)
+  const rcRef = useRef(null)
 
   useImperativeHandle(ref, () => ({
     update(r) {
       if (!r) return
-      throttleRef.current?.setThrottle(r._throttle)
-      joystickRef.current?.setStick(r._stickRoll, r._stickPitch)
-      pedalsRef.current?.setYaw(r._stickYaw)
+      rcRef.current?.setSticks({
+        throttle: r._throttle,
+        yaw:      r._stickYaw,
+        pitch:    r._stickPitch,
+        roll:     r._stickRoll,
+      })
     },
   }))
 
   return (
     <div className="controls-cluster" aria-label="Pilot input cluster">
-      <ThrottleLever ref={throttleRef} />
-      <div className="controls-stack-right">
-        <Joystick ref={joystickRef} />
-        <YawPedals ref={pedalsRef} />
-      </div>
+      <RcController ref={rcRef} />
     </div>
   )
 })
