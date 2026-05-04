@@ -732,6 +732,7 @@ export default function GlobeView({
     // pattern — avoids allocating Cesium primitives at 60 fps.
     const manualOffsetScratch = new Cesium.Cartesian3()
     const manualTransformScratch = new Cesium.Matrix4()
+    const manualTargetScratch = new Cesium.Cartesian3()
 
     // ── Fly-away guard state ─────────────────────────────────────────────────
     // Counts consecutive frames in which the camera/smooth state has gone
@@ -910,8 +911,21 @@ export default function GlobeView({
         // serves world position then we OVERRIDE with a now-stale-frame
         // local offset, which is the root cause of the 1+ million-metre
         // runaway the fuzz first surfaced).
-        const altManual = Math.max(0, r['Alt(m)'] || 0)
-        const tgtManual = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, altManual)
+        //
+        // CRITICAL: target MUST be aircraftPosRef.current (the smoothed
+        // path-derived pose used to render the model), NOT the raw
+        // telemetry GPS in `r`. The two differ by 1–3 m of Catmull-Rom
+        // smoothing, and at typical follow distance that translates to a
+        // few pixels of screen-space drift on the aircraft model every
+        // frame — visible as "model jitter while camera is held still."
+        // Using aircraftPosRef keeps the camera transform and the
+        // CallbackProperty model position perfectly co-located.
+        const tgtManual = aircraftPosRef.current
+          ? Cesium.Cartesian3.clone(aircraftPosRef.current, manualTargetScratch)
+          : Cesium.Cartesian3.fromDegrees(
+              r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
+              manualTargetScratch,
+            )
         const localOffset = Cesium.Cartesian3.clone(viewer.camera.position, manualOffsetScratch)
         const offMag = Math.hypot(localOffset.x, localOffset.y, localOffset.z)
         const MAX_MANUAL_OFFSET = 5000  // 5 km — generous orbit, well within INV-2 (10km)
