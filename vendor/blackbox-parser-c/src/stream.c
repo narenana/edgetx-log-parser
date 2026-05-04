@@ -33,7 +33,15 @@ uint32_t streamReadUnsignedVB(mmapStream_t *stream)
         shift += 7;
     }
 
-    // This VB-encoded int is too long!
+    // This VB-encoded int is too long! A valid encoding terminates within
+    // 5 bytes (last byte has the high bit clear). 5 consecutive bytes all
+    // with the continuation bit set is invariably wire-side corruption —
+    // upstream iNAV/Betaflight would never produce it (their writer caps
+    // at 5 bytes with last cont=0). Signal it as a stream error instead
+    // of silently returning 0 so the surrounding frame is rejected and
+    // the parser can resync to the next clean frame marker. Local patch
+    // (narenana/edgetx-log-parser); see vendor/blackbox-parser-c/PATCHES.md.
+    stream->eof = true;
     return 0;
 }
 
@@ -57,10 +65,19 @@ int streamPeekChar(mmapStream_t *stream)
 }
 
 /**
- * Read an unsigned byte from the stream, or EOF if the end of stream was reached.
+ * Read an unsigned byte from the stream, or EOF if the end of stream was
+ * reached OR the stream has been flagged as in-error by an upstream caller
+ * (see streamReadUnsignedVB's invalid-encoding path). Honoring the flag
+ * here is what lets a corrupt VB sequence abort the surrounding frame
+ * parse — without it, parseFrame happily reads the schema's remaining
+ * fields off the stream and consumes more bytes than the wire actually
+ * contained for the broken frame.
  */
 int streamReadByte(mmapStream_t *stream)
 {
+    if (stream->eof) {
+        return EOF;
+    }
     if (stream->pos < stream->end) {
         int result = (uint8_t) *stream->pos;
         stream->pos++;
@@ -77,6 +94,9 @@ int streamReadByte(mmapStream_t *stream)
  */
 int streamReadChar(mmapStream_t *stream)
 {
+    if (stream->eof) {
+        return EOF;
+    }
     if (stream->pos < stream->end) {
         int result = *stream->pos;
         stream->pos++;
