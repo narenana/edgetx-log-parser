@@ -1,113 +1,47 @@
-/* ── Cockpit gauge cluster ───────────────────────────────────────────────── */
-/* Replaces the legacy text HUD on the globe view. Anchored bottom-left,
- * non-interactive (so globe drag still works through it), with a subtle
- * dark background panel that ties the cluster together visually.
+/* ── Cockpit strip ──────────────────────────────────────────────────────── */
+/* Hosts both clusters in a horizontal row directly BELOW the globe (not
+ * over it). Critical for perf: the previous overlay used backdrop-filter
+ * blur on top of a WebGL canvas that repaints every frame, which forced
+ * the browser to re-blur the underlying pixels every frame and dominated
+ * the frame budget on weaker GPUs.
+ *
+ * Layout:
+ *   [ instruments cluster ........ ] [ controls cluster ]
+ *   airspeed | attitude | altimeter | heading | battery | … | throttle | joystick + pedals
+ *
+ * Wraps onto two lines on narrow screens.
  */
+.cockpit-strip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #0e1320 0%, #060a14 100%);
+  border-top: 1px solid #1d2638;
+  border-bottom: 1px solid #1d2638;
+  /* Slight inset highlight to give the strip a metallic-panel feel
+   * matching the gauges' bezel gradients. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+}
 
-.gauge-cluster {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
+/* The two clusters become inline groupings within the strip; their
+ * old absolute-positioning rules are gone, and they no longer carry
+ * their own panel chrome (the strip provides it). */
+.gauge-cluster,
+.controls-cluster {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(8, 12, 22, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(36, 48, 68, 0.6);
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  pointer-events: none;
-  /* Slight offset so a heavy backdrop doesn't fight any other absolute
-   * children of .globe-wrap (auto/manual button, nav widget). */
-  z-index: 5;
-}
-
-/* Each individual gauge SVG. Slight inset shadow on the bezel makes
- * the dial face look recessed, like a real instrument panel. */
-.gauge {
-  display: block;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-}
-
-/* Attitude indicator is the focal point — bumped up half a step. */
-.gauge-attitude {
-  /* Already 110 px in the SVG. Just adds a bit of vertical breathing
-   * room so it sits centred against the 90 px flanking gauges. */
-  margin: 0 2px;
-}
-
-/* ── Mobile: shrink + stack ─────────────────────────────────────────────── */
-/* On narrow screens the 5-gauge horizontal strip is too wide. Hide the
- * battery and heading gauges (they're informational extras), and shrink
- * the rest with a CSS transform so the airspeed/attitude/altimeter trio
- * still fits in landscape. */
-@media (max-width: 640px) {
-  .gauge-cluster {
-    bottom: 6px;
-    left: 6px;
-    gap: 2px;
-    padding: 4px 6px;
-    transform: scale(0.7);
-    transform-origin: bottom left;
-  }
-}
-
-@media (max-width: 480px) {
-  .gauge-cluster {
-    transform: scale(0.55);
-  }
-  /* Drop the secondary gauges on very narrow screens to avoid the cluster
-   * crossing the centre of the globe. */
-  .gauge-cluster .gauge-heading,
-  .gauge-cluster .gauge-battery {
-    display: none;
-  }
-}
-
-/* ── Light theme adjustments ───────────────────────────────────────────── */
-/* The dark cockpit gauges stay dark in light mode by design — that's
- * what real instrument panels look like, regardless of cabin lighting.
- * Just bump the panel border so it doesn't disappear against light
- * imagery. */
-[data-theme="light"] .gauge-cluster,
-[data-theme="light"] .controls-cluster {
-  background: rgba(8, 12, 22, 0.65);
-  border-color: rgba(36, 48, 68, 0.85);
-}
-
-/* ── Pilot input cluster ────────────────────────────────────────────────── */
-/* Mirrors the gauge cluster on the opposite (right) side of the globe.
- * Same panel styling so they read as a matched pair: instruments on the
- * left, pilot inputs on the right.
- *
- * Layout:
- *   - Throttle lever on the left of the cluster (matches fighter left-
- *     hand throttle quadrant).
- *   - Joystick stacked above the yaw pedals on the right (centre-stick
- *     above the footwell, top-down view).
- */
-.controls-cluster {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(8, 12, 22, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid rgba(36, 48, 68, 0.6);
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  pointer-events: none;
-  z-index: 5;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  pointer-events: auto;
 }
 
 .controls-stack-right {
@@ -117,24 +51,57 @@
   align-items: center;
 }
 
-/* Mobile: shrink + stack the controls cluster the same way the gauges
- * shrink. The joystick + pedals are the most informative pair, so we
- * keep them visible the longest; throttle hides first when space is
- * tight (the digital % readout makes its absence less critical). */
-@media (max-width: 640px) {
-  .controls-cluster {
-    bottom: 6px;
-    right: 6px;
-    gap: 2px;
+/* Each individual gauge SVG. Slight inset shadow on the bezel keeps the
+ * gauges feeling recessed even without the panel backdrop. */
+.gauge {
+  display: block;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+/* Attitude indicator is the focal point — bumped up half a step. */
+.gauge-attitude {
+  margin: 0 2px;
+}
+
+/* ── Mobile: shrink + wrap ──────────────────────────────────────────────── */
+/* On narrow screens the full strip is wider than the column. We let the
+ * clusters wrap naturally (flex-wrap on .cockpit-strip), and shrink each
+ * cluster slightly so the wrapped layout still fits a phone screen. */
+@media (max-width: 720px) {
+  .cockpit-strip {
+    gap: 6px;
     padding: 4px 6px;
-    transform: scale(0.7);
-    transform-origin: bottom right;
+    justify-content: center;
+  }
+  .gauge-cluster,
+  .controls-cluster {
+    gap: 3px;
+  }
+  /* Drop the secondary gauges on narrow screens — battery and heading
+   * are the least essential given the strip is now persistent UI. */
+  .cockpit-strip .gauge-cluster .gauge-battery,
+  .cockpit-strip .gauge-cluster .gauge-heading {
+    display: none;
   }
 }
 
 @media (max-width: 480px) {
-  .controls-cluster {
-    transform: scale(0.55);
+  /* On phone-portrait we further shrink everything. The throttle is
+   * the largest single control so it's the next to drop. */
+  .cockpit-strip {
+    transform: scale(0.85);
+    transform-origin: top center;
+    margin-bottom: -10px;
   }
-  .controls-cluster .gauge-throttle { display: none; }
+  .cockpit-strip .controls-cluster .gauge-throttle {
+    display: none;
+  }
+}
+
+/* Light theme keeps the dark cockpit panel — real instrument panels
+ * stay dark regardless of cabin lighting. We just brighten the borders
+ * a touch so the strip doesn't disappear on a light page background. */
+[data-theme="light"] .cockpit-strip {
+  border-top-color: #2a3245;
+  border-bottom-color: #2a3245;
 }

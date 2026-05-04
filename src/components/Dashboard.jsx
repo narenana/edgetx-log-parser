@@ -17,6 +17,13 @@ import { track } from '../utils/analytics'
 // users on the alternate view skip the download entirely until they switch.
 const GlobeView = lazy(() => import('./GlobeView'))
 const AltitudeAttitudeView = lazy(() => import('./AltitudeAttitudeView'))
+// Cockpit clusters live OUTSIDE the globe view (below it, in a strip), so
+// we render them at this level. They expose imperative `update(row)`
+// methods; GlobeView's preRender callback drives them via refs we own
+// here. Single-rAF UI ⇒ no backdrop-filter perf cost over the WebGL
+// canvas, no duplicate interpRows work.
+const GaugeCluster = lazy(() => import('./gauges/GaugeCluster'))
+const ControlsCluster = lazy(() => import('./gauges/ControlsCluster'))
 
 const SPEEDS = [0.1, 0.5, 1, 2, 5, 10, 30, 60]
 
@@ -44,6 +51,12 @@ export default function Dashboard({ log, theme = 'light' }) {
   const [bookmarks, setBookmarks] = useState([]) // sorted ascending row indices
   const speedRef = useRef(speed)
   const virtualTimeRef = useRef(0)
+  // Cluster refs are owned at this level (above GlobeView) because the
+  // strip lives below the globe — but GlobeView's Cesium preRender is
+  // the single rAF that drives them. We pass the refs DOWN into the
+  // globe so the preRender callback can call update(r) on each.
+  const gaugeClusterRef = useRef(null)
+  const controlsClusterRef = useRef(null)
   // Mirror bookmarks into a ref so the rAF playback loop can read the
   // latest list without restarting every time the array changes.
   const bookmarksRef = useRef(bookmarks)
@@ -311,12 +324,32 @@ export default function Dashboard({ log, theme = 'light' }) {
           {viewMode === 2 ? (
             /* ── 3D Globe view ── */
             log.hasGPS ? (
-              <div className="globe-wrap">
-                <FullscreenButton targetClass="globe-wrap" />
-                <Suspense fallback={<div className="lazy-fallback">Loading 3D globe…</div>}>
-                  <GlobeView key={log.filename} rows={rows} cursorIndex={cursorIndex} virtualTimeRef={virtualTimeRef} />
-                </Suspense>
-              </div>
+              <>
+                <div className="globe-wrap">
+                  <FullscreenButton targetClass="globe-wrap" />
+                  <Suspense fallback={<div className="lazy-fallback">Loading 3D globe…</div>}>
+                    <GlobeView
+                      key={log.filename}
+                      rows={rows}
+                      cursorIndex={cursorIndex}
+                      virtualTimeRef={virtualTimeRef}
+                      gaugeClusterRef={gaugeClusterRef}
+                      controlsClusterRef={controlsClusterRef}
+                    />
+                  </Suspense>
+                </div>
+                {/* Cockpit strip — instruments LEFT, pilot inputs RIGHT.
+                    Lives BELOW the globe (not over it) so no backdrop-
+                    filter blur over the continuously-invalidating WebGL
+                    canvas. GlobeView's Cesium preRender drives the
+                    cluster updates via the refs we own here. */}
+                <div className="cockpit-strip" aria-label="Cockpit panel">
+                  <Suspense fallback={null}>
+                    <GaugeCluster ref={gaugeClusterRef} rows={rows} />
+                    <ControlsCluster ref={controlsClusterRef} />
+                  </Suspense>
+                </div>
+              </>
             ) : (
               <div className="no-gps-msg">No GPS data</div>
             )

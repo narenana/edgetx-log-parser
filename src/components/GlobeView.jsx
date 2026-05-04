@@ -4,8 +4,6 @@ import * as THREE from 'three'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
-import GaugeCluster from './gauges/GaugeCluster'
-import ControlsCluster from './gauges/ControlsCluster'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
 // renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
@@ -289,7 +287,28 @@ async function buildAircraftGLB() {
   })
 }
 
-export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
+/**
+ * GlobeView props (cockpit clusters):
+ *   gaugeClusterRef    — forwardRef handle from GaugeCluster (instruments)
+ *   controlsClusterRef — forwardRef handle from ControlsCluster (pilot inputs)
+ *
+ * Both are optional. When provided, GlobeView calls `update(r)` on each
+ * inside the Cesium preRender callback so the entire UI runs on a
+ * SINGLE rAF (Cesium's). interpRows runs ONCE per frame and the result
+ * is shared between aircraft pose, camera math, gauges, and controls.
+ *
+ * The clusters live OUTSIDE the globe-wrap (in a strip below it owned
+ * by Dashboard) — this avoids a backdrop-filter:blur rendering on top
+ * of a continuously-invalidating WebGL canvas, which was the dominant
+ * cost of the earlier overlay layout.
+ */
+export default function GlobeView({
+  rows,
+  cursorIndex,
+  virtualTimeRef,
+  gaugeClusterRef,
+  controlsClusterRef,
+}) {
   const containerRef  = useRef(null)
   const stateRef      = useRef(null)
   const curRowRef     = useRef(null)
@@ -867,9 +886,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         attitudeRollRef.current += (r._rollDeg - attitudeRollRef.current) * 0.05
       }
 
-      // HUD updates are handled by GaugeCluster, which owns its own rAF
-      // and drives the SVG cockpit instruments via interpRows(rows, vt).
-      // Nothing to do here.
+      // Drive the cockpit clusters (instruments + pilot inputs) from this
+      // same callback. Single rAF for the whole UI; the row `r` we just
+      // interpolated above is already what each cluster needs. Calling
+      // update(r) is a few SVG attribute mutations — cheap compared to
+      // the camera math we're about to do, so the order here doesn't
+      // matter much.
+      gaugeClusterRef?.current?.update(r)
+      controlsClusterRef?.current?.update(r)
 
       if (!autoRef.current) {
         // Manual mode — keep the orbit anchored to the aircraft. Approach:
@@ -1381,8 +1405,6 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      <GaugeCluster rows={rows} virtualTimeRef={virtualTimeRef} />
-      <ControlsCluster rows={rows} virtualTimeRef={virtualTimeRef} />
       <button
         className={`globe-auto-btn${autoMode ? ' active' : ''}`}
         onClick={toggleAuto}
