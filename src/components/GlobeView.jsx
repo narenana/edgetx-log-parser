@@ -663,18 +663,35 @@ export default function GlobeView({
       if (cancelled) { URL.revokeObjectURL(url); return }
       glbUrlRef.current = url
 
+      // Reusable scratch for fallback aircraft position (when ref is
+      // null on first frame, before updateAircraftPose has run).
+      const _acFallbackPos = new Cesium.Cartesian3()
+      const _acHpr = new Cesium.HeadingPitchRoll()
       aircraftEntity = viewer.entities.add({
         // Position + orientation come from the path-following pose
         // (aircraftPosRef / Hdg/Pitch/RollRef), updated each frame in
         // preRender from the smoothed path geometry. Telemetry pitch /
         // roll / altitude noise no longer reach the model.
-        position: new Cesium.CallbackProperty(() => {
-          return aircraftPosRef.current ||
-            Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
+        //
+        // CRITICAL: properly populate the `result` parameter Cesium
+        // passes in. Cesium consumers (model visualizer, picking) may
+        // reuse the `result` reference instead of the returned value;
+        // a callback that returns its own ref without mutating result
+        // leaves them reading whatever stale Cartesian3 sat in `result`
+        // from a previous evaluation — visible as a one-frame backward
+        // jump in aircraft position every few frames.
+        position: new Cesium.CallbackProperty((_time, result) => {
+          const src = aircraftPosRef.current ||
+            Cesium.Cartesian3.fromDegrees(
+              gpsRows[0]._lon, gpsRows[0]._lat, 0, undefined, _acFallbackPos,
+            )
+          return Cesium.Cartesian3.clone(src, result)
         }, false),
-        orientation: new Cesium.CallbackProperty(() => {
+        orientation: new Cesium.CallbackProperty((_time, result) => {
           const pos = aircraftPosRef.current ||
-            Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
+            Cesium.Cartesian3.fromDegrees(
+              gpsRows[0]._lon, gpsRows[0]._lat, 0, undefined, _acFallbackPos,
+            )
           // Heading: compass-CW-from-north → +π/2 offset to compensate
           // for our glTF nose pointing -Z (becomes -X in Cesium model
           // frame). Pitch sign is negated (same nose-axis remap flips
@@ -682,12 +699,12 @@ export default function GlobeView({
           // by aerospace convention; HPR's roll is the same direction
           // when nose is at default +X, but with our +π/2 heading
           // offset the roll axis flips → negate.
-          const hpr = new Cesium.HeadingPitchRoll(
-            aircraftHdgRef.current * D2R + Math.PI / 2,
-            -aircraftPitchRef.current * D2R,
-            -aircraftRollRef.current * D2R,
+          _acHpr.heading = aircraftHdgRef.current * D2R + Math.PI / 2
+          _acHpr.pitch = -aircraftPitchRef.current * D2R
+          _acHpr.roll = -aircraftRollRef.current * D2R
+          return Cesium.Transforms.headingPitchRollQuaternion(
+            pos, _acHpr, undefined, undefined, result,
           )
-          return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
         }, false),
         model: {
           uri: url,
