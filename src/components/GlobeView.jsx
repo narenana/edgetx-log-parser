@@ -406,17 +406,20 @@ export default function GlobeView({
       )
 
     // ── Flight path: FM-coloured past + faded gray future ────────────────
-    // Single Primitive with per-vertex colours via PolylineColorAppearance.
-    // ONE polyline → no z-fight, no draw-order ambiguity. Past vertices
-    // get the FM colour for their flight mode; future vertices get
-    // gray. Recreating the primitive when the cursor crosses a
-    // smoothed-position boundary swaps the past/future colour split.
+    // Single thin Polyline Primitive with per-vertex colours. Vertices
+    // are the RAW pathRows positions (~600 verts) — no Catmull-Rom
+    // smoothing on the visual. The smoothed positions are kept ONLY for
+    // the aircraft pose calc below; rendering the path at raw density
+    // saves 8× the geometry size and (more importantly) makes the path
+    // primitive only need rebuilding when the cursor crosses a pathRow
+    // boundary (~250 ms at 1× playback) instead of every smoothed
+    // sub-step (~31 ms). At extreme close-up zoom in manual mode that
+    // saved several ms/frame off the GPU budget.
     //
-    // Cost: ~5-10ms per recreate (geometry build + GPU upload),
-    // throttled to 30Hz max ⇒ ~150-300ms/sec total = 15-30% of one
-    // frame budget. With static FM polylines now being a memory of a
-    // simpler architecture, this is the cleanest balance of visual
-    // correctness and performance we've found.
+    // Visual diff: the path is slightly less smooth at sharp turns
+    // (you can see segment edges if you look) but reads as a continuous
+    // line at any reasonable camera distance. Past = FM-colored,
+    // future = grey #bdbdbd.
     const SMOOTH_STEPS = 8
     const pathPositions = (() => {
       const pts = pathRows.map(r =>
@@ -426,45 +429,32 @@ export default function GlobeView({
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    const FM_LINE_WIDTH = 4
+    // Raw (un-smoothed) Cartesian3 positions for the visible polyline.
+    // These map 1:1 to pathRows[i] so the colour array can be a flat
+    // per-pathRow lookup.
+    const pathRowPositions = pathRows.map(r =>
+      Cesium.Cartesian3.fromDegrees(
+        r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
+      ),
+    )
+    const FM_LINE_WIDTH = 3
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
-    // Pre-compute FM colour per smoothed-position index. Each pathRow
-    // generates SMOOTH_STEPS smoothed positions; the FM mode of that
-    // pathRow's segment determines all SMOOTH_STEPS colours.
-    const pathFmColors = new Array(pathPositions.length)
-    {
-      let segStart = 0
-      let prevFM = pathRows[0]?.FM || 'UNKNOWN'
-      const fillSeg = (endRowIdx) => {
-        const color = Cesium.Color.fromCssColorString(fmColor(prevFM))
-        const lo = segStart * SMOOTH_STEPS
-        const hi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
-        for (let j = lo; j < hi; j++) pathFmColors[j] = color
-      }
-      for (let i = 1; i < pathRows.length; i++) {
-        const fm = pathRows[i].FM || 'UNKNOWN'
-        if (fm !== prevFM) {
-          fillSeg(i)
-          segStart = i - 1
-          prevFM = fm
-        }
-      }
-      fillSeg(pathRows.length - 1)
-      // Backfill any tail not covered by the loop
-      const fallback = Cesium.Color.fromCssColorString(fmColor('UNKNOWN'))
-      for (let i = 0; i < pathFmColors.length; i++) {
-        if (!pathFmColors[i]) pathFmColors[i] = fallback
-      }
-    }
+    // Per-vertex FM colours — one entry per pathRow (matches the line
+    // density). Each row's colour is its own FM mode; the segment
+    // between rows i and i+1 takes row i's colour.
+    const pathRowFmColors = pathRows.map(r =>
+      Cesium.Color.fromCssColorString(fmColor(r.FM || 'UNKNOWN')),
+    )
 
-    // tubeIdxRef tracks the smoothed-position index where past meets
-    // future. tubeFracIdxRef is the FRACTIONAL version (e.g. 234.7)
-    // used for the aircraft pose so position lerps smoothly across
-    // sub-vertex distances. Both come from the same vt → pathRows
-    // → pathPositions binary search.
-    const tubeIdxRef = { current: 0 }
+    // tubeFracIdxRef tracks the FRACTIONAL position within the smoothed
+    // pathPositions array — used by updateAircraftPose for sub-step
+    // lerping (smooth aircraft motion). tubeRowIdxRef tracks the
+    // INTEGER index into pathRows (and equivalently pathRowPositions /
+    // pathRowFmColors) — used to decide where the past/future colour
+    // split lands on the rendered polyline.
     const tubeFracIdxRef = { current: 0 }
+    const tubeRowIdxRef = { current: 0 }
     const updateTubeIdx = () => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
       let lo = 0, hi = pathRows.length - 1
@@ -473,19 +463,20 @@ export default function GlobeView({
         if (pathRows[mid]._tSec < vt) lo = mid + 1
         else hi = mid
       }
-      let fIdx
+      let smoothFrac
       if (lo === 0) {
-        fIdx = 0
+        smoothFrac = 0
+        tubeRowIdxRef.current = 0
       } else {
         const t0 = pathRows[lo - 1]._tSec
         const t1 = pathRows[lo]._tSec
         const frac = t1 > t0 ? (vt - t0) / (t1 - t0) : 0
         const clamped = frac < 0 ? 0 : frac > 1 ? 1 : frac
-        fIdx = (lo - 1) * SMOOTH_STEPS + clamped * SMOOTH_STEPS
+        smoothFrac = (lo - 1) * SMOOTH_STEPS + clamped * SMOOTH_STEPS
+        tubeRowIdxRef.current = Math.min(pathRows.length - 1, lo - 1)
       }
       const maxIdx = pathPositions.length - 1
-      tubeFracIdxRef.current = Math.min(maxIdx, fIdx)
-      tubeIdxRef.current = Math.min(maxIdx, Math.floor(fIdx))
+      tubeFracIdxRef.current = Math.min(maxIdx, smoothFrac)
     }
     updateTubeIdx()
 
@@ -582,17 +573,21 @@ export default function GlobeView({
     let pathPrimitive = null
     let pathPrimIdx = -1
     let lastPathUpdateMs = 0
-    // 10Hz max — primitive recreation costs ~5-10ms each (CPU geometry
-    // build + GPU upload). At 30Hz it ate enough of the per-frame
-    // budget to drop rendering from 60fps to ~22fps. 10Hz still feels
-    // responsive (the past/future split lags playback by at most 100ms,
-    // imperceptible at typical playback speeds) and frees ~70ms/sec of
-    // CPU back for the rest of the scene.
+    // 10Hz throttle is preserved as a safety net but in practice it
+    // rarely fires now: the cursor-row index changes only when playback
+    // crosses a pathRow boundary (~250 ms at 1× playback), so rebuilds
+    // happen 4× per second naturally. Earlier the smoothed-position
+    // index changed every ~31 ms which forced the throttle to do real
+    // work. Net effect: ~8× fewer rebuilds, each ~8× cheaper (600 verts
+    // not 4800).
     const PATH_UPDATE_THROTTLE_MS = 100
     const buildPathColors = (cursorIdx) => {
-      const out = new Array(pathPositions.length)
+      // cursorIdx is in pathRow space (0..pathRows.length-1). Same
+      // index space as pathRowPositions and pathRowFmColors, so we can
+      // do a flat compare.
+      const out = new Array(pathRowPositions.length)
       for (let i = 0; i < out.length; i++) {
-        out[i] = i < cursorIdx ? pathFmColors[i] : FUTURE_COLOR
+        out[i] = i < cursorIdx ? pathRowFmColors[i] : FUTURE_COLOR
       }
       return out
     }
@@ -601,7 +596,7 @@ export default function GlobeView({
       return new Cesium.Primitive({
         geometryInstances: new Cesium.GeometryInstance({
           geometry: new Cesium.PolylineGeometry({
-            positions: pathPositions,
+            positions: pathRowPositions,
             width: FM_LINE_WIDTH,
             colors,
             colorsPerVertex: true,
@@ -616,7 +611,7 @@ export default function GlobeView({
       })
     }
     const updatePathPrimitive = () => {
-      const i = tubeIdxRef.current
+      const i = tubeRowIdxRef.current
       if (i === pathPrimIdx) return
       const nowMs = performance.now()
       if (nowMs - lastPathUpdateMs < PATH_UPDATE_THROTTLE_MS) return
