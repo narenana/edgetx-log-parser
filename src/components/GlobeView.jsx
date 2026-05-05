@@ -406,20 +406,18 @@ export default function GlobeView({
       )
 
     // ── Flight path: FM-coloured past + faded gray future ────────────────
-    // Single thin Polyline Primitive with per-vertex colours. Vertices
-    // are the RAW pathRows positions (~600 verts) — no Catmull-Rom
-    // smoothing on the visual. The smoothed positions are kept ONLY for
-    // the aircraft pose calc below; rendering the path at raw density
-    // saves 8× the geometry size and (more importantly) makes the path
-    // primitive only need rebuilding when the cursor crosses a pathRow
-    // boundary (~250 ms at 1× playback) instead of every smoothed
-    // sub-step (~31 ms). At extreme close-up zoom in manual mode that
-    // saved several ms/frame off the GPU budget.
+    // Thin (1 px) polyline rendered at the SMOOTHED vertex density so
+    // it follows the same Catmull-Rom curve the aircraft path-following
+    // pose uses. Same arc visually = no shading mismatch between
+    // aircraft trajectory and the line drawn behind it. Each smoothed
+    // vertex carries its own colour so the past/future split is sharp.
     //
-    // Visual diff: the path is slightly less smooth at sharp turns
-    // (you can see segment edges if you look) but reads as a continuous
-    // line at any reasonable camera distance. Past = FM-colored,
-    // future = grey #bdbdbd.
+    // Performance balance: rendering at 4800 verts (smoothed) is more
+    // GPU work per frame than rendering at 600 (raw), but the line is
+    // now 1 px wide (was 3 px) which dramatically cuts pixel coverage,
+    // AND the rebuild trigger is held at pathRow granularity so the
+    // primitive is reconstructed only ~4×/sec at 1× playback (one
+    // rebuild per pathRow boundary cross), not 30×/sec.
     const SMOOTH_STEPS = 8
     const pathPositions = (() => {
       const pts = pathRows.map(r =>
@@ -429,23 +427,36 @@ export default function GlobeView({
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    // Raw (un-smoothed) Cartesian3 positions for the visible polyline.
-    // These map 1:1 to pathRows[i] so the colour array can be a flat
-    // per-pathRow lookup.
-    const pathRowPositions = pathRows.map(r =>
-      Cesium.Cartesian3.fromDegrees(
-        r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
-      ),
-    )
-    const FM_LINE_WIDTH = 3
+    const FM_LINE_WIDTH = 1
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
-    // Per-vertex FM colours — one entry per pathRow (matches the line
-    // density). Each row's colour is its own FM mode; the segment
-    // between rows i and i+1 takes row i's colour.
-    const pathRowFmColors = pathRows.map(r =>
-      Cesium.Color.fromCssColorString(fmColor(r.FM || 'UNKNOWN')),
-    )
+    // Pre-compute FM colour per smoothed-position index. Each pathRow
+    // generates SMOOTH_STEPS smoothed positions; the FM mode of that
+    // pathRow's segment determines all SMOOTH_STEPS colours.
+    const pathFmColors = new Array(pathPositions.length)
+    {
+      let segStart = 0
+      let prevFM = pathRows[0]?.FM || 'UNKNOWN'
+      const fillSeg = (endRowIdx) => {
+        const color = Cesium.Color.fromCssColorString(fmColor(prevFM))
+        const lo = segStart * SMOOTH_STEPS
+        const hi = Math.min(pathPositions.length, endRowIdx * SMOOTH_STEPS + 1)
+        for (let j = lo; j < hi; j++) pathFmColors[j] = color
+      }
+      for (let i = 1; i < pathRows.length; i++) {
+        const fm = pathRows[i].FM || 'UNKNOWN'
+        if (fm !== prevFM) {
+          fillSeg(i)
+          segStart = i - 1
+          prevFM = fm
+        }
+      }
+      fillSeg(pathRows.length - 1)
+      const fallback = Cesium.Color.fromCssColorString(fmColor('UNKNOWN'))
+      for (let i = 0; i < pathFmColors.length; i++) {
+        if (!pathFmColors[i]) pathFmColors[i] = fallback
+      }
+    }
 
     // tubeFracIdxRef tracks the FRACTIONAL position within the smoothed
     // pathPositions array — used by updateAircraftPose for sub-step
@@ -581,22 +592,26 @@ export default function GlobeView({
     // work. Net effect: ~8× fewer rebuilds, each ~8× cheaper (600 verts
     // not 4800).
     const PATH_UPDATE_THROTTLE_MS = 100
-    const buildPathColors = (cursorIdx) => {
-      // cursorIdx is in pathRow space (0..pathRows.length-1). Same
-      // index space as pathRowPositions and pathRowFmColors, so we can
-      // do a flat compare.
-      const out = new Array(pathRowPositions.length)
+    const buildPathColors = (cursorRowIdx) => {
+      // cursorRowIdx is in pathRow space (0..pathRows.length-1).
+      // Map to smoothed-vertex space for the colour split: every
+      // pathRow contributes SMOOTH_STEPS smoothed vertices, so the
+      // smoothed index where past meets future is rowIdx × SMOOTH_STEPS.
+      // Holding the trigger at row granularity means we only rebuild
+      // ~4×/sec at 1× playback, but the line itself stays smooth.
+      const splitSmoothIdx = cursorRowIdx * SMOOTH_STEPS
+      const out = new Array(pathPositions.length)
       for (let i = 0; i < out.length; i++) {
-        out[i] = i < cursorIdx ? pathRowFmColors[i] : FUTURE_COLOR
+        out[i] = i < splitSmoothIdx ? pathFmColors[i] : FUTURE_COLOR
       }
       return out
     }
-    const buildPathPrimitive = (cursorIdx) => {
-      const colors = buildPathColors(cursorIdx)
+    const buildPathPrimitive = (cursorRowIdx) => {
+      const colors = buildPathColors(cursorRowIdx)
       return new Cesium.Primitive({
         geometryInstances: new Cesium.GeometryInstance({
           geometry: new Cesium.PolylineGeometry({
-            positions: pathRowPositions,
+            positions: pathPositions,
             width: FM_LINE_WIDTH,
             colors,
             colorsPerVertex: true,
