@@ -10,8 +10,14 @@ import { forwardRef, useImperativeHandle, useRef } from 'react'
  * rotor RC pilots):
  *   LEFT stick  — Y = throttle  (up = full, centre = 50 %, down = 0)
  *                 X = yaw       (left/right rudder)
- *   RIGHT stick — Y = pitch     (down on screen = pulled-back = nose up)
+ *   RIGHT stick — Y = pitch     (up on screen = pushed-forward = nose down)
  *                 X = roll      (right of centre = right roll)
+ *
+ * Pitch sign matches the source data convention: iNAV's rcCommand[1]
+ * and EdgeTX's Ele channel both use `+ve = stick forward = nose-down
+ * command`, so the displayed stick moves AWAY from the pilot for
+ * positive values and TOWARD the pilot for negative — the same
+ * direction the pilot's hand was actually pushing.
  *
  * The two stick "tops" are SVG groups that translate by the deflection
  * fraction of MAX_TRAVEL each frame. Imperative — no React re-renders
@@ -82,13 +88,13 @@ const RcController = forwardRef(function RcController(_props, ref) {
         )
       }
 
-      // RIGHT stick: pitch +ve = pulled-back = nose-up = stick handle
-      // moves DOWN on screen (toward pilot). Same convention as the
-      // earlier Joystick component.
+      // RIGHT stick: pitch +ve = pushed-forward = nose-down command =
+      // stick handle moves UP on screen (away from pilot). Negate so
+      // SVG +Y down maps to the visually-correct direction.
       const pitchV = pOk ? Math.max(-100, Math.min(100, pitch)) : 0
       const rollV = rOk ? Math.max(-100, Math.min(100, roll)) : 0
       const rightDx = (rollV / 100) * STICK_TRAVEL
-      const rightDy = (pitchV / 100) * STICK_TRAVEL
+      const rightDy = -(pitchV / 100) * STICK_TRAVEL
       if (rightStickRef.current) {
         rightStickRef.current.setAttribute(
           'transform',
