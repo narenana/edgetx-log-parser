@@ -387,6 +387,21 @@ export default function GlobeView({
       selectionIndicator: false, infoBox: false,
     })
 
+    // Anti-aliasing: bump MSAA from Cesium's default 4 to 8 and enable
+    // the FXAA post-pass. The combination came out clearly best in a
+    // side-by-side review of the 1px flight-path polyline against a
+    // satellite-imagery backdrop: MSAA8 alone still left visible
+    // step-aliasing on shallow-angle path segments, FXAA alone slightly
+    // softened those but at the cost of fuzzing surrounding imagery
+    // detail; together they cancel the line aliasing without obvious
+    // softness. Cost is modest — MSAA8 is supported on essentially
+    // every laptop GPU released after 2014, and FXAA is a single
+    // fullscreen-shader pass.
+    viewer.scene.msaaSamples = 8
+    if (viewer.scene.postProcessStages?.fxaa) {
+      viewer.scene.postProcessStages.fxaa.enabled = true
+    }
+
     const cc = viewer.cesiumWidget?.creditContainer
     if (cc) cc.style.display = 'none'
 
