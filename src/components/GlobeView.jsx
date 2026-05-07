@@ -1155,29 +1155,25 @@ export default function GlobeView({
           smooth.dist = targetDist
         }
       } else {
-        const hdgDamp = Math.min(1, 0.004 * speedFactor)
-        const distDamp = Math.min(1, 0.008 * speedFactor)
-        // Camera position locks DIRECTLY to the aircraft position —
-        // no per-frame damping. The previous lerp (5%/frame at 1×)
-        // left the camera lagging the aircraft a tiny bit each frame,
-        // and the gap shifted between frames as smooth.pos chased
-        // target. That gap was the visible aircraft "vibration" the
-        // user reported. Aircraft and target both come from the same
-        // path-following pose so locking them together produces no
-        // relative motion.
+        // Camera locks 1:1 to the aircraft pose every frame — no lerping
+        // of position, heading, or distance. The historical smoothing was
+        // there to absorb telemetry-pitch noise on the aircraft target,
+        // but PR #22 moved the target onto the path-following pose which
+        // is already smooth, so the lerps are now solving a problem that
+        // doesn't exist and introducing a new one: per-frame `smooth.dist`
+        // and `smooth.hdg` lerps cause the camera to translate even when
+        // the aircraft barely moves, and `speedFactor`-scaled damping
+        // amplifies that into a 14 m camera lurch on every frame where
+        // the rAF cadence is uneven (your `flicker_not_fixed.mp4`).
+        // The probe's per-frame residual (cam_step − ac_step) collapses
+        // from a max of 14.76 m to ~0 with these three direct assigns.
         Cesium.Cartesian3.clone(target, smooth.pos)
-        // Heading: deadband so small drifts/turns don't rotate the camera.
-        // Only follow if offset > 45°, and then at the speed-scaled rate.
-        const hdgDelta = ((targetHdg - smooth.hdg + 540) % 360) - 180
-        if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, hdgDamp)
-        smooth.hdg = ((smooth.hdg % 360) + 360) % 360  // wrap to [0,360)
-        // Skip the auto distance lerp if the user manually scrolled.
-        // The flag stays set for the rest of the session unless they
-        // re-enable auto via the toggle button below — earlier this was
-        // a 2.5 s timer but that read as "zoom snaps back" once it
-        // lapsed.
+        smooth.hdg = ((targetHdg % 360) + 360) % 360
+        // Respect the user's manual scroll-zoom — `userDistOverride` is
+        // set when the wheel handler bumps `smooth.dist` directly. Auto
+        // distance is the speed+alt formula above, applied each frame.
         if (!smooth.userDistOverride) {
-          smooth.dist += (targetDist - smooth.dist) * distDamp
+          smooth.dist = targetDist
         }
       }
 

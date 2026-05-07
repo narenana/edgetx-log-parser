@@ -685,8 +685,9 @@ body {
 .globe-fps-overlay {
   position: absolute;
   top: 10px;
-  left: 10px;
-  padding: 4px 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
   background: rgba(0, 0, 0, 0.6);
   color: #9ece6a;
   font-family: Consolas, monospace;
