@@ -45,24 +45,6 @@ function gpsBearing(lat1, lon1, lat2, lon2) {
   return (Math.atan2(y,x)/D2R + 360) % 360
 }
 
-function updateHud(el, r) {
-  if (!el || !r) return
-  const fm   = r['FM'] || '—'
-  const alt  = r['Alt(m)'] ?? 0
-  const vspd = r['VSpd(m/s)'] ?? 0
-  const spd  = r['GSpd(kmh)'] ?? 0
-  const hdg  = r['Hdg(°)'] ?? 0
-  el.innerHTML = [
-    `<span style="color:${fmColor(fm)};font-weight:700">${fm}</span>`,
-    `<span style="color:#9ece6a">ALT</span> ${alt.toFixed(1)}<small>m</small>`,
-    `<span style="color:#7dcfff">V/S</span> ${vspd >= 0 ? '+' : ''}${vspd.toFixed(1)}<small>m/s</small>`,
-    `<span style="color:#f7768e">PCH</span> ${(r._pitchDeg ?? 0).toFixed(1)}°`,
-    `<span style="color:#7aa2f7">RLL</span> ${(r._rollDeg ?? 0).toFixed(1)}°`,
-    `<span style="color:#e0af68">HDG</span> ${hdg.toFixed(0)}°`,
-    `<span style="color:#ff9e64">SPD</span> ${spd.toFixed(0)}<small>km/h</small>`,
-  ].join('<br/>')
-}
-
 function lerpHdg(from, to, t) {
   let diff = ((to - from + 540) % 360) - 180
   return from + diff * t
@@ -305,7 +287,28 @@ async function buildAircraftGLB() {
   })
 }
 
-export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
+/**
+ * GlobeView props (cockpit clusters):
+ *   gaugeClusterRef    — forwardRef handle from GaugeCluster (instruments)
+ *   controlsClusterRef — forwardRef handle from ControlsCluster (pilot inputs)
+ *
+ * Both are optional. When provided, GlobeView calls `update(r)` on each
+ * inside the Cesium preRender callback so the entire UI runs on a
+ * SINGLE rAF (Cesium's). interpRows runs ONCE per frame and the result
+ * is shared between aircraft pose, camera math, gauges, and controls.
+ *
+ * The clusters live OUTSIDE the globe-wrap (in a strip below it owned
+ * by Dashboard) — this avoids a backdrop-filter:blur rendering on top
+ * of a continuously-invalidating WebGL canvas, which was the dominant
+ * cost of the earlier overlay layout.
+ */
+export default function GlobeView({
+  rows,
+  cursorIndex,
+  virtualTimeRef,
+  gaugeClusterRef,
+  controlsClusterRef,
+}) {
   const containerRef  = useRef(null)
   const stateRef      = useRef(null)
   const curRowRef     = useRef(null)
@@ -347,7 +350,6 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   const aircraftPitchRef = useRef(0)  // degrees, +up
   const aircraftRollRef = useRef(0)   // degrees, +right wing down
   const autoRef       = useRef(true)
-  const hudRef        = useRef(null)
   const glbUrlRef     = useRef(null)
   const [autoMode, setAutoMode] = useState(true)
 
@@ -404,17 +406,18 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
 
     // ── Flight path: FM-coloured past + faded gray future ────────────────
-    // Single Primitive with per-vertex colours via PolylineColorAppearance.
-    // ONE polyline → no z-fight, no draw-order ambiguity. Past vertices
-    // get the FM colour for their flight mode; future vertices get
-    // gray. Recreating the primitive when the cursor crosses a
-    // smoothed-position boundary swaps the past/future colour split.
+    // Thin (1 px) polyline rendered at the SMOOTHED vertex density so
+    // it follows the same Catmull-Rom curve the aircraft path-following
+    // pose uses. Same arc visually = no shading mismatch between
+    // aircraft trajectory and the line drawn behind it. Each smoothed
+    // vertex carries its own colour so the past/future split is sharp.
     //
-    // Cost: ~5-10ms per recreate (geometry build + GPU upload),
-    // throttled to 30Hz max ⇒ ~150-300ms/sec total = 15-30% of one
-    // frame budget. With static FM polylines now being a memory of a
-    // simpler architecture, this is the cleanest balance of visual
-    // correctness and performance we've found.
+    // Performance balance: rendering at 4800 verts (smoothed) is more
+    // GPU work per frame than rendering at 600 (raw), but the line is
+    // now 1 px wide (was 3 px) which dramatically cuts pixel coverage,
+    // AND the rebuild trigger is held at pathRow granularity so the
+    // primitive is reconstructed only ~4×/sec at 1× playback (one
+    // rebuild per pathRow boundary cross), not 30×/sec.
     const SMOOTH_STEPS = 8
     const pathPositions = (() => {
       const pts = pathRows.map(r =>
@@ -424,7 +427,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    const FM_LINE_WIDTH = 4
+    const FM_LINE_WIDTH = 1
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
     // Pre-compute FM colour per smoothed-position index. Each pathRow
@@ -449,20 +452,20 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         }
       }
       fillSeg(pathRows.length - 1)
-      // Backfill any tail not covered by the loop
       const fallback = Cesium.Color.fromCssColorString(fmColor('UNKNOWN'))
       for (let i = 0; i < pathFmColors.length; i++) {
         if (!pathFmColors[i]) pathFmColors[i] = fallback
       }
     }
 
-    // tubeIdxRef tracks the smoothed-position index where past meets
-    // future. tubeFracIdxRef is the FRACTIONAL version (e.g. 234.7)
-    // used for the aircraft pose so position lerps smoothly across
-    // sub-vertex distances. Both come from the same vt → pathRows
-    // → pathPositions binary search.
-    const tubeIdxRef = { current: 0 }
+    // tubeFracIdxRef tracks the FRACTIONAL position within the smoothed
+    // pathPositions array — used by updateAircraftPose for sub-step
+    // lerping (smooth aircraft motion). tubeRowIdxRef tracks the
+    // INTEGER index into pathRows (and equivalently pathRowPositions /
+    // pathRowFmColors) — used to decide where the past/future colour
+    // split lands on the rendered polyline.
     const tubeFracIdxRef = { current: 0 }
+    const tubeRowIdxRef = { current: 0 }
     const updateTubeIdx = () => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
       let lo = 0, hi = pathRows.length - 1
@@ -471,19 +474,20 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         if (pathRows[mid]._tSec < vt) lo = mid + 1
         else hi = mid
       }
-      let fIdx
+      let smoothFrac
       if (lo === 0) {
-        fIdx = 0
+        smoothFrac = 0
+        tubeRowIdxRef.current = 0
       } else {
         const t0 = pathRows[lo - 1]._tSec
         const t1 = pathRows[lo]._tSec
         const frac = t1 > t0 ? (vt - t0) / (t1 - t0) : 0
         const clamped = frac < 0 ? 0 : frac > 1 ? 1 : frac
-        fIdx = (lo - 1) * SMOOTH_STEPS + clamped * SMOOTH_STEPS
+        smoothFrac = (lo - 1) * SMOOTH_STEPS + clamped * SMOOTH_STEPS
+        tubeRowIdxRef.current = Math.min(pathRows.length - 1, lo - 1)
       }
       const maxIdx = pathPositions.length - 1
-      tubeFracIdxRef.current = Math.min(maxIdx, fIdx)
-      tubeIdxRef.current = Math.min(maxIdx, Math.floor(fIdx))
+      tubeFracIdxRef.current = Math.min(maxIdx, smoothFrac)
     }
     updateTubeIdx()
 
@@ -495,6 +499,13 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     const _scratchEnu = new Cesium.Cartesian3()
     const _scratchM4 = new Cesium.Matrix4()
     const _scratchM4Inv = new Cesium.Matrix4()
+    // Sub-vertex lerped behind/ahead positions — must be CONTINUOUS in
+    // fracIdx, otherwise the tangent direction snaps every time fracIdx
+    // crosses an integer (≈ every 250 ms at 1× playback) and the EMA on
+    // hdg/pitch chases the step, producing visible ~3 px wingtip wobble
+    // every few frames.
+    const _scratchBehind = new Cesium.Cartesian3()
+    const _scratchAhead = new Cesium.Cartesian3()
     // Window size (in smoothed-position indices) for tangent + slope
     // calculations. Bigger = smoother but laggier; ~0.5s at typical
     // playback should be plenty for a stable, smooth attitude.
@@ -513,13 +524,24 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       if (!aircraftPosRef.current) aircraftPosRef.current = new Cesium.Cartesian3()
       Cesium.Cartesian3.clone(_scratchPos, aircraftPosRef.current)
 
-      // Tangent for heading + pitch from the path itself, computed over
-      // a small window so noise on individual smoothed points doesn't
-      // bend it. behindI/aheadI bracket the cursor.
-      const behindI = Math.max(0, i - POSE_WINDOW)
-      const aheadI = Math.min(lastIdx, i + POSE_WINDOW)
-      const behind = pathPositions[behindI]
-      const ahead = pathPositions[aheadI]
+      // Tangent endpoints — sub-vertex interpolated so they advance
+      // CONTINUOUSLY with fracIdx. Previously these were `pathPositions[i ±
+      // POSE_WINDOW]` which snapped at integer i; the snap re-introduced
+      // exactly the per-step orientation discontinuity the EMA was
+      // supposed to mask, manifesting as a few-pixel wingtip wobble every
+      // smoothed-position crossing (~once every 250 ms at 1× playback).
+      const behindFrac = Math.max(0, fracIdx - POSE_WINDOW)
+      const aheadFrac  = Math.min(lastIdx, fracIdx + POSE_WINDOW)
+      const bI0 = Math.max(0, Math.min(Math.floor(behindFrac), lastIdx))
+      const bI1 = Math.max(0, Math.min(bI0 + 1, lastIdx))
+      const bF  = behindFrac - bI0
+      const aI0 = Math.max(0, Math.min(Math.floor(aheadFrac), lastIdx))
+      const aI1 = Math.max(0, Math.min(aI0 + 1, lastIdx))
+      const aF  = aheadFrac - aI0
+      Cesium.Cartesian3.lerp(pathPositions[bI0], pathPositions[bI1], bF, _scratchBehind)
+      Cesium.Cartesian3.lerp(pathPositions[aI0], pathPositions[aI1], aF, _scratchAhead)
+      const behind = _scratchBehind
+      const ahead = _scratchAhead
 
       // ECEF delta → local ENU at `behind` so we can pull heading from
       // east/north components and pitch from up/horizontal.
@@ -562,22 +584,30 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     let pathPrimitive = null
     let pathPrimIdx = -1
     let lastPathUpdateMs = 0
-    // 10Hz max — primitive recreation costs ~5-10ms each (CPU geometry
-    // build + GPU upload). At 30Hz it ate enough of the per-frame
-    // budget to drop rendering from 60fps to ~22fps. 10Hz still feels
-    // responsive (the past/future split lags playback by at most 100ms,
-    // imperceptible at typical playback speeds) and frees ~70ms/sec of
-    // CPU back for the rest of the scene.
+    // 10Hz throttle is preserved as a safety net but in practice it
+    // rarely fires now: the cursor-row index changes only when playback
+    // crosses a pathRow boundary (~250 ms at 1× playback), so rebuilds
+    // happen 4× per second naturally. Earlier the smoothed-position
+    // index changed every ~31 ms which forced the throttle to do real
+    // work. Net effect: ~8× fewer rebuilds, each ~8× cheaper (600 verts
+    // not 4800).
     const PATH_UPDATE_THROTTLE_MS = 100
-    const buildPathColors = (cursorIdx) => {
+    const buildPathColors = (cursorRowIdx) => {
+      // cursorRowIdx is in pathRow space (0..pathRows.length-1).
+      // Map to smoothed-vertex space for the colour split: every
+      // pathRow contributes SMOOTH_STEPS smoothed vertices, so the
+      // smoothed index where past meets future is rowIdx × SMOOTH_STEPS.
+      // Holding the trigger at row granularity means we only rebuild
+      // ~4×/sec at 1× playback, but the line itself stays smooth.
+      const splitSmoothIdx = cursorRowIdx * SMOOTH_STEPS
       const out = new Array(pathPositions.length)
       for (let i = 0; i < out.length; i++) {
-        out[i] = i < cursorIdx ? pathFmColors[i] : FUTURE_COLOR
+        out[i] = i < splitSmoothIdx ? pathFmColors[i] : FUTURE_COLOR
       }
       return out
     }
-    const buildPathPrimitive = (cursorIdx) => {
-      const colors = buildPathColors(cursorIdx)
+    const buildPathPrimitive = (cursorRowIdx) => {
+      const colors = buildPathColors(cursorRowIdx)
       return new Cesium.Primitive({
         geometryInstances: new Cesium.GeometryInstance({
           geometry: new Cesium.PolylineGeometry({
@@ -596,7 +626,7 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       })
     }
     const updatePathPrimitive = () => {
-      const i = tubeIdxRef.current
+      const i = tubeRowIdxRef.current
       if (i === pathPrimIdx) return
       const nowMs = performance.now()
       if (nowMs - lastPathUpdateMs < PATH_UPDATE_THROTTLE_MS) return
@@ -633,18 +663,35 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       if (cancelled) { URL.revokeObjectURL(url); return }
       glbUrlRef.current = url
 
+      // Reusable scratch for fallback aircraft position (when ref is
+      // null on first frame, before updateAircraftPose has run).
+      const _acFallbackPos = new Cesium.Cartesian3()
+      const _acHpr = new Cesium.HeadingPitchRoll()
       aircraftEntity = viewer.entities.add({
         // Position + orientation come from the path-following pose
         // (aircraftPosRef / Hdg/Pitch/RollRef), updated each frame in
         // preRender from the smoothed path geometry. Telemetry pitch /
         // roll / altitude noise no longer reach the model.
-        position: new Cesium.CallbackProperty(() => {
-          return aircraftPosRef.current ||
-            Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
+        //
+        // CRITICAL: properly populate the `result` parameter Cesium
+        // passes in. Cesium consumers (model visualizer, picking) may
+        // reuse the `result` reference instead of the returned value;
+        // a callback that returns its own ref without mutating result
+        // leaves them reading whatever stale Cartesian3 sat in `result`
+        // from a previous evaluation — visible as a one-frame backward
+        // jump in aircraft position every few frames.
+        position: new Cesium.CallbackProperty((_time, result) => {
+          const src = aircraftPosRef.current ||
+            Cesium.Cartesian3.fromDegrees(
+              gpsRows[0]._lon, gpsRows[0]._lat, 0, undefined, _acFallbackPos,
+            )
+          return Cesium.Cartesian3.clone(src, result)
         }, false),
-        orientation: new Cesium.CallbackProperty(() => {
+        orientation: new Cesium.CallbackProperty((_time, result) => {
           const pos = aircraftPosRef.current ||
-            Cesium.Cartesian3.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat, 0)
+            Cesium.Cartesian3.fromDegrees(
+              gpsRows[0]._lon, gpsRows[0]._lat, 0, undefined, _acFallbackPos,
+            )
           // Heading: compass-CW-from-north → +π/2 offset to compensate
           // for our glTF nose pointing -Z (becomes -X in Cesium model
           // frame). Pitch sign is negated (same nose-axis remap flips
@@ -652,12 +699,12 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
           // by aerospace convention; HPR's roll is the same direction
           // when nose is at default +X, but with our +π/2 heading
           // offset the roll axis flips → negate.
-          const hpr = new Cesium.HeadingPitchRoll(
-            aircraftHdgRef.current * D2R + Math.PI / 2,
-            -aircraftPitchRef.current * D2R,
-            -aircraftRollRef.current * D2R,
+          _acHpr.heading = aircraftHdgRef.current * D2R + Math.PI / 2
+          _acHpr.pitch = -aircraftPitchRef.current * D2R
+          _acHpr.roll = -aircraftRollRef.current * D2R
+          return Cesium.Transforms.headingPitchRollQuaternion(
+            pos, _acHpr, undefined, undefined, result,
           )
-          return Cesium.Transforms.headingPitchRollQuaternion(pos, hpr)
         }, false),
         model: {
           uri: url,
@@ -726,11 +773,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
 
     // ── Per-frame: trajectory heading + pitch + camera ────────────────────────
     const smooth = { pos: null, hdg: 0, dist: 500 }
-    let lastHudUpdate = 0
     // Reused per-frame scratch buffers for the manual-mode lookAtTransform
     // pattern — avoids allocating Cesium primitives at 60 fps.
     const manualOffsetScratch = new Cesium.Cartesian3()
     const manualTransformScratch = new Cesium.Matrix4()
+    const manualTargetScratch = new Cesium.Cartesian3()
 
     // ── Fly-away guard state ─────────────────────────────────────────────────
     // Counts consecutive frames in which the camera/smooth state has gone
@@ -753,6 +800,32 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
     const FLY_AWAY_DEBOUNCE = 30          // ~500 ms at 60 fps; ~3 s at 10 fps
     const FLY_AWAY_COOLDOWN_MS = 5000
 
+    // Cesium render order each frame:
+    //   preUpdate → update (entity CallbackProperty.getValue here)
+    //             → postUpdate → preRender → render
+    //
+    // The aircraft entity's position/orientation CallbackProperties
+    // read aircraftPosRef.current and aircraftHdg/Pitch/RollRef.current
+    // during the update phase. So those refs MUST already hold this
+    // frame's value when update runs — otherwise the entity is rendered
+    // with last frame's pose while camera.lookAtTransform (set later in
+    // preRender) anchors to this frame's pose. Result: a one-frame
+    // desync visible as the aircraft snapping backward on screen by
+    // exactly one per-frame motion delta whenever the actual delta is
+    // big enough to clear the model's pixel size — i.e., "every few
+    // frames the craft moved back on the flight path and immediately
+    // resumes in the right place."
+    //
+    // Fix: run pose updates in PRE-UPDATE so the refs are fresh before
+    // the update phase. preRender keeps the rest of the per-frame work
+    // (camera lookAt, fly-away guard, path primitive rebuild, gauge
+    // cluster drives) and reads the SAME fresh refs that the entity
+    // already used — keeping camera and entity perfectly co-located.
+    viewer.scene.preUpdate.addEventListener(() => {
+      updateTubeIdx()
+      updateAircraftPose()
+    })
+
     viewer.scene.preRender.addEventListener(() => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
       const r  = interpRows(rows, vt)
@@ -770,12 +843,11 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
       }
       curRowRef.current = r
 
-      // Move the past/future split to match the current virtual time.
-      // Cheap (binary-search over ~600 rows). updatePathPrimitive
-      // rebuilds the single-polyline path primitive only when the
-      // smoothed-position idx changes AND the 30Hz throttle allows.
-      updateTubeIdx()
-      updateAircraftPose()
+      // Pose refs already updated in preUpdate this frame — the
+      // entity's CallbackProperty has already read them, and the
+      // camera lookAt below uses the same ref values, so they stay
+      // co-located. Path primitive rebuild is purely visual; safe to
+      // do here.
       updatePathPrimitive()
 
       // ── Fly-away detection + auto-recovery ───────────────────────────────
@@ -885,8 +957,14 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         attitudeRollRef.current += (r._rollDeg - attitudeRollRef.current) * 0.05
       }
 
-      const now = performance.now()
-      if (now - lastHudUpdate > 100) { lastHudUpdate = now; updateHud(hudRef.current, r) }
+      // Drive the cockpit clusters (instruments + pilot inputs) from this
+      // same callback. Single rAF for the whole UI; the row `r` we just
+      // interpolated above is already what each cluster needs. Calling
+      // update(r) is a few SVG attribute mutations — cheap compared to
+      // the camera math we're about to do, so the order here doesn't
+      // matter much.
+      gaugeClusterRef?.current?.update(r)
+      controlsClusterRef?.current?.update(r)
 
       if (!autoRef.current) {
         // Manual mode — keep the orbit anchored to the aircraft. Approach:
@@ -903,8 +981,21 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
         // serves world position then we OVERRIDE with a now-stale-frame
         // local offset, which is the root cause of the 1+ million-metre
         // runaway the fuzz first surfaced).
-        const altManual = Math.max(0, r['Alt(m)'] || 0)
-        const tgtManual = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, altManual)
+        //
+        // CRITICAL: target MUST be aircraftPosRef.current (the smoothed
+        // path-derived pose used to render the model), NOT the raw
+        // telemetry GPS in `r`. The two differ by 1–3 m of Catmull-Rom
+        // smoothing, and at typical follow distance that translates to a
+        // few pixels of screen-space drift on the aircraft model every
+        // frame — visible as "model jitter while camera is held still."
+        // Using aircraftPosRef keeps the camera transform and the
+        // CallbackProperty model position perfectly co-located.
+        const tgtManual = aircraftPosRef.current
+          ? Cesium.Cartesian3.clone(aircraftPosRef.current, manualTargetScratch)
+          : Cesium.Cartesian3.fromDegrees(
+              r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
+              manualTargetScratch,
+            )
         const localOffset = Cesium.Cartesian3.clone(viewer.camera.position, manualOffsetScratch)
         const offMag = Math.hypot(localOffset.x, localOffset.y, localOffset.z)
         const MAX_MANUAL_OFFSET = 5000  // 5 km — generous orbit, well within INV-2 (10km)
@@ -1398,7 +1489,6 @@ export default function GlobeView({ rows, cursorIndex, virtualTimeRef }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      <div ref={hudRef} className="globe-hud" />
       <button
         className={`globe-auto-btn${autoMode ? ' active' : ''}`}
         onClick={toggleAuto}
