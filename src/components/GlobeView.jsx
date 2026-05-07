@@ -387,28 +387,19 @@ export default function GlobeView({
       selectionIndicator: false, infoBox: false,
     })
 
-    // DEBUG-ONLY: AA-evaluation URL params, only parsed on this branch.
-    // ?aa-width=N → polyline width (default 1)
-    // ?aa-msaa=N  → scene.msaaSamples (default Cesium's 4)
-    // ?aa-fxaa=1  → enable FXAA post-process (default off)
-    // Removed before merging — feat/flight-path-rendering only.
-    const _aaParams = (() => {
-      try {
-        const p = new URLSearchParams(window.location.search)
-        return {
-          width: Math.max(1, Math.min(10, Number(p.get('aa-width')) || 0)) || null,
-          msaa:  Math.max(1, Math.min(8,  Number(p.get('aa-msaa'))  || 0)) || null,
-          fxaa:  p.get('aa-fxaa') === '1' || p.get('aa-fxaa') === 'on'
-                  ? true
-                  : p.get('aa-fxaa') === '0' || p.get('aa-fxaa') === 'off'
-                    ? false
-                    : null,
-        }
-      } catch (_) { return { width: null, msaa: null, fxaa: null } }
-    })()
-    if (_aaParams.msaa != null) viewer.scene.msaaSamples = _aaParams.msaa
-    if (_aaParams.fxaa != null && viewer.scene.postProcessStages?.fxaa) {
-      viewer.scene.postProcessStages.fxaa.enabled = _aaParams.fxaa
+    // Anti-aliasing: bump MSAA from Cesium's default 4 to 8 and enable
+    // the FXAA post-pass. The combination came out clearly best in a
+    // side-by-side review of the 1px flight-path polyline against a
+    // satellite-imagery backdrop: MSAA8 alone still left visible
+    // step-aliasing on shallow-angle path segments, FXAA alone slightly
+    // softened those but at the cost of fuzzing surrounding imagery
+    // detail; together they cancel the line aliasing without obvious
+    // softness. Cost is modest — MSAA8 is supported on essentially
+    // every laptop GPU released after 2014, and FXAA is a single
+    // fullscreen-shader pass.
+    viewer.scene.msaaSamples = 8
+    if (viewer.scene.postProcessStages?.fxaa) {
+      viewer.scene.postProcessStages.fxaa.enabled = true
     }
 
     const cc = viewer.cesiumWidget?.creditContainer
@@ -451,7 +442,7 @@ export default function GlobeView({
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    const FM_LINE_WIDTH = _aaParams.width ?? 1
+    const FM_LINE_WIDTH = 1
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
     // Pre-compute FM colour per smoothed-position index. Each pathRow
@@ -672,48 +663,6 @@ export default function GlobeView({
     pathPrimitive = buildPathPrimitive(0)
     viewer.scene.primitives.add(pathPrimitive)
     pathPrimIdx = 0
-
-    // DEBUG-ONLY: AA-evaluation hooks. Let a puppeteer probe rebuild the
-    // path primitive at a custom line width and tune scene-level AA
-    // (msaaSamples + FXAA) without a redeploy cycle. Remove before
-    // merging — only present on feat/flight-path-rendering.
-    if (typeof window !== 'undefined') {
-      window.__pathSetWidth = (width = 1) => {
-        if (pathPrimitive) {
-          try { viewer.scene.primitives.remove(pathPrimitive) } catch (_) {}
-        }
-        const colors = buildPathColors(tubeRowIdxRef.current)
-        pathPrimitive = new Cesium.Primitive({
-          geometryInstances: new Cesium.GeometryInstance({
-            geometry: new Cesium.PolylineGeometry({
-              positions: pathPositions,
-              width,
-              colors,
-              colorsPerVertex: true,
-              vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
-            }),
-          }),
-          appearance: new Cesium.PolylineColorAppearance({ translucent: false }),
-          asynchronous: false,
-          releaseGeometryInstances: false,
-        })
-        viewer.scene.primitives.add(pathPrimitive)
-        pathPrimIdx = tubeRowIdxRef.current
-        viewer.scene.requestRender()
-        return width
-      }
-      window.__sceneTune = ({ msaa, fxaa } = {}) => {
-        if (typeof msaa === 'number') viewer.scene.msaaSamples = msaa
-        if (typeof fxaa === 'boolean' && viewer.scene.postProcessStages?.fxaa) {
-          viewer.scene.postProcessStages.fxaa.enabled = fxaa
-        }
-        viewer.scene.requestRender()
-        return {
-          msaaSamples: viewer.scene.msaaSamples,
-          fxaa: viewer.scene.postProcessStages?.fxaa?.enabled ?? null,
-        }
-      }
-    }
 
     const addDot = (r, color) => viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0)),
