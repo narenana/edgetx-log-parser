@@ -353,6 +353,13 @@ export default function GlobeView({
   const autoRef       = useRef(true)
   const glbUrlRef     = useRef(null)
   const [autoMode, setAutoMode] = useState(true)
+  // Active camera view (one of CAMERA_VIEWS keys). Re-rendered through
+  // React so the button-row's active state stays in sync with the
+  // runtime view; the per-frame camera block reads from cameraViewRef
+  // instead of `cameraView` to avoid a closure-staleness footgun.
+  const [cameraView, setCameraView] = useState(() => parseCameraViewFromUrl() ?? 'chase')
+  const cameraViewRef = useRef(cameraView)
+  useEffect(() => { cameraViewRef.current = cameraView }, [cameraView])
 
   const gpsRows = useMemo(() => rows.filter(r => r._lat != null && r._lon != null), [rows])
 
@@ -796,18 +803,19 @@ export default function GlobeView({
     const manualTargetScratch = new Cesium.Cartesian3()
 
     // ── Active camera view (Phase A of the camera-director feature) ──────────
-    // The auto-mode camera block reads `activeView.compute(ctx)` per frame to
-    // decide where the camera sits relative to the aircraft. Default is
-    // CHASE (current behaviour); URL param `?camera=tail|orbit|topdown`
-    // and the runtime hook `window.__setCamera(name)` swap it live.
-    const activeCameraRef = { current: parseCameraViewFromUrl() ?? 'chase' }
+    // The auto-mode camera block reads `cameraViewRef.current` (kept in sync
+    // with the React `cameraView` state by an effect at component top).
+    // Default is CHASE (current behaviour); URL param `?camera=...`,
+    // the on-canvas button row, and `window.__setCamera(name)` all
+    // funnel through `setCameraView` so the button highlight always
+    // matches what's rendering.
     if (typeof window !== 'undefined') {
       window.__setCamera = (name) => {
         const next = String(name || '').toLowerCase()
         if (!CAMERA_VIEWS[next]) {
           return `unknown view: ${name}. valid: ${Object.keys(CAMERA_VIEWS).join(', ')}`
         }
-        activeCameraRef.current = next
+        setCameraView(next)
         viewer.scene.requestRender()
         return next
       }
@@ -1152,7 +1160,7 @@ export default function GlobeView({
       // state machine (heading deadband + dynamic distance) — every
       // other view ignores it and reads the live aircraft state, so
       // they react instantly to turns / dive-and-climb / scrubs.
-      const view = CAMERA_VIEWS[activeCameraRef.current] || CAMERA_VIEWS.chase
+      const view = CAMERA_VIEWS[cameraViewRef.current] || CAMERA_VIEWS.chase
       const camParams = view.compute({
         aircraftHdgDeg: aircraftHdgRef.current,
         altM: alt,
@@ -1551,6 +1559,35 @@ export default function GlobeView({
       >
         {autoMode ? '⊙ AUTO' : '✥ MANUAL'}
       </button>
+
+      {/* Camera-view picker — Phase A of the camera-director feature.
+          Switches the AUTO-mode camera between CHASE / TAIL / ORBIT /
+          TOPDOWN. Disabled when MANUAL is active (the user's free-orbit
+          state would be clobbered by a view click). */}
+      <div
+        className="globe-camera-views"
+        onMouseDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+        aria-label="Camera view picker"
+      >
+        {Object.entries(CAMERA_VIEWS).map(([key, view]) => (
+          <button
+            key={key}
+            className={`cam-btn${cameraView === key ? ' active' : ''}`}
+            onClick={() => {
+              setCameraView(key)
+              // If user is in MANUAL, route through toggleAuto so the
+              // lookAtTransform is properly released and smooth state
+              // re-inits — picking a view implies "give me the auto
+              // camera again."
+              if (!autoMode) toggleAuto()
+            }}
+            title={view.description}
+          >
+            {view.name}
+          </button>
+        ))}
+      </div>
 
       {/* Google Earth-style nav widget: compass + tilt + zoom */}
       <div className="globe-nav" onMouseDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
