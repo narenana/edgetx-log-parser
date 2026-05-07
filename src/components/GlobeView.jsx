@@ -649,6 +649,36 @@ export default function GlobeView({
     viewer.scene.primitives.add(pathPrimitive)
     pathPrimIdx = 0
 
+    // DEBUG-ONLY: AA-evaluation hook. Lets a puppeteer probe rebuild the
+    // path primitive at a custom line width without a redeploy cycle.
+    // Remove before merging — only present on feat/flight-path-rendering.
+    if (typeof window !== 'undefined') {
+      window.__pathSetWidth = (width = 1) => {
+        if (pathPrimitive) {
+          try { viewer.scene.primitives.remove(pathPrimitive) } catch (_) {}
+        }
+        const colors = buildPathColors(tubeRowIdxRef.current)
+        pathPrimitive = new Cesium.Primitive({
+          geometryInstances: new Cesium.GeometryInstance({
+            geometry: new Cesium.PolylineGeometry({
+              positions: pathPositions,
+              width,
+              colors,
+              colorsPerVertex: true,
+              vertexFormat: Cesium.PolylineColorAppearance.VERTEX_FORMAT,
+            }),
+          }),
+          appearance: new Cesium.PolylineColorAppearance({ translucent: false }),
+          asynchronous: false,
+          releaseGeometryInstances: false,
+        })
+        viewer.scene.primitives.add(pathPrimitive)
+        pathPrimIdx = tubeRowIdxRef.current
+        viewer.scene.requestRender()
+        return width
+      }
+    }
+
     const addDot = (r, color) => viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0)),
       point: { pixelSize: 9, color: Cesium.Color.fromCssColorString(color), outlineColor: Cesium.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Infinity },
