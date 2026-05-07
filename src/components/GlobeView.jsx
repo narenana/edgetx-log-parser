@@ -387,6 +387,30 @@ export default function GlobeView({
       selectionIndicator: false, infoBox: false,
     })
 
+    // DEBUG-ONLY: AA-evaluation URL params, only parsed on this branch.
+    // ?aa-width=N → polyline width (default 1)
+    // ?aa-msaa=N  → scene.msaaSamples (default Cesium's 4)
+    // ?aa-fxaa=1  → enable FXAA post-process (default off)
+    // Removed before merging — feat/flight-path-rendering only.
+    const _aaParams = (() => {
+      try {
+        const p = new URLSearchParams(window.location.search)
+        return {
+          width: Math.max(1, Math.min(10, Number(p.get('aa-width')) || 0)) || null,
+          msaa:  Math.max(1, Math.min(8,  Number(p.get('aa-msaa'))  || 0)) || null,
+          fxaa:  p.get('aa-fxaa') === '1' || p.get('aa-fxaa') === 'on'
+                  ? true
+                  : p.get('aa-fxaa') === '0' || p.get('aa-fxaa') === 'off'
+                    ? false
+                    : null,
+        }
+      } catch (_) { return { width: null, msaa: null, fxaa: null } }
+    })()
+    if (_aaParams.msaa != null) viewer.scene.msaaSamples = _aaParams.msaa
+    if (_aaParams.fxaa != null && viewer.scene.postProcessStages?.fxaa) {
+      viewer.scene.postProcessStages.fxaa.enabled = _aaParams.fxaa
+    }
+
     const cc = viewer.cesiumWidget?.creditContainer
     if (cc) cc.style.display = 'none'
 
@@ -427,7 +451,7 @@ export default function GlobeView({
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    const FM_LINE_WIDTH = 1
+    const FM_LINE_WIDTH = _aaParams.width ?? 1
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
     // Pre-compute FM colour per smoothed-position index. Each pathRow
