@@ -913,7 +913,22 @@ export default function GlobeView({
     // (camera lookAt, fly-away guard, path primitive rebuild, gauge
     // cluster drives) and reads the SAME fresh refs that the entity
     // already used — keeping camera and entity perfectly co-located.
+    // Gate the pose update on actual vt change. With requestRenderMode
+    // active, Cesium fires preUpdate for our vt-watcher AND for any
+    // auto-triggered render (imagery tile loads, camera input, internal
+    // events). Without this gate the EMAs inside updateAircraftPose
+    // (heading 0.20, pitch 0.10, roll 0.08) apply MULTIPLE times per
+    // playback frame on busy scenes — uneven catch-up across frames
+    // produces the visible alternating-bank-angle pattern in
+    // not_smooth.mp4. Skipping the call when vt is unchanged makes
+    // the aircraft entity render at the same pose for those auto-
+    // triggered renders (which is correct — nothing has actually
+    // moved) and ensures one EMA step per real playback advance.
+    let lastPoseVt = null
     viewer.scene.preUpdate.addEventListener(() => {
+      const vt = virtualTimeRef?.current ?? rows[0]._tSec
+      if (vt === lastPoseVt) return
+      lastPoseVt = vt
       updateTubeIdx()
       updateAircraftPose()
     })
