@@ -1327,12 +1327,27 @@ export default function GlobeView({
     // ever queries this; the property is named with a __ prefix as an
     // explicit "internal / dev" marker. Reading it has zero side effects.
     if (typeof window !== 'undefined') {
+      // Reusable scratch for the tail-position computation in __viewerState.
+      const _tailLocalOffset = new Cesium.Cartesian3(-3, 0, 0) // ~3 m behind the model origin in Cesium model frame
+      const _tailRotMatrix = new Cesium.Matrix3()
+      const _tailDelta = new Cesium.Cartesian3()
+      const _tailWorld = new Cesium.Cartesian3()
       window.__viewerState = () => {
         const s = stateRef.current
         if (!s) return null
         const ac = s.getAircraftEntity?.()
         const acPos = ac?.position?.getValue?.(s.viewer.clock.currentTime) ?? null
+        const acOri = ac?.orientation?.getValue?.(s.viewer.clock.currentTime) ?? null
         const camPos = s.viewer.camera.positionWC
+        let tailPos = null
+        if (acPos && acOri) {
+          // Rotate the local tail offset by the aircraft's world
+          // orientation, then add to the aircraft's world position.
+          Cesium.Matrix3.fromQuaternion(acOri, _tailRotMatrix)
+          Cesium.Matrix3.multiplyByVector(_tailRotMatrix, _tailLocalOffset, _tailDelta)
+          Cesium.Cartesian3.add(acPos, _tailDelta, _tailWorld)
+          tailPos = { x: _tailWorld.x, y: _tailWorld.y, z: _tailWorld.z }
+        }
         return {
           autoMode: autoRef.current,
           smooth: {
@@ -1359,8 +1374,12 @@ export default function GlobeView({
             ),
           },
           aircraft: acPos ? { x: acPos.x, y: acPos.y, z: acPos.z } : null,
+          tail: tailPos,
           camToAircraftMeters: acPos
             ? Cesium.Cartesian3.distance(camPos, acPos)
+            : null,
+          camToTailMeters: tailPos
+            ? Cesium.Cartesian3.distance(camPos, _tailWorld)
             : null,
           trackedEntity: !!s.viewer.trackedEntity,
           flyAwayCount: window.__flyAwayCount ?? 0,
