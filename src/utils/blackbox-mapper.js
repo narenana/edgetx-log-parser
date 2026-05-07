@@ -340,20 +340,46 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-const NAV_STATES = [
-  'IDLE',
-  'ALT_HOLD',
-  'POS_HOLD',
-  'RTH',
-  'WP',
-  'EMERG_LANDING',
-  'LAUNCH',
-  'CRUISE',
-  'COURSE_HOLD',
-  'MIXER_TRANSITION',
-]
+// iNAV's `NAV_PERSISTENT_ID_*` table from src/main/navigation/navigation_private.h.
+// These IDs are explicitly stable across iNAV firmware versions — the
+// underlying `navigationFSMState_t` enum is allowed to renumber, but
+// blackbox writes the persistent ID so external tools have a fixed
+// reference. Each major mode owns 1–7 sequential IDs (one per state-
+// machine slot: INITIALIZE / IN_PROGRESS / ADJUSTING / FINISHING / …);
+// we collapse them to the user-facing mode name.
+//
+// Important: ID 1 (`NAV_PERSISTENT_ID_IDLE`) means the navigation state
+// machine is OFF — the pilot is flying with sticks (ACRO / ANGLE /
+// HORIZON / MANUAL). Without the `flightModeFlags` slow-frame field
+// (not always logged) we can't tell which manual mode was active, so
+// we label these rows "MANUAL". The previous version of this table
+// indexed by the live `navigationFSMState_t` enum — which made id 1
+// resolve to "ALT_HOLD" instead of IDLE, so any flight where the FSM
+// stayed idle (i.e. anyone flying without nav-mode autopilot engaged)
+// reported ALT_HOLD as the dominant mode.
+const NAV_PERSISTENT_LABELS = {
+  0: '',                                             // UNDEFINED
+  1: 'MANUAL',                                       // IDLE — sticks-only flying
+  2: 'ALT_HOLD', 3: 'ALT_HOLD',
+  // 4, 5: unused (was POSHOLD_2D — removed from iNAV)
+  6: 'POS_HOLD', 7: 'POS_HOLD',
+  8: 'RTH', 9: 'RTH', 10: 'RTH', 11: 'RTH', 12: 'RTH', 13: 'RTH', 14: 'RTH',
+  15: 'WP', 16: 'WP', 17: 'WP', 18: 'WP', 19: 'WP', 20: 'WP', 21: 'WP',
+  22: 'EMERG_LANDING', 23: 'EMERG_LANDING', 24: 'EMERG_LANDING',
+  25: 'LAUNCH', 26: 'LAUNCH', 28: 'LAUNCH',          // 27 unused
+  29: 'COURSE_HOLD', 30: 'COURSE_HOLD', 31: 'COURSE_HOLD',
+  32: 'CRUISE', 33: 'CRUISE', 34: 'CRUISE',
+  35: 'WP',                                          // WAYPOINT_HOLD_TIME
+  36: 'RTH',                                         // RTH_LOITER_ABOVE_HOME
+  // 37: unused (was WP_HOVER_ABOVE_HOME)
+  38: 'RTH',                                         // RTH_TRACKBACK
+  39: 'MIXER_TRANSITION', 40: 'MIXER_TRANSITION', 41: 'MIXER_TRANSITION',
+  42: 'FW_LANDING', 43: 'FW_LANDING', 44: 'FW_LANDING', 45: 'FW_LANDING',
+  46: 'FW_LANDING', 47: 'FW_LANDING', 48: 'FW_LANDING',
+  49: 'SEND_TO', 50: 'SEND_TO', 51: 'SEND_TO',
+}
 function navStateLabel(v) {
   if (v == null) return ''
   const i = Math.round(v)
-  return NAV_STATES[i] != null ? NAV_STATES[i] : `FM${i}`
+  return NAV_PERSISTENT_LABELS[i] ?? `FM${i}`
 }
