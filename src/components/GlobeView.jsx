@@ -332,6 +332,14 @@ export default function GlobeView({
   // aircraft entity and camera target locks them together visually.
   // Initial null → seeded from first row's alt to avoid a jump from 0.
   const smoothAltRef = useRef(null)
+  // Slow EMA on the auto chase-distance target. The raw formula
+  // `spdMs * 5 + alt * 1.5 + 150` is sensitive to GPS speed noise on a
+  // per-frame basis — even with smoothed altitude, a 1 m/s speed spike
+  // bumps the target by 5 m, and the camera following directly turns
+  // that into a visible "zoom-in / zoom-out" between frames. EMA-smoothing
+  // the target itself filters those spikes without affecting how the
+  // camera responds to real speed/altitude changes (climb-out, descent).
+  const smoothTargetDistRef = useRef(null)
 
   // ── Path-following aircraft pose (cosmetic / mocked) ─────────────────
   // Position + heading + pitch + roll are derived from the smoothed
@@ -1124,7 +1132,15 @@ export default function GlobeView({
         ? Cesium.Cartesian3.clone(aircraftPosRef.current, new Cesium.Cartesian3())
         : Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
       const targetHdg  = aircraftHdgRef.current
-      const targetDist = Math.max(150, Math.min(600, spdMs * 5 + alt * 1.5 + 150))
+      // EMA-smoothed chase distance target. 0.05 damping ⇒ ~95% catch-up
+      // in 60 frames (≈ 1 s at 60 fps), fast enough to track a real
+      // climb-out or approach but slow enough to flatten the per-frame
+      // GPS-speed noise that was producing the "sudden zoom-in" artifact
+      // on individual frames.
+      const rawTargetDist = Math.max(150, Math.min(600, spdMs * 5 + alt * 1.5 + 150))
+      if (smoothTargetDistRef.current == null) smoothTargetDistRef.current = rawTargetDist
+      else smoothTargetDistRef.current += (rawTargetDist - smoothTargetDistRef.current) * 0.05
+      const targetDist = smoothTargetDistRef.current
 
       // Detect playback speed by measuring how much virtual time
       // advanced per real second since the last frame. The damping
