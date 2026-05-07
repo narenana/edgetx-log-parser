@@ -214,7 +214,14 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
       'Ptch(rad)': pitchDeg != null ? (pitchDeg * Math.PI) / 180 : null,
       'Roll(rad)': rollDeg != null ? (rollDeg * Math.PI) / 180 : null,
       'Yaw(rad)': yawDeg != null ? (yawDeg * Math.PI) / 180 : null,
-      _pitchDeg: pitchDeg,
+      // iNAV's `attitude.values.pitch` (MSP_ATTITUDE convention) is
+      // POSITIVE when the nose is DOWN. We invert here so `_pitchDeg`
+      // follows the aviation convention POSITIVE = nose-up (climb)
+      // throughout the app — what the AI gauge, pitch chart, and any
+      // future consumer naturally expect. The raw `Ptch(rad)` field
+      // above is left as-is so anyone exporting back to an EdgeTX-style
+      // CSV preserves the source convention.
+      _pitchDeg: pitchDeg != null ? -pitchDeg : null,
       _rollDeg: rollDeg,
       _yawDeg: yawDeg,
       'RxBt(V)': vbat,

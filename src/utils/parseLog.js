@@ -84,7 +84,12 @@ export function parseEdgeTXLog(text, filename) {
       _tSec: (ts - t0) / 1000,
       _lat: lat,
       _lon: lon,
-      _pitchDeg: r['Ptch(rad)'] != null ? r['Ptch(rad)'] * R2D : null,
+      // iNAV / Betaflight FCs both telemeter pitch as POSITIVE = nose-down
+      // (matches MSP_ATTITUDE). Invert here so `_pitchDeg` follows the
+      // aviation convention (+ve = nose-up = climb) the rest of the app
+      // — AI gauge, pitch chart, etc. — naturally expects. Raw `Ptch(rad)`
+      // on the row is left untouched.
+      _pitchDeg: r['Ptch(rad)'] != null ? -r['Ptch(rad)'] * R2D : null,
       _rollDeg: r['Roll(rad)'] != null ? r['Roll(rad)'] * R2D : null,
       _yawDeg: r['Yaw(rad)'] != null ? r['Yaw(rad)'] * R2D : null,
       'Hdg(°)': normHdg(r['Hdg(°)']),
