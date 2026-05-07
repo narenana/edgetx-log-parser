@@ -679,6 +679,24 @@ body {
   background: var(--hud-bg);
 }
 
+/* FPS overlay (debug, gated on `?fps=1`). Reads actual rendered frames
+   from Cesium's postRender event — accurate measure of GPU work under
+   requestRenderMode. */
+.globe-fps-overlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #9ece6a;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+  z-index: 2;
+  pointer-events: none;
+}
+
 /* Camera-view picker (top-right, between AUTO toggle + nav widget).
    Switches the auto-mode camera between CHASE / TAIL / ORBIT / TOPDOWN. */
 .globe-camera-views {

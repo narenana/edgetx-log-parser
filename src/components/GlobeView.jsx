@@ -360,6 +360,15 @@ export default function GlobeView({
   const [cameraView, setCameraView] = useState(() => parseCameraViewFromUrl() ?? 'chase')
   const cameraViewRef = useRef(cameraView)
   useEffect(() => { cameraViewRef.current = cameraView }, [cameraView])
+  // FPS overlay (debug, gated on `?fps=1`). Branch-only.
+  const fpsEnabled = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    try { return new URLSearchParams(window.location.search).get('fps') === '1' }
+    catch { return false }
+  }, [])
+  const [fps, setFps] = useState(0)
+  const fpsEnabledRef = useRef(fpsEnabled)
+  useEffect(() => { fpsEnabledRef.current = fpsEnabled }, [fpsEnabled])
 
   const gpsRows = useMemo(() => rows.filter(r => r._lat != null && r._lon != null), [rows])
 
@@ -412,6 +421,24 @@ export default function GlobeView({
 
     const cc = viewer.cesiumWidget?.creditContainer
     if (cc) cc.style.display = 'none'
+
+    // ── Performance defaults ──────────────────────────────────────────────────
+    // 1) `requestRenderMode = true` makes Cesium repaint ONLY when a render
+    //    has been explicitly requested. Combined with the vt-watcher rAF
+    //    below (which triggers a render whenever virtualTimeRef advances),
+    //    this drops the GPU cost to zero on a paused log and stops the
+    //    flat-out repaint we were doing during normal playback even when
+    //    the scene was visually static between frames. Camera input and
+    //    imagery-tile loads auto-trigger renders via Cesium's own listeners.
+    // 2) `maximumRenderTimeChange = Infinity` disables Cesium's clock-based
+    //    auto-render — our vt watcher is the single source of truth for
+    //    when to draw, so we don't want the internal clock racing it.
+    // 3) Fog + atmospheric scattering are pretty but expensive shader
+    //    passes that add nothing at the follow distances we render at.
+    viewer.scene.requestRenderMode = true
+    viewer.scene.maximumRenderTimeChange = Infinity
+    viewer.scene.fog.enabled = false
+    viewer.scene.skyAtmosphere.show = false
 
     // Disable inertia — zoom/pan/orbit should stop the instant the user releases input
     const ssc = viewer.scene.screenSpaceCameraController
@@ -1414,8 +1441,51 @@ export default function GlobeView({
       resizeObserver.observe(wrap)
     }
 
+    // ── vt watcher: trigger Cesium render whenever virtualTimeRef advances ──
+    // With requestRenderMode=true Cesium only paints on explicit request.
+    // During PLAY virtualTimeRef advances every Dashboard rAF tick, so we
+    // mirror that: a tiny watcher rAF here fires `scene.requestRender()`
+    // whenever vt changes since the last check. During PAUSE vt is static
+    // and no renders are requested — Cesium goes idle and GPU usage drops
+    // to ~zero. Camera drag, scrub, mode toggle all auto-trigger via
+    // Cesium's own input listeners, so they stay smooth too.
+    let vtWatchRaf = 0
+    let lastVtSeen = null
+    const vtWatch = () => {
+      const vt = virtualTimeRef?.current
+      if (vt !== lastVtSeen) {
+        viewer.scene.requestRender()
+        lastVtSeen = vt
+      }
+      vtWatchRaf = requestAnimationFrame(vtWatch)
+    }
+    vtWatchRaf = requestAnimationFrame(vtWatch)
+
+    // ── FPS overlay (debug, ?fps=1) ──────────────────────────────────────────
+    // Counts actual rendered frames over a 1-second sliding window. With
+    // requestRenderMode=true this is a true measure of GPU work — the
+    // counter will read at the monitor refresh rate during play and ~0
+    // during pause. Sets state on the component via setFps so the overlay
+    // div re-renders. Removed before merging.
+    let fpsCount = 0
+    let fpsLastMs = performance.now()
+    const fpsListener = () => {
+      if (!fpsEnabledRef.current) return
+      fpsCount++
+      const now = performance.now()
+      const elapsed = now - fpsLastMs
+      if (elapsed >= 1000) {
+        setFps(Math.round((fpsCount * 1000) / elapsed))
+        fpsCount = 0
+        fpsLastMs = now
+      }
+    }
+    viewer.scene.postRender.addEventListener(fpsListener)
+
     return () => {
       cancelled = true
+      cancelAnimationFrame(vtWatchRaf)
+      try { viewer.scene.postRender.removeEventListener(fpsListener) } catch (_) {}
       el.removeEventListener('pointerdown', releaseAuto, true)
       el.removeEventListener('mousedown', releaseAuto, true)
       el.removeEventListener('wheel', onWheelAuto)
@@ -1552,6 +1622,11 @@ export default function GlobeView({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {fpsEnabled && (
+        <div className="globe-fps-overlay" aria-hidden="true">
+          {fps} fps
+        </div>
+      )}
       <button
         className={`globe-auto-btn${autoMode ? ' active' : ''}`}
         onClick={toggleAuto}
