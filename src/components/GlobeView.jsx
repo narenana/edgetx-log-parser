@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
+import { CAMERA_VIEWS, parseCameraViewFromUrl } from '../utils/cameraViews'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
 // renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
@@ -794,6 +795,28 @@ export default function GlobeView({
     const manualTransformScratch = new Cesium.Matrix4()
     const manualTargetScratch = new Cesium.Cartesian3()
 
+    // ── Active camera view (Phase A of the camera-director feature) ──────────
+    // The auto-mode camera block reads `activeView.compute(ctx)` per frame to
+    // decide where the camera sits relative to the aircraft. Default is
+    // CHASE (current behaviour); URL param `?camera=tail|orbit|topdown`
+    // and the runtime hook `window.__setCamera(name)` swap it live.
+    const activeCameraRef = { current: parseCameraViewFromUrl() ?? 'chase' }
+    if (typeof window !== 'undefined') {
+      window.__setCamera = (name) => {
+        const next = String(name || '').toLowerCase()
+        if (!CAMERA_VIEWS[next]) {
+          return `unknown view: ${name}. valid: ${Object.keys(CAMERA_VIEWS).join(', ')}`
+        }
+        activeCameraRef.current = next
+        viewer.scene.requestRender()
+        return next
+      }
+      window.__listCameras = () =>
+        Object.entries(CAMERA_VIEWS).map(([k, v]) => ({
+          name: k, label: v.name, description: v.description,
+        }))
+    }
+
     // ── Fly-away guard state ─────────────────────────────────────────────────
     // Counts consecutive frames in which the camera/smooth state has gone
     // CATASTROPHICALLY bad (NaN/Infinity, or camera 30+ km from aircraft).
@@ -1123,12 +1146,27 @@ export default function GlobeView({
         }
       }
 
+      // Active view picks heading / pitch / range; the lookAt target
+      // is always the smoothed aircraft position so all views stay
+      // co-located with the model entity. CHASE reads the smooth.*
+      // state machine (heading deadband + dynamic distance) — every
+      // other view ignores it and reads the live aircraft state, so
+      // they react instantly to turns / dive-and-climb / scrubs.
+      const view = CAMERA_VIEWS[activeCameraRef.current] || CAMERA_VIEWS.chase
+      const camParams = view.compute({
+        aircraftHdgDeg: aircraftHdgRef.current,
+        altM: alt,
+        spdMs,
+        vtSec: vt,
+        smoothHdgDeg: smooth.hdg,
+        smoothDistM: smooth.dist,
+      })
       viewer.camera.lookAt(
         smooth.pos,
         new Cesium.HeadingPitchRange(
-          Cesium.Math.toRadians(smooth.hdg + 180),
-          Cesium.Math.toRadians(-18),
-          smooth.dist,
+          camParams.headingRad,
+          camParams.pitchRad,
+          camParams.rangeM,
         )
       )
     })
@@ -1383,6 +1421,8 @@ export default function GlobeView({
         delete window.__flyAwayCount
         delete window.__toggleStrobes
         delete window.__toggleAircraft
+        delete window.__setCamera
+        delete window.__listCameras
       }
       if (glbUrlRef.current) { URL.revokeObjectURL(glbUrlRef.current); glbUrlRef.current = null }
       try { viewer.destroy() } catch (_) {}
