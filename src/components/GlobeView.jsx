@@ -560,7 +560,6 @@ export default function GlobeView({
     // calculations. Bigger = smoother but laggier; ~0.5s at typical
     // playback should be plenty for a stable, smooth attitude.
     const POSE_WINDOW = 6
-    let lastPoseVt = null
     const updateAircraftPose = () => {
       const fracIdx = tubeFracIdxRef.current
       const i = Math.floor(fracIdx)
@@ -611,20 +610,32 @@ export default function GlobeView({
         const newPitch = Math.atan2(up, horiz) * 180 / Math.PI
         aircraftPitchRef.current += (newPitch - aircraftPitchRef.current) * 0.10
 
-        // Roll: simulated bank from heading-change rate. Positive
-        // turn-rate → bank right (positive roll). Scale to keep the
-        // bank in a believable range; cap at ±35°. Roll lerps so it
-        // doesn't snap on transient jitter.
-        const vt = virtualTimeRef?.current ?? rows[0]._tSec
-        if (lastPoseVt != null) {
-          const dt = vt - lastPoseVt
-          if (dt > 0) {
-            const dHdgPerSec = dHdg / dt
-            const targetRoll = Math.max(-35, Math.min(35, dHdgPerSec * 0.45))
-            aircraftRollRef.current += (targetRoll - aircraftRollRef.current) * 0.08
-          }
-        }
-        lastPoseVt = vt
+        // Roll: derived from PATH CURVATURE, not from `dHdg / dt`.
+        // The previous version computed bank from the per-frame
+        // heading-EMA delta divided by the vt delta; with rAF cadence
+        // varying 2.5–100 ms in the wild, that ratio swung 40× between
+        // frames and the resulting target roll oscillated visibly even
+        // with 0.08 EMA smoothing. (Confirmed via burst-extract from
+        // flicker_retained.mp4 — wing-bank angle alternated every
+        // ~33 ms between heavy-right and near-level on a steady cruise.)
+        //
+        // New approach: split the existing behind/ahead window into
+        // two halves (behind→mid, mid→ahead) using the same scratch
+        // ENU frame, compute the heading at each half, and use the
+        // heading change between them as a pure-geometric "how sharply
+        // is the path turning here" signal. No time involved → no
+        // dt-noise. EMA still smooths transient curve discontinuities.
+        Cesium.Cartesian3.subtract(_scratchPos, behind, _scratchA)
+        Cesium.Matrix4.multiplyByPointAsVector(_scratchM4Inv, _scratchA, _scratchEnu)
+        const hEarly = Math.atan2(_scratchEnu.x, _scratchEnu.y) * 180 / Math.PI
+        Cesium.Cartesian3.subtract(ahead, _scratchPos, _scratchA)
+        Cesium.Matrix4.multiplyByPointAsVector(_scratchM4Inv, _scratchA, _scratchEnu)
+        const hLate = Math.atan2(_scratchEnu.x, _scratchEnu.y) * 180 / Math.PI
+        const dHdgWindow = ((hLate - hEarly + 540) % 360) - 180
+        // Gain 1.5: a 30° turn over the full window (~1 s of flight at
+        // typical playback) reads as 45° → clamped to ±35° max bank.
+        const targetRoll = Math.max(-35, Math.min(35, dHdgWindow * 1.5))
+        aircraftRollRef.current += (targetRoll - aircraftRollRef.current) * 0.08
       }
     }
     updateAircraftPose()
