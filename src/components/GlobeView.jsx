@@ -568,6 +568,11 @@ export default function GlobeView({
     // calculations. Bigger = smoother but laggier; ~0.5s at typical
     // playback should be plenty for a stable, smooth attitude.
     const POSE_WINDOW = 6
+    // EMA-only gating: position is deterministic from fracIdx so always
+    // recompute it. Heading / pitch / roll use EMA smoothing and must
+    // step exactly once per playback advance, otherwise extra Cesium
+    // renders (imagery loads, camera input) over-converge them.
+    let lastEmaVt = null
     const updateAircraftPose = () => {
       const fracIdx = tubeFracIdxRef.current
       const i = Math.floor(fracIdx)
@@ -609,6 +614,16 @@ export default function GlobeView({
       const east = _scratchEnu.x, north = _scratchEnu.y, up = _scratchEnu.z
       const horiz = Math.hypot(east, north)
       if (horiz > 0.5) {
+        // Gate the EMA-based heading / pitch / roll updates on actual
+        // playback advance. Position above is deterministic from vt so
+        // it's always fresh; these EMAs are NOT and will over-converge
+        // if Cesium fires extra preUpdate events at the same vt
+        // (imagery loads, camera input, internal events). Skipping the
+        // EMA step on a same-vt frame keeps the orientation stable.
+        const vt = virtualTimeRef?.current ?? rows[0]._tSec
+        if (vt === lastEmaVt) return
+        lastEmaVt = vt
+
         // Heading: compass-CW-from-north. atan2(east, north) gives that.
         const newHdg = ((Math.atan2(east, north) * 180 / Math.PI) + 360) % 360
         const dHdg = ((newHdg - aircraftHdgRef.current + 540) % 360) - 180
@@ -913,22 +928,18 @@ export default function GlobeView({
     // (camera lookAt, fly-away guard, path primitive rebuild, gauge
     // cluster drives) and reads the SAME fresh refs that the entity
     // already used — keeping camera and entity perfectly co-located.
-    // Gate the pose update on actual vt change. With requestRenderMode
-    // active, Cesium fires preUpdate for our vt-watcher AND for any
-    // auto-triggered render (imagery tile loads, camera input, internal
-    // events). Without this gate the EMAs inside updateAircraftPose
-    // (heading 0.20, pitch 0.10, roll 0.08) apply MULTIPLE times per
-    // playback frame on busy scenes — uneven catch-up across frames
-    // produces the visible alternating-bank-angle pattern in
-    // not_smooth.mp4. Skipping the call when vt is unchanged makes
-    // the aircraft entity render at the same pose for those auto-
-    // triggered renders (which is correct — nothing has actually
-    // moved) and ensures one EMA step per real playback advance.
-    let lastPoseVt = null
+    // Run pose update every preUpdate. Position is deterministic from
+    // fracIdx so it's safe to recompute on every render — and crucially
+    // it MUST be recomputed each render so the entity's CallbackProperty
+    // sees a fresh pos. (An earlier attempt to gate the whole updateAircraftPose
+    // on vt change caused a stale-position glitch every ~10 frames where
+    // the aircraft visibly snapped backward for one frame, then forward
+    // — root cause was an extra Cesium-internal render firing without an
+    // actual vt advance, the gate skipped the position recompute, and
+    // the entity rendered last-vt's position.) The EMA step inside
+    // updateAircraftPose has its own internal gate on lastEmaVt to
+    // avoid over-converging heading / pitch / roll smoothing.
     viewer.scene.preUpdate.addEventListener(() => {
-      const vt = virtualTimeRef?.current ?? rows[0]._tSec
-      if (vt === lastPoseVt) return
-      lastPoseVt = vt
       updateTubeIdx()
       updateAircraftPose()
     })
