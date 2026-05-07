@@ -800,6 +800,32 @@ export default function GlobeView({
     const FLY_AWAY_DEBOUNCE = 30          // ~500 ms at 60 fps; ~3 s at 10 fps
     const FLY_AWAY_COOLDOWN_MS = 5000
 
+    // Cesium render order each frame:
+    //   preUpdate → update (entity CallbackProperty.getValue here)
+    //             → postUpdate → preRender → render
+    //
+    // The aircraft entity's position/orientation CallbackProperties
+    // read aircraftPosRef.current and aircraftHdg/Pitch/RollRef.current
+    // during the update phase. So those refs MUST already hold this
+    // frame's value when update runs — otherwise the entity is rendered
+    // with last frame's pose while camera.lookAtTransform (set later in
+    // preRender) anchors to this frame's pose. Result: a one-frame
+    // desync visible as the aircraft snapping backward on screen by
+    // exactly one per-frame motion delta whenever the actual delta is
+    // big enough to clear the model's pixel size — i.e., "every few
+    // frames the craft moved back on the flight path and immediately
+    // resumes in the right place."
+    //
+    // Fix: run pose updates in PRE-UPDATE so the refs are fresh before
+    // the update phase. preRender keeps the rest of the per-frame work
+    // (camera lookAt, fly-away guard, path primitive rebuild, gauge
+    // cluster drives) and reads the SAME fresh refs that the entity
+    // already used — keeping camera and entity perfectly co-located.
+    viewer.scene.preUpdate.addEventListener(() => {
+      updateTubeIdx()
+      updateAircraftPose()
+    })
+
     viewer.scene.preRender.addEventListener(() => {
       const vt = virtualTimeRef?.current ?? rows[0]._tSec
       const r  = interpRows(rows, vt)
@@ -817,12 +843,11 @@ export default function GlobeView({
       }
       curRowRef.current = r
 
-      // Move the past/future split to match the current virtual time.
-      // Cheap (binary-search over ~600 rows). updatePathPrimitive
-      // rebuilds the single-polyline path primitive only when the
-      // smoothed-position idx changes AND the 30Hz throttle allows.
-      updateTubeIdx()
-      updateAircraftPose()
+      // Pose refs already updated in preUpdate this frame — the
+      // entity's CallbackProperty has already read them, and the
+      // camera lookAt below uses the same ref values, so they stay
+      // co-located. Path primitive rebuild is purely visual; safe to
+      // do here.
       updatePathPrimitive()
 
       // ── Fly-away detection + auto-recovery ───────────────────────────────
