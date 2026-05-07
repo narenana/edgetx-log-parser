@@ -649,9 +649,10 @@ export default function GlobeView({
     viewer.scene.primitives.add(pathPrimitive)
     pathPrimIdx = 0
 
-    // DEBUG-ONLY: AA-evaluation hook. Lets a puppeteer probe rebuild the
-    // path primitive at a custom line width without a redeploy cycle.
-    // Remove before merging — only present on feat/flight-path-rendering.
+    // DEBUG-ONLY: AA-evaluation hooks. Let a puppeteer probe rebuild the
+    // path primitive at a custom line width and tune scene-level AA
+    // (msaaSamples + FXAA) without a redeploy cycle. Remove before
+    // merging — only present on feat/flight-path-rendering.
     if (typeof window !== 'undefined') {
       window.__pathSetWidth = (width = 1) => {
         if (pathPrimitive) {
@@ -676,6 +677,17 @@ export default function GlobeView({
         pathPrimIdx = tubeRowIdxRef.current
         viewer.scene.requestRender()
         return width
+      }
+      window.__sceneTune = ({ msaa, fxaa } = {}) => {
+        if (typeof msaa === 'number') viewer.scene.msaaSamples = msaa
+        if (typeof fxaa === 'boolean' && viewer.scene.postProcessStages?.fxaa) {
+          viewer.scene.postProcessStages.fxaa.enabled = fxaa
+        }
+        viewer.scene.requestRender()
+        return {
+          msaaSamples: viewer.scene.msaaSamples,
+          fxaa: viewer.scene.postProcessStages?.fxaa?.enabled ?? null,
+        }
       }
     }
 
