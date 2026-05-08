@@ -1484,6 +1484,16 @@ export default function GlobeView({
 
     stateRef.current = { viewer, smooth, getAircraftEntity: () => aircraftEntity }
 
+    // DEBUG: world→canvas projection helper for screen-space probes.
+    if (typeof window !== 'undefined') {
+      const _projScratch = new Cesium.Cartesian3()
+      window.__projectAircraft = (x, y, z) => {
+        _projScratch.x = x; _projScratch.y = y; _projScratch.z = z
+        const px = viewer.scene.cartesianToCanvasCoordinates(_projScratch)
+        return px && Number.isFinite(px.x) ? { x: px.x, y: px.y } : null
+      }
+    }
+
     // Test hook: exposes a snapshot reader on window so the headless test
     // harness (see tests/harness/) can inspect camera + smooth state and
     // assert invariants after every simulated action. No production user
