@@ -68,21 +68,33 @@ function strobeBrightness(phaseMs = 0) {
 
 // Add a point primitive at a wing-tip offset that tracks the aircraft's pose
 // and flashes like a real anti-collision light.
-function addWingtipStrobe(viewer, getAircraftEntity, localOffset, color, phaseMs) {
+//
+// `poseRefs` provides direct refs to the aircraft pose state so the strobe
+// computes its world position from the same source of truth the model
+// uses, avoiding the sub-frame timing skew that the previous chained-
+// getValue version exhibited (visible as wingtip dots drifting 5–7 m
+// behind the aircraft for one frame in every ~10 — same root cause as
+// the magenta nose-marker drift confirmed in magenta_marker.mp4).
+function addWingtipStrobe(viewer, poseRefs, localOffset, color, phaseMs) {
   const reusableMatrix = new Cesium.Matrix3()
   const reusableDelta = new Cesium.Cartesian3()
   const reusableResult = new Cesium.Cartesian3()
+  const reusableHpr = new Cesium.HeadingPitchRoll()
+  const reusableQuat = new Cesium.Quaternion()
 
   return viewer.entities.add({
-    position: new Cesium.CallbackProperty((time, result) => {
-      const ac = getAircraftEntity()
-      if (!ac) return undefined
-      const pos = ac.position?.getValue?.(time)
-      const ori = ac.orientation?.getValue?.(time)
-      if (!pos || !ori) return undefined
-      const rot = Cesium.Matrix3.fromQuaternion(ori, reusableMatrix)
-      const dW = Cesium.Matrix3.multiplyByVector(rot, localOffset, reusableDelta)
-      return Cesium.Cartesian3.add(pos, dW, result || reusableResult)
+    position: new Cesium.CallbackProperty((_time, result) => {
+      const pos = poseRefs.posRef.current
+      if (!pos) return undefined
+      reusableHpr.heading = poseRefs.hdgRef.current * (Math.PI / 180) + Math.PI / 2
+      reusableHpr.pitch = -poseRefs.pitchRef.current * (Math.PI / 180)
+      reusableHpr.roll = -poseRefs.rollRef.current * (Math.PI / 180)
+      Cesium.Transforms.headingPitchRollQuaternion(
+        pos, reusableHpr, undefined, undefined, reusableQuat,
+      )
+      Cesium.Matrix3.fromQuaternion(reusableQuat, reusableMatrix)
+      Cesium.Matrix3.multiplyByVector(reusableMatrix, localOffset, reusableDelta)
+      return Cesium.Cartesian3.add(pos, reusableDelta, result || reusableResult)
     }, false),
     point: {
       // 4 px baseline → 12 px peak (was 5 → 23). Sized so the strobe
@@ -811,10 +823,19 @@ export default function GlobeView({
       // glTF wingtip (±4.85, 0.30, -0.4) → Cesium (-0.4, ±4.85, 0.30).
       const LEFT_WT  = new Cesium.Cartesian3(-0.4, -4.85, 0.30)
       const RIGHT_WT = new Cesium.Cartesian3(-0.4,  4.85, 0.30)
-      const navAircraftEntityGetter = () => aircraftEntity
-      const leftStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
+      // Direct refs to the aircraft pose state — strobe positions read
+      // these instead of chaining through ac.position.getValue, which
+      // had a sub-frame timing skew that drifted the strobes off the
+      // wingtips for a single frame every ~333 ms.
+      const strobePoseRefs = {
+        posRef: aircraftPosRef,
+        hdgRef: aircraftHdgRef,
+        pitchRef: aircraftPitchRef,
+        rollRef: aircraftRollRef,
+      }
+      const leftStrobe = addWingtipStrobe(viewer, strobePoseRefs, LEFT_WT,
                        Cesium.Color.fromCssColorString('#ff2020'), 0)
-      const rightStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
+      const rightStrobe = addWingtipStrobe(viewer, strobePoseRefs, RIGHT_WT,
                        Cesium.Color.fromCssColorString('#20ff60'), 250)
 
       // DEBUG-ONLY: high-contrast diagnostic marker at the aircraft
@@ -832,16 +853,32 @@ export default function GlobeView({
           return new URLSearchParams(window.location.search).get('nose') !== '0'
         } catch (_) { return true }
       })()
+      const _noseHpr = new Cesium.HeadingPitchRoll()
+      const _noseQuat = new Cesium.Quaternion()
       const noseMarker = noseDebug ? viewer.entities.add({
-        position: new Cesium.CallbackProperty((time, result) => {
-          const ac = aircraftEntity
-          if (!ac) return undefined
-          const pos = ac.position?.getValue?.(time)
-          const ori = ac.orientation?.getValue?.(time)
-          if (!pos || !ori) return undefined
-          const rot = Cesium.Matrix3.fromQuaternion(ori, _noseMat3)
-          const dW = Cesium.Matrix3.multiplyByVector(rot, NOSE_TIP, _noseDelta)
-          return Cesium.Cartesian3.add(pos, dW, result || _noseResult)
+        position: new Cesium.CallbackProperty((_time, result) => {
+          // Read the underlying refs directly instead of chaining through
+          // ac.position.getValue / ac.orientation.getValue. The chained
+          // path has a sub-frame timing problem: when the marker entity
+          // is processed by Cesium's PointPrimitive visualizer, the
+          // aircraft entity's CallbackProperty returns a value that
+          // doesn't match what Cesium's ModelVisualizer is rendering
+          // with — visible as the marker drifting backward by 5–7 m
+          // (~350 ms of flight) for a single frame, then snapping back.
+          // Reading aircraftPosRef + the angle refs directly here makes
+          // the marker compute its world position from the same source
+          // of truth the model used, so they stay co-located.
+          const pos = aircraftPosRef.current
+          if (!pos) return undefined
+          _noseHpr.heading = aircraftHdgRef.current * D2R + Math.PI / 2
+          _noseHpr.pitch = -aircraftPitchRef.current * D2R
+          _noseHpr.roll = -aircraftRollRef.current * D2R
+          Cesium.Transforms.headingPitchRollQuaternion(
+            pos, _noseHpr, undefined, undefined, _noseQuat,
+          )
+          Cesium.Matrix3.fromQuaternion(_noseQuat, _noseMat3)
+          Cesium.Matrix3.multiplyByVector(_noseMat3, NOSE_TIP, _noseDelta)
+          return Cesium.Cartesian3.add(pos, _noseDelta, result || _noseResult)
         }, false),
         point: {
           pixelSize: 20,
