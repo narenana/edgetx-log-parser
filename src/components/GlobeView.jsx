@@ -497,6 +497,10 @@ export default function GlobeView({
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
+    // DEBUG: expose pathPositions for path-progress probe
+    if (typeof window !== 'undefined') {
+      window.__pathPositions = pathPositions.map(p => ({ x: p.x, y: p.y, z: p.z }))
+    }
     const FM_LINE_WIDTH = 1
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
