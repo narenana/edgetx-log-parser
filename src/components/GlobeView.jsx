@@ -1446,7 +1446,12 @@ export default function GlobeView({
       // last few notches don't shoot past the aircraft.
       const factor = e.deltaY > 0 ? 1.15 : 0.87
       const next = smooth.dist * factor
+      const _prev = smooth.dist
       smooth.dist = Math.max(50, Math.min(5000, next))
+      console.warn('[smooth.dist write: wheel]', {
+        prev: _prev.toFixed(1), curr: smooth.dist.toFixed(1),
+        deltaY: e.deltaY, factor: factor.toFixed(2),
+      })
       // Once the user has expressed a zoom preference, hold it for the
       // rest of the session. Earlier this was a 2.5 s timer that lapsed
       // and let the speed/altitude-driven auto-distance pull the camera
