@@ -817,6 +817,41 @@ export default function GlobeView({
       const rightStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
                        Cesium.Color.fromCssColorString('#20ff60'), 250)
 
+      // DEBUG-ONLY: high-contrast diagnostic marker at the aircraft
+      // nose tip for screen-space tracking probes. Bright magenta
+      // (rare in satellite imagery), 20 px constant size (no pulsing
+      // → stable detection target), white outline for sub-pixel edge
+      // accuracy. Branch-only; removed before merging. Toggle off via
+      // `?nose=0` if it visually distracts during recording.
+      const NOSE_TIP = new Cesium.Cartesian3(4.5, 0, 0)
+      const _noseMat3 = new Cesium.Matrix3()
+      const _noseDelta = new Cesium.Cartesian3()
+      const _noseResult = new Cesium.Cartesian3()
+      const noseDebug = (() => {
+        try {
+          return new URLSearchParams(window.location.search).get('nose') !== '0'
+        } catch (_) { return true }
+      })()
+      const noseMarker = noseDebug ? viewer.entities.add({
+        position: new Cesium.CallbackProperty((time, result) => {
+          const ac = aircraftEntity
+          if (!ac) return undefined
+          const pos = ac.position?.getValue?.(time)
+          const ori = ac.orientation?.getValue?.(time)
+          if (!pos || !ori) return undefined
+          const rot = Cesium.Matrix3.fromQuaternion(ori, _noseMat3)
+          const dW = Cesium.Matrix3.multiplyByVector(rot, NOSE_TIP, _noseDelta)
+          return Cesium.Cartesian3.add(pos, dW, result || _noseResult)
+        }, false),
+        point: {
+          pixelSize: 20,
+          color: Cesium.Color.fromCssColorString('#ff00ff'),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      }) : null
+
       // Debug hooks: lets the user isolate visual issues by turning off
       // the strobes (and altitude stem) and seeing if the model still
       // appears to deform. Console:
