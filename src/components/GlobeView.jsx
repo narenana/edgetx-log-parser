@@ -804,7 +804,19 @@ export default function GlobeView({
         }, false),
         model: {
           uri: url,
-          minimumPixelSize: 48,
+          // minimumPixelSize disabled (was 48). Cesium scales the model
+          // up to enforce a minimum on-screen size, but that scale is a
+          // continuous function of camera distance — even sub-pixel
+          // smooth.dist jitter produced sub-frame scale changes that
+          // showed up as the model "breathing" between frames, while
+          // the magenta nose marker (separate point primitive, not
+          // affected by minimumPixelSize) stayed at a fixed 4.5 m local
+          // offset and visibly drifted relative to the now-scaled
+          // model. Removing the scaling eliminates both effects at
+          // once. Trade-off: the model can become small at far chase
+          // distance — at 400 m chase distance / ~10 m wingspan it's
+          // ~25 px wide, still visible.
+          minimumPixelSize: 0,
           maximumScale: 8000,
         },
       })
@@ -1230,14 +1242,19 @@ export default function GlobeView({
         ? Cesium.Cartesian3.clone(aircraftPosRef.current, new Cesium.Cartesian3())
         : Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
       const targetHdg  = aircraftHdgRef.current
-      // EMA-smoothed chase distance target. 0.05 damping ⇒ ~95% catch-up
-      // in 60 frames (≈ 1 s at 60 fps), fast enough to track a real
-      // climb-out or approach but slow enough to flatten the per-frame
-      // GPS-speed noise that was producing the "sudden zoom-in" artifact
-      // on individual frames.
-      const rawTargetDist = Math.max(150, Math.min(600, spdMs * 5 + alt * 1.5 + 150))
+      // Fixed chase distance. The dynamic `spdMs * 5 + alt * 1.5 + 150`
+      // formula was the original chase-cam, and even with the 0.05 EMA
+      // smoothing it produced enough sub-frame noise (combined with the
+      // model's minimumPixelSize-driven scale changes) to read as
+      // visible flicker. A constant 400 m gives a deterministic,
+      // jitter-free chase camera. Speed/altitude tracking is now
+      // eliminated as a flicker source. Trade-off: at very low altitude
+      // the camera doesn't pull back, at very high altitude it doesn't
+      // drift further away. Acceptable while we settle the camera-
+      // director Phase A vocabulary; a future view (CLOSE / WIDE) can
+      // re-introduce dynamic distance per-view.
+      const rawTargetDist = 400
       if (smoothTargetDistRef.current == null) smoothTargetDistRef.current = rawTargetDist
-      else smoothTargetDistRef.current += (rawTargetDist - smoothTargetDistRef.current) * 0.05
       const targetDist = smoothTargetDistRef.current
 
       // Detect playback speed by measuring how much virtual time
