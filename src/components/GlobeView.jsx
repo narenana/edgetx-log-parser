@@ -1257,14 +1257,31 @@ export default function GlobeView({
       smooth.lastVt = vt
 
       if (!smooth.pos) {
-        smooth.pos  = target.clone()
-        smooth.hdg  = targetHdg
-        const camDist = Cesium.Cartesian3.distance(viewer.camera.position, smooth.pos)
-        // If the camera position came in as NaN (e.g. recovering from a
-        // corrupted state), camDist is NaN — clamp falls through to
-        // NaN which then poisons the next frame. Default to 500 m.
-        const safe = Number.isFinite(camDist) ? camDist : 500
-        smooth.dist = Math.max(150, Math.min(600, safe))
+        // Init branch — smooth.pos got reset (fly-to complete,
+        // toggleAuto-back-to-auto, or fly-away guard). Set smooth.dist
+        // straight to targetDist so we don't get a one-frame anomaly:
+        // the previous code read distance(camera, aircraft) and clamped
+        // 150-600. If the camera happened to be < 150 m from the
+        // aircraft (e.g., user had scroll-zoomed close in manual
+        // before toggling back to auto), smooth.dist clamped to 150,
+        // and the very next frame's normal branch overwrote it with
+        // targetDist (often 400-600), producing the camera-collapse
+        // flicker the user kept reporting (450 m jump in one frame
+        // confirmed via console diagnostic on user's session).
+        smooth.pos = target.clone()
+        smooth.hdg = targetHdg
+        if (!smooth.userDistOverride) {
+          smooth.dist = targetDist
+        }
+        if (typeof window !== 'undefined') {
+          console.warn('[smooth.pos init]', {
+            vt: vt?.toFixed?.(3),
+            smoothDist: smooth.dist.toFixed(1),
+            targetDist: targetDist.toFixed(1),
+            userDistOverride: !!smooth.userDistOverride,
+            stack: new Error().stack?.split('\n').slice(1, 4).join(' | '),
+          })
+        }
       } else if (speedFactor > 200) {
         // Big jump (scrub or initial seek) — teleport rather than chase.
         // Threshold raised from 50 → 200 so normal high-speed playback
