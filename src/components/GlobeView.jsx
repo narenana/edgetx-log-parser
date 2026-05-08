@@ -1298,7 +1298,29 @@ export default function GlobeView({
         // set when the wheel handler bumps `smooth.dist` directly. Auto
         // distance is the speed+alt formula above, applied each frame.
         if (!smooth.userDistOverride) {
+          // DEBUG: log any frame where smooth.dist jumps > 30 m. The
+          // headless cam-vs-aircraft probe never sees a jump, but
+          // user-side interactive recordings show the camera closing
+          // dramatically for single frames. Whatever yanks smooth.dist
+          // here will tell us what code path is responsible. Branch-
+          // only; remove before merging.
+          const _prevDist = smooth.dist
           smooth.dist = targetDist
+          if (Math.abs(smooth.dist - _prevDist) > 30 && Number.isFinite(_prevDist)) {
+            console.warn('[smooth.dist anomaly]', {
+              prev: _prevDist.toFixed(1),
+              curr: smooth.dist.toFixed(1),
+              delta: (smooth.dist - _prevDist).toFixed(1),
+              vt: vt?.toFixed?.(3),
+              targetDist: targetDist.toFixed(1),
+              rawTargetDist: rawTargetDist.toFixed(1),
+              smoothTargetDist: smoothTargetDistRef.current?.toFixed?.(1),
+              speedFactor: speedFactor.toFixed(2),
+              spdMs: spdMs.toFixed(2),
+              alt: alt.toFixed(1),
+              userDistOverride: !!smooth.userDistOverride,
+            })
+          }
         }
       }
 
