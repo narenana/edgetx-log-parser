@@ -23,3 +23,7 @@ tests/visualisation/node_modules/
 tests/visualisation/probe-*.js
 tests/visualisation/toggle-probe/
 tests/visualisation/toggle-probe.js
+
+# Tracked regression probes — guardrails for known bug classes. These
+# are permanent checks, distinct from the scratch `probe-*.js` files.
+!tests/visualisation/probe-flicker-regression.js

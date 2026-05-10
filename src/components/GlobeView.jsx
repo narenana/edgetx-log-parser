@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
-import { CAMERA_VIEWS, parseCameraViewFromUrl } from '../utils/cameraViews'
+import { CAMERA_VIEWS, parseCameraViewFromUrl, DEFAULT_CHASE_M } from '../utils/cameraViews'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
 // renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
@@ -1101,7 +1101,7 @@ export default function GlobeView({
               // re-engages.
               smooth.pos = null
               smooth.hdg = 0
-              smooth.dist = 500
+              smooth.dist = DEFAULT_CHASE_M
               smooth.userDistOverride = false
               smooth.lastReal = null
               smooth.lastVt = null
@@ -1250,14 +1250,17 @@ export default function GlobeView({
       // formula was the original chase-cam, and even with the 0.05 EMA
       // smoothing it produced enough sub-frame noise (combined with the
       // model's minimumPixelSize-driven scale changes) to read as
-      // visible flicker. A constant 400 m gives a deterministic,
+      // visible flicker. A constant default gives a deterministic,
       // jitter-free chase camera. Speed/altitude tracking is now
       // eliminated as a flicker source. Trade-off: at very low altitude
       // the camera doesn't pull back, at very high altitude it doesn't
       // drift further away. Acceptable while we settle the camera-
       // director Phase A vocabulary; a future view (CLOSE / WIDE) can
-      // re-introduce dynamic distance per-view.
-      const rawTargetDist = 400
+      // re-introduce dynamic distance per-view. The constant lives in
+      // src/utils/cameraViews.js so other views can scale relative to
+      // it (TAIL/ORBIT/TOPDOWN multiply their base by smoothDistM /
+      // DEFAULT_CHASE_M to track the user's wheel-zoom intent).
+      const rawTargetDist = DEFAULT_CHASE_M
       if (smoothTargetDistRef.current == null) smoothTargetDistRef.current = rawTargetDist
       const targetDist = smoothTargetDistRef.current
 
@@ -1400,7 +1403,7 @@ export default function GlobeView({
       complete: () => {
         const r0 = gpsRows[0]
         const anchor = Cesium.Cartesian3.fromDegrees(r0._lon, r0._lat, Math.max(0, r0['Alt(m)'] || 0))
-        smooth.dist = Math.min(600, Cesium.Cartesian3.distance(viewer.camera.position, anchor))
+        smooth.dist = Math.min(DEFAULT_CHASE_M * 1.5, Cesium.Cartesian3.distance(viewer.camera.position, anchor))
         smooth.pos = null
       },
     })
@@ -1582,7 +1585,7 @@ export default function GlobeView({
         if (!s) return false
         s.smooth.pos = null
         s.smooth.hdg = 0
-        s.smooth.dist = 500
+        s.smooth.dist = DEFAULT_CHASE_M
         s.smooth.userDistOverride = false
         s.smooth.lastReal = null
         s.smooth.lastVt = null
@@ -1742,7 +1745,7 @@ export default function GlobeView({
           new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(s.smooth.hdg + 180),
             Cesium.Math.toRadians(-18),
-            Math.max(150, Math.min(800, s.smooth.dist || 500)),
+            Math.max(50, Math.min(5000, s.smooth.dist || DEFAULT_CHASE_M)),
           ),
         )
       }
@@ -1777,7 +1780,7 @@ export default function GlobeView({
           new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(s.smooth.hdg + 180),
             Cesium.Math.toRadians(-18),
-            Math.max(150, Math.min(800, s.smooth.dist || 500)),
+            Math.max(50, Math.min(5000, s.smooth.dist || DEFAULT_CHASE_M)),
           ),
         )
       }
