@@ -47,11 +47,12 @@
 // out is almost certainly per-frame motion variance, not a rendering
 // issue.
 //
-// Step 2: run THIS probe against the suspect commit. Variance ratio
-// > 3 means a real per-frame motion bug (not just rAF jitter).
+// Step 2: run THIS probe against the suspect commit. A failure here
+// (Δvt > MAX_DVT_S) means the dt-cap is missing or too loose. A pass
+// rules out the vt-cadence class of bug for this codepath.
 //
-// Step 3: if the probe shows a bounded ratio but the user still sees
-// flicker, bring up `tests/visualisation/track-both-axes.py` against
+// Step 3: if the probe passes but the user still sees flicker, bring
+// up `tests/visualisation/track-both-axes.py` against
 // a screen recording — extract every Nth frame, dual-centroid track
 // (magenta nose marker + a known white pixel in the background), and
 // plot both. If the magenta moves smoothly but the white pixel jumps,
