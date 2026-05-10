@@ -1559,6 +1559,11 @@ export default function GlobeView({
             : null,
           trackedEntity: !!s.viewer.trackedEntity,
           flyAwayCount: window.__flyAwayCount ?? 0,
+          // Virtual time at this exact sample. Probes that need to
+          // measure the dt-cap fix (probe-flicker-regression.js) read
+          // this as the controlled variable — Δvt across consecutive
+          // samples is what the cap directly bounds.
+          vt: virtualTimeRef?.current,
         }
       }
       // Test-only hook: lets the harness deliberately corrupt camera state

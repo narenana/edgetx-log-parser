@@ -18,19 +18,27 @@
 // What this probe checks
 // ----------------------
 // 1. Loads the deployed app with a real iNAV log.
-// 2. Plays at 1× for ~200 frames, recording aircraft world position
-//    every rAF.
-// 3. Computes consecutive step distances |pos[i] - pos[i-1]|.
-// 4. Asserts max(step) / median(step) <= MAX_VARIANCE_RATIO.
+// 2. Plays at 1× for ~200 frames, recording the per-frame `vt`
+//    advancement (the actual controlled variable that the dt-cap
+//    bounds).
+// 3. Asserts that no Δvt exceeds the dt-cap ceiling plus a small
+//    measurement-jitter margin.
+//
+// Why measure Δvt and not aircraft world step? Aircraft world step per
+// frame is dominated by path-segment-length variance in the smoothed
+// path geometry, not by dt cadence — at a path vertex transition the
+// same Δvt can produce very different world steps depending on where
+// in the smoothed-path curve the aircraft is. The dt-cap directly
+// bounds Δvt, so that's what the regression check should measure.
 //
 // Caveat: headless puppeteer Chrome doesn't experience the same rAF
 // stalls as an interactive browser under recording load, so a passing
 // run here does NOT prove the user-side flicker is gone — that requires
 // visual inspection at 1× zoomed-in. But this probe is a guardrail: if
-// someone removes the dt-cap and the variance ratio crashes through the
-// ceiling, headless will catch it. It also catches outright path-lerp
-// bugs (e.g. a missing CallbackProperty `result`-mutate that produced a
-// 17 px step we tracked before PR #22).
+// someone removes the dt-cap and Δvt blows past the ceiling on any
+// frame where rAF stalled, headless will catch it. The dt-cap kicks in
+// roughly once per second even in healthy headless runs because Cesium
+// tile loads cause occasional ~50 ms preUpdate stalls.
 //
 // Diagnostic playbook for future flicker reports
 // -----------------------------------------------
@@ -65,18 +73,21 @@ const URL = process.env.PROBE_URL || 'https://feat-camera-director.edgetx-log-pa
 const LOG = process.env.PROBE_LOG || 'C:\\Users\\Guddu\\Desktop\\suchit logs\\LOG00003 (2).TXT'
 const CHROME = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const NUM_SAMPLES = Number(process.env.NUM_SAMPLES || 200)
-// Variance threshold. Headless rAF cadence is fairly even; under this
-// regime, a healthy build tends to land at ratio ≈ 1.5–2.5. 4.0 leaves
-// generous headroom for normal jitter while still catching catastrophic
-// regressions (e.g. dt-cap removed).
-const MAX_VARIANCE_RATIO = Number(process.env.MAX_VARIANCE_RATIO || 4.0)
+// Δvt ceiling. The fix in Dashboard.jsx caps `dtSec = min(rawDt, 0.033)`,
+// so at 1× playback Δvt should never exceed ~0.033s. 5 ms of margin
+// handles measurement jitter (the probe samples once per rAF and reads
+// `virtualTimeRef.current` at that moment; the rAF-side advancement and
+// our read can disagree by sub-millisecond amounts). If a user changes
+// the playback-speed default or the cap value, this constant must
+// change to match.
+const MAX_DVT_S = Number(process.env.MAX_DVT_S || 0.038)
 
 const OUT = path.join(__dirname, 'flicker-regression')
 fs.mkdirSync(OUT, { recursive: true })
 
 console.log(`Probing ${URL}`)
 console.log(`Log: ${LOG}`)
-console.log(`Samples: ${NUM_SAMPLES}, max ratio: ${MAX_VARIANCE_RATIO}`)
+console.log(`Samples: ${NUM_SAMPLES}, max Δvt: ${(MAX_DVT_S * 1000).toFixed(0)} ms`)
 
 const browser = await puppeteer.launch({
   executablePath: CHROME,
@@ -116,15 +127,16 @@ await sleep(500)
 await page.keyboard.press('Space')
 await sleep(2000)
 
-// Sample aircraft world position every rAF for NUM_SAMPLES frames.
+// Sample (vt, perf.now, aircraft pos) every rAF for NUM_SAMPLES frames.
 await page.evaluate((n) => {
   window.__regSamples = []
   let count = 0
   const tick = () => {
     const v = window.__viewerState?.()
-    if (v && v.aircraft) {
+    if (v && v.aircraft && Number.isFinite(v.vt)) {
       window.__regSamples.push({
         t: performance.now(),
+        vt: v.vt,
         x: v.aircraft.x,
         y: v.aircraft.y,
         z: v.aircraft.z,
@@ -143,55 +155,77 @@ await browser.close()
 
 console.log(`captured ${samples.length} samples`)
 
-// Step distances between consecutive aircraft world positions.
-const steps = []
+// Per-frame Δvt: the controlled variable. dt-cap clamps this at 0.033s.
+const dvts = []
+const wallDts = []
+const worldSteps = []
 for (let i = 1; i < samples.length; i++) {
+  dvts.push(samples[i].vt - samples[i - 1].vt)
+  wallDts.push(samples[i].t - samples[i - 1].t)
   const dx = samples[i].x - samples[i - 1].x
   const dy = samples[i].y - samples[i - 1].y
   const dz = samples[i].z - samples[i - 1].z
-  steps.push(Math.hypot(dx, dy, dz))
+  worldSteps.push(Math.hypot(dx, dy, dz))
 }
 
-// Throw out the first 20 frames — they often include a settle-in
-// transient as smooth.pos / lastReal initialise.
-const tail = steps.slice(20)
-const sorted = [...tail].sort((a, b) => a - b)
-const median = sorted[Math.floor(sorted.length / 2)]
-const max = Math.max(...tail)
-const min = Math.min(...tail)
-const mean = tail.reduce((a, b) => a + b, 0) / tail.length
-const ratio = median > 0 ? max / median : Infinity
+// Skip the first 20 frames — settle-in transients (smooth.pos init,
+// lastReal seed, possible scrub-event aftershock).
+const tailStart = 20
+const dvtTail = dvts.slice(tailStart)
+const wallTail = wallDts.slice(tailStart)
+const stepTail = worldSteps.slice(tailStart)
 
-// Per-frame dt jitter, useful to confirm the probe environment isn't
-// itself producing huge cadence swings.
-const dts = []
-for (let i = 1; i < samples.length; i++) dts.push(samples[i].t - samples[i - 1].t)
-const dtTail = dts.slice(20)
-const dtSortedT = [...dtTail].sort((a, b) => a - b)
-const dtMedian = dtSortedT[Math.floor(dtSortedT.length / 2)]
-const dtMax = Math.max(...dtTail)
+const sortedDvt = [...dvtTail].sort((a, b) => a - b)
+const dvtMedian = sortedDvt[Math.floor(sortedDvt.length / 2)]
+const dvtMax = Math.max(...dvtTail)
+const dvtMin = Math.min(...dvtTail)
+const dvtNegativeCount = dvtTail.filter(d => d < -1e-6).length
 
-console.log('\n  step (m)        dt (ms)')
-console.log(`  median ${median.toFixed(3).padStart(7)}   ${dtMedian.toFixed(1).padStart(5)}`)
-console.log(`  mean   ${mean.toFixed(3).padStart(7)}`)
-console.log(`  min    ${min.toFixed(3).padStart(7)}`)
-console.log(`  max    ${max.toFixed(3).padStart(7)}   ${dtMax.toFixed(1).padStart(5)}`)
-console.log(`  ratio (max/median): ${ratio.toFixed(2)}x`)
-console.log(`  threshold: ${MAX_VARIANCE_RATIO}x`)
+const sortedWall = [...wallTail].sort((a, b) => a - b)
+const wallMedian = sortedWall[Math.floor(sortedWall.length / 2)]
+const wallMax = Math.max(...wallTail)
 
-const csv = ['idx,t_ms,dt_ms,step_m,x,y,z']
+const stepMedian = ((s) => s[Math.floor(s.length / 2)])([...stepTail].sort((a, b) => a - b))
+const stepMax = Math.max(...stepTail)
+
+console.log('\n           Δvt (ms)   wall dt (ms)   world step (m)')
+console.log(`  median   ${(dvtMedian * 1000).toFixed(2).padStart(6)}        ${wallMedian.toFixed(1).padStart(5)}          ${stepMedian.toFixed(3)}`)
+console.log(`  min      ${(dvtMin * 1000).toFixed(2).padStart(6)}`)
+console.log(`  max      ${(dvtMax * 1000).toFixed(2).padStart(6)}        ${wallMax.toFixed(1).padStart(5)}          ${stepMax.toFixed(3)}`)
+console.log(`  threshold (Δvt): ${(MAX_DVT_S * 1000).toFixed(0)} ms`)
+console.log(`  negative Δvt frames: ${dvtNegativeCount} (should be 0 — virtualTimeRef must be monotonic during play)`)
+
+const csv = ['idx,t_ms,wall_dt_ms,vt_s,dvt_ms,step_m,x,y,z']
 for (let i = 0; i < samples.length; i++) {
-  const dt = i > 0 ? (samples[i].t - samples[i - 1].t).toFixed(2) : ''
-  const step = i > 0 ? steps[i - 1].toFixed(4) : ''
-  csv.push(`${i},${samples[i].t.toFixed(2)},${dt},${step},${samples[i].x.toFixed(3)},${samples[i].y.toFixed(3)},${samples[i].z.toFixed(3)}`)
+  const wallDt = i > 0 ? (samples[i].t - samples[i - 1].t).toFixed(2) : ''
+  const dvt = i > 0 ? ((samples[i].vt - samples[i - 1].vt) * 1000).toFixed(3) : ''
+  const step = i > 0 ? worldSteps[i - 1].toFixed(4) : ''
+  csv.push([
+    i,
+    samples[i].t.toFixed(2),
+    wallDt,
+    samples[i].vt.toFixed(4),
+    dvt,
+    step,
+    samples[i].x.toFixed(3),
+    samples[i].y.toFixed(3),
+    samples[i].z.toFixed(3),
+  ].join(','))
 }
 fs.writeFileSync(path.join(OUT, 'samples.csv'), csv.join('\n'))
 console.log(`\nCSV: ${path.join(OUT, 'samples.csv')}`)
 
-if (!Number.isFinite(ratio) || ratio > MAX_VARIANCE_RATIO) {
-  console.error(`\nFAIL: per-frame aircraft step variance ratio ${ratio.toFixed(2)}x exceeds threshold ${MAX_VARIANCE_RATIO}x`)
+let failed = false
+if (!Number.isFinite(dvtMax) || dvtMax > MAX_DVT_S) {
+  console.error(`\nFAIL: per-frame Δvt of ${(dvtMax * 1000).toFixed(2)} ms exceeds ceiling ${(MAX_DVT_S * 1000).toFixed(0)} ms`)
   console.error('This usually means the dt-cap in Dashboard.jsx rAF tick is missing or too loose.')
   console.error('Check: src/components/Dashboard.jsx — `dtSec = Math.min(rawDt, 0.033)` should be present.')
-  process.exit(1)
+  failed = true
 }
-console.log('\nPASS: per-frame aircraft motion variance is bounded.')
+if (dvtNegativeCount > 0) {
+  console.error(`\nFAIL: ${dvtNegativeCount} negative Δvt frames during play — virtualTimeRef went backwards.`)
+  console.error('This means a scrub or jump fired while the rAF tick was advancing time. Investigate.')
+  failed = true
+}
+if (failed) process.exit(1)
+console.log('\nPASS: per-frame Δvt is bounded by the dt-cap and monotonic.')
