@@ -73,8 +73,7 @@ function strobeBrightness(phaseMs = 0) {
 // computes its world position from the same source of truth the model
 // uses, avoiding the sub-frame timing skew that the previous chained-
 // getValue version exhibited (visible as wingtip dots drifting 5–7 m
-// behind the aircraft for one frame in every ~10 — same root cause as
-// the magenta nose-marker drift confirmed in magenta_marker.mp4).
+// behind the aircraft for one frame in every ~10).
 function addWingtipStrobe(viewer, poseRefs, localOffset, color, phaseMs) {
   const reusableMatrix = new Cesium.Matrix3()
   const reusableDelta = new Cesium.Cartesian3()
@@ -380,7 +379,7 @@ export default function GlobeView({
   const [cameraView, setCameraView] = useState(() => parseCameraViewFromUrl() ?? 'chase')
   const cameraViewRef = useRef(cameraView)
   useEffect(() => { cameraViewRef.current = cameraView }, [cameraView])
-  // FPS overlay (debug, gated on `?fps=1`). Branch-only.
+  // FPS overlay, opt-in via `?fps=1`. Not shown unless explicitly enabled.
   const fpsEnabled = useMemo(() => {
     if (typeof window === 'undefined') return false
     try { return new URLSearchParams(window.location.search).get('fps') === '1' }
@@ -497,10 +496,6 @@ export default function GlobeView({
       )
       return catmullRomSmooth(pts, SMOOTH_STEPS)
     })()
-    // DEBUG: expose pathPositions for path-progress probe
-    if (typeof window !== 'undefined') {
-      window.__pathPositions = pathPositions.map(p => ({ x: p.x, y: p.y, z: p.z }))
-    }
     const FM_LINE_WIDTH = 1
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
@@ -812,14 +807,11 @@ export default function GlobeView({
           // up to enforce a minimum on-screen size, but that scale is a
           // continuous function of camera distance — even sub-pixel
           // smooth.dist jitter produced sub-frame scale changes that
-          // showed up as the model "breathing" between frames, while
-          // the magenta nose marker (separate point primitive, not
-          // affected by minimumPixelSize) stayed at a fixed 4.5 m local
-          // offset and visibly drifted relative to the now-scaled
-          // model. Removing the scaling eliminates both effects at
-          // once. Trade-off: the model can become small at far chase
-          // distance — at 400 m chase distance / ~10 m wingspan it's
-          // ~25 px wide, still visible.
+          // showed up as the model "breathing" between frames during
+          // the camera-director investigation. Removing the scaling
+          // eliminates the artefact. Trade-off: the model can become
+          // small at far chase distance — at 700 m chase distance /
+          // ~10 m wingspan it's ~15 px wide, still visible.
           minimumPixelSize: 0,
           maximumScale: 8000,
         },
@@ -853,57 +845,6 @@ export default function GlobeView({
                        Cesium.Color.fromCssColorString('#ff2020'), 0)
       const rightStrobe = addWingtipStrobe(viewer, strobePoseRefs, RIGHT_WT,
                        Cesium.Color.fromCssColorString('#20ff60'), 250)
-
-      // DEBUG-ONLY: high-contrast diagnostic marker at the aircraft
-      // nose tip for screen-space tracking probes. Bright magenta
-      // (rare in satellite imagery), 20 px constant size (no pulsing
-      // → stable detection target), white outline for sub-pixel edge
-      // accuracy. Branch-only; removed before merging. Toggle off via
-      // `?nose=0` if it visually distracts during recording.
-      const NOSE_TIP = new Cesium.Cartesian3(4.5, 0, 0)
-      const _noseMat3 = new Cesium.Matrix3()
-      const _noseDelta = new Cesium.Cartesian3()
-      const _noseResult = new Cesium.Cartesian3()
-      const noseDebug = (() => {
-        try {
-          return new URLSearchParams(window.location.search).get('nose') !== '0'
-        } catch (_) { return true }
-      })()
-      const _noseHpr = new Cesium.HeadingPitchRoll()
-      const _noseQuat = new Cesium.Quaternion()
-      const noseMarker = noseDebug ? viewer.entities.add({
-        position: new Cesium.CallbackProperty((_time, result) => {
-          // Read the underlying refs directly instead of chaining through
-          // ac.position.getValue / ac.orientation.getValue. The chained
-          // path has a sub-frame timing problem: when the marker entity
-          // is processed by Cesium's PointPrimitive visualizer, the
-          // aircraft entity's CallbackProperty returns a value that
-          // doesn't match what Cesium's ModelVisualizer is rendering
-          // with — visible as the marker drifting backward by 5–7 m
-          // (~350 ms of flight) for a single frame, then snapping back.
-          // Reading aircraftPosRef + the angle refs directly here makes
-          // the marker compute its world position from the same source
-          // of truth the model used, so they stay co-located.
-          const pos = aircraftPosRef.current
-          if (!pos) return undefined
-          _noseHpr.heading = aircraftHdgRef.current * D2R + Math.PI / 2
-          _noseHpr.pitch = -aircraftPitchRef.current * D2R
-          _noseHpr.roll = -aircraftRollRef.current * D2R
-          Cesium.Transforms.headingPitchRollQuaternion(
-            pos, _noseHpr, undefined, undefined, _noseQuat,
-          )
-          Cesium.Matrix3.fromQuaternion(_noseQuat, _noseMat3)
-          Cesium.Matrix3.multiplyByVector(_noseMat3, NOSE_TIP, _noseDelta)
-          return Cesium.Cartesian3.add(pos, _noseDelta, result || _noseResult)
-        }, false),
-        point: {
-          pixelSize: 20,
-          color: Cesium.Color.fromCssColorString('#ff00ff'),
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-      }) : null
 
       // Debug hooks: lets the user isolate visual issues by turning off
       // the strobes (and altitude stem) and seeing if the model still
@@ -1297,15 +1238,6 @@ export default function GlobeView({
         if (!smooth.userDistOverride) {
           smooth.dist = targetDist
         }
-        if (typeof window !== 'undefined') {
-          console.warn('[smooth.pos init]', {
-            vt: vt?.toFixed?.(3),
-            smoothDist: smooth.dist.toFixed(1),
-            targetDist: targetDist.toFixed(1),
-            userDistOverride: !!smooth.userDistOverride,
-            stack: new Error().stack?.split('\n').slice(1, 4).join(' | '),
-          })
-        }
       } else if (speedFactor > 200) {
         // Big jump (scrub or initial seek) — teleport rather than chase.
         // Threshold raised from 50 → 200 so normal high-speed playback
@@ -1337,31 +1269,10 @@ export default function GlobeView({
         smooth.hdg = ((targetHdg % 360) + 360) % 360
         // Respect the user's manual scroll-zoom — `userDistOverride` is
         // set when the wheel handler bumps `smooth.dist` directly. Auto
-        // distance is the speed+alt formula above, applied each frame.
+        // distance is the constant `targetDist` (DEFAULT_CHASE_M), applied
+        // each frame.
         if (!smooth.userDistOverride) {
-          // DEBUG: log any frame where smooth.dist jumps > 30 m. The
-          // headless cam-vs-aircraft probe never sees a jump, but
-          // user-side interactive recordings show the camera closing
-          // dramatically for single frames. Whatever yanks smooth.dist
-          // here will tell us what code path is responsible. Branch-
-          // only; remove before merging.
-          const _prevDist = smooth.dist
           smooth.dist = targetDist
-          if (Math.abs(smooth.dist - _prevDist) > 30 && Number.isFinite(_prevDist)) {
-            console.warn('[smooth.dist anomaly]', {
-              prev: _prevDist.toFixed(1),
-              curr: smooth.dist.toFixed(1),
-              delta: (smooth.dist - _prevDist).toFixed(1),
-              vt: vt?.toFixed?.(3),
-              targetDist: targetDist.toFixed(1),
-              rawTargetDist: rawTargetDist.toFixed(1),
-              smoothTargetDist: smoothTargetDistRef.current?.toFixed?.(1),
-              speedFactor: speedFactor.toFixed(2),
-              spdMs: spdMs.toFixed(2),
-              alt: alt.toFixed(1),
-              userDistOverride: !!smooth.userDistOverride,
-            })
-          }
         }
       }
 
@@ -1470,12 +1381,7 @@ export default function GlobeView({
       // last few notches don't shoot past the aircraft.
       const factor = e.deltaY > 0 ? 1.15 : 0.87
       const next = smooth.dist * factor
-      const _prev = smooth.dist
       smooth.dist = Math.max(50, Math.min(5000, next))
-      console.warn('[smooth.dist write: wheel]', {
-        prev: _prev.toFixed(1), curr: smooth.dist.toFixed(1),
-        deltaY: e.deltaY, factor: factor.toFixed(2),
-      })
       // Once the user has expressed a zoom preference, hold it for the
       // rest of the session. Earlier this was a 2.5 s timer that lapsed
       // and let the speed/altitude-driven auto-distance pull the camera
@@ -1486,16 +1392,6 @@ export default function GlobeView({
     el.addEventListener('wheel', onWheelAuto, { passive: false })
 
     stateRef.current = { viewer, smooth, getAircraftEntity: () => aircraftEntity }
-
-    // DEBUG: world→canvas projection helper for screen-space probes.
-    if (typeof window !== 'undefined') {
-      const _projScratch = new Cesium.Cartesian3()
-      window.__projectAircraft = (x, y, z) => {
-        _projScratch.x = x; _projScratch.y = y; _projScratch.z = z
-        const px = viewer.scene.cartesianToCanvasCoordinates(_projScratch)
-        return px && Number.isFinite(px.x) ? { x: px.x, y: px.y } : null
-      }
-    }
 
     // Test hook: exposes a snapshot reader on window so the headless test
     // harness (see tests/harness/) can inspect camera + smooth state and

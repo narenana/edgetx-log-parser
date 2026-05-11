@@ -51,13 +51,26 @@
 // (Δvt > MAX_DVT_S) means the dt-cap is missing or too loose. A pass
 // rules out the vt-cadence class of bug for this codepath.
 //
-// Step 3: if the probe passes but the user still sees flicker, bring
-// up `tests/visualisation/track-both-axes.py` against
-// a screen recording — extract every Nth frame, dual-centroid track
-// (magenta nose marker + a known white pixel in the background), and
-// plot both. If the magenta moves smoothly but the white pixel jumps,
-// it's camera-distance jitter or background tile churn. If both move
-// in lockstep but unevenly, it's vt-cadence (this probe's domain).
+// Step 3: if the probe passes but the user still sees flicker, you'll
+// need to re-add the screen-space diagnostic instrumentation that
+// shipped on `feat/camera-director` and was stripped before merge:
+//
+//   - magenta nose-marker entity in GlobeView.jsx (an extra
+//     `viewer.entities.add` with point.color = '#ff00ff'), bound to
+//     `aircraftPosRef`/heading/pitch/roll refs at a 4.5 m local nose
+//     offset.
+//   - `window.__projectAircraft(x, y, z)` exposure wrapping
+//     `viewer.scene.cartesianToCanvasCoordinates`.
+//   - `window.__pathPositions` exposure copying the smoothed-path
+//     Cartesian3 array to plain JS for projection.
+//
+// With those re-added, run `tests/visualisation/track-both-axes.py`
+// against a screen recording — extract every Nth frame, dual-centroid
+// track (magenta marker + a known white pixel in the background), and
+// plot both. If magenta moves smoothly but white jumps, it's camera-
+// distance jitter or tile churn. If both move in lockstep but unevenly,
+// it's vt-cadence (this probe's domain — but at finer granularity than
+// the probe sees in headless).
 //
 // Step 4: if vt-cadence is suspect, run `probe-cam-vs-aircraft.js` to
 // see per-frame world deltas and `smooth.dist` history side by side.
