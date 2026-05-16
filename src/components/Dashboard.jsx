@@ -164,7 +164,20 @@ export default function Dashboard({ log, theme = 'light' }) {
 
     const tick = () => {
       const now = performance.now()
-      virtualTimeRef.current += ((now - lastReal) / 1000) * speedRef.current
+      // Cap per-frame vt delta. The browser's rAF cadence isn't strict
+      // 16.67 ms — under load (screen recording, GC, tab switching) it
+      // can stall for 50–100 ms then deliver bursts. With raw dt
+      // advancement, those stalls translate to one frame jumping
+      // 6–10× the typical aircraft motion, visible as flicker
+      // amplified at zoomed-in chase camera (a 1.8 m world step at
+      // 50 m chase distance = ~40 px of scroll-jerk in one frame
+      // while neighboring frames are 3 px). Capping at 33 ms keeps
+      // the per-frame motion bounded; under sustained slow-rAF the
+      // playback runs slightly slow rather than juddering, which is
+      // far less noticeable.
+      const rawDt = (now - lastReal) / 1000
+      const dtSec = Math.min(rawDt, 0.033)
+      virtualTimeRef.current += dtSec * speedRef.current
       lastReal = now
       const vt = virtualTimeRef.current
 

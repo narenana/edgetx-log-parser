@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
+import { CAMERA_VIEWS, parseCameraViewFromUrl, DEFAULT_CHASE_M } from '../utils/cameraViews'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
 // renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
@@ -67,21 +68,32 @@ function strobeBrightness(phaseMs = 0) {
 
 // Add a point primitive at a wing-tip offset that tracks the aircraft's pose
 // and flashes like a real anti-collision light.
-function addWingtipStrobe(viewer, getAircraftEntity, localOffset, color, phaseMs) {
+//
+// `poseRefs` provides direct refs to the aircraft pose state so the strobe
+// computes its world position from the same source of truth the model
+// uses, avoiding the sub-frame timing skew that the previous chained-
+// getValue version exhibited (visible as wingtip dots drifting 5–7 m
+// behind the aircraft for one frame in every ~10).
+function addWingtipStrobe(viewer, poseRefs, localOffset, color, phaseMs) {
   const reusableMatrix = new Cesium.Matrix3()
   const reusableDelta = new Cesium.Cartesian3()
   const reusableResult = new Cesium.Cartesian3()
+  const reusableHpr = new Cesium.HeadingPitchRoll()
+  const reusableQuat = new Cesium.Quaternion()
 
   return viewer.entities.add({
-    position: new Cesium.CallbackProperty((time, result) => {
-      const ac = getAircraftEntity()
-      if (!ac) return undefined
-      const pos = ac.position?.getValue?.(time)
-      const ori = ac.orientation?.getValue?.(time)
-      if (!pos || !ori) return undefined
-      const rot = Cesium.Matrix3.fromQuaternion(ori, reusableMatrix)
-      const dW = Cesium.Matrix3.multiplyByVector(rot, localOffset, reusableDelta)
-      return Cesium.Cartesian3.add(pos, dW, result || reusableResult)
+    position: new Cesium.CallbackProperty((_time, result) => {
+      const pos = poseRefs.posRef.current
+      if (!pos) return undefined
+      reusableHpr.heading = poseRefs.hdgRef.current * (Math.PI / 180) + Math.PI / 2
+      reusableHpr.pitch = -poseRefs.pitchRef.current * (Math.PI / 180)
+      reusableHpr.roll = -poseRefs.rollRef.current * (Math.PI / 180)
+      Cesium.Transforms.headingPitchRollQuaternion(
+        pos, reusableHpr, undefined, undefined, reusableQuat,
+      )
+      Cesium.Matrix3.fromQuaternion(reusableQuat, reusableMatrix)
+      Cesium.Matrix3.multiplyByVector(reusableMatrix, localOffset, reusableDelta)
+      return Cesium.Cartesian3.add(pos, reusableDelta, result || reusableResult)
     }, false),
     point: {
       // 4 px baseline → 12 px peak (was 5 → 23). Sized so the strobe
@@ -331,6 +343,14 @@ export default function GlobeView({
   // aircraft entity and camera target locks them together visually.
   // Initial null → seeded from first row's alt to avoid a jump from 0.
   const smoothAltRef = useRef(null)
+  // Slow EMA on the auto chase-distance target. The raw formula
+  // `spdMs * 5 + alt * 1.5 + 150` is sensitive to GPS speed noise on a
+  // per-frame basis — even with smoothed altitude, a 1 m/s speed spike
+  // bumps the target by 5 m, and the camera following directly turns
+  // that into a visible "zoom-in / zoom-out" between frames. EMA-smoothing
+  // the target itself filters those spikes without affecting how the
+  // camera responds to real speed/altitude changes (climb-out, descent).
+  const smoothTargetDistRef = useRef(null)
 
   // ── Path-following aircraft pose (cosmetic / mocked) ─────────────────
   // Position + heading + pitch + roll are derived from the smoothed
@@ -352,6 +372,22 @@ export default function GlobeView({
   const autoRef       = useRef(true)
   const glbUrlRef     = useRef(null)
   const [autoMode, setAutoMode] = useState(true)
+  // Active camera view (one of CAMERA_VIEWS keys). Re-rendered through
+  // React so the button-row's active state stays in sync with the
+  // runtime view; the per-frame camera block reads from cameraViewRef
+  // instead of `cameraView` to avoid a closure-staleness footgun.
+  const [cameraView, setCameraView] = useState(() => parseCameraViewFromUrl() ?? 'chase')
+  const cameraViewRef = useRef(cameraView)
+  useEffect(() => { cameraViewRef.current = cameraView }, [cameraView])
+  // FPS overlay, opt-in via `?fps=1`. Not shown unless explicitly enabled.
+  const fpsEnabled = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    try { return new URLSearchParams(window.location.search).get('fps') === '1' }
+    catch { return false }
+  }, [])
+  const [fps, setFps] = useState(0)
+  const fpsEnabledRef = useRef(fpsEnabled)
+  useEffect(() => { fpsEnabledRef.current = fpsEnabled }, [fpsEnabled])
 
   const gpsRows = useMemo(() => rows.filter(r => r._lat != null && r._lon != null), [rows])
 
@@ -404,6 +440,24 @@ export default function GlobeView({
 
     const cc = viewer.cesiumWidget?.creditContainer
     if (cc) cc.style.display = 'none'
+
+    // ── Performance defaults ──────────────────────────────────────────────────
+    // 1) `requestRenderMode = true` makes Cesium repaint ONLY when a render
+    //    has been explicitly requested. Combined with the vt-watcher rAF
+    //    below (which triggers a render whenever virtualTimeRef advances),
+    //    this drops the GPU cost to zero on a paused log and stops the
+    //    flat-out repaint we were doing during normal playback even when
+    //    the scene was visually static between frames. Camera input and
+    //    imagery-tile loads auto-trigger renders via Cesium's own listeners.
+    // 2) `maximumRenderTimeChange = Infinity` disables Cesium's clock-based
+    //    auto-render — our vt watcher is the single source of truth for
+    //    when to draw, so we don't want the internal clock racing it.
+    // 3) Fog + atmospheric scattering are pretty but expensive shader
+    //    passes that add nothing at the follow distances we render at.
+    viewer.scene.requestRenderMode = true
+    viewer.scene.maximumRenderTimeChange = Infinity
+    viewer.scene.fog.enabled = false
+    viewer.scene.skyAtmosphere.show = false
 
     // Disable inertia — zoom/pan/orbit should stop the instant the user releases input
     const ssc = viewer.scene.screenSpaceCameraController
@@ -525,7 +579,11 @@ export default function GlobeView({
     // calculations. Bigger = smoother but laggier; ~0.5s at typical
     // playback should be plenty for a stable, smooth attitude.
     const POSE_WINDOW = 6
-    let lastPoseVt = null
+    // EMA-only gating: position is deterministic from fracIdx so always
+    // recompute it. Heading / pitch / roll use EMA smoothing and must
+    // step exactly once per playback advance, otherwise extra Cesium
+    // renders (imagery loads, camera input) over-converge them.
+    let lastEmaVt = null
     const updateAircraftPose = () => {
       const fracIdx = tubeFracIdxRef.current
       const i = Math.floor(fracIdx)
@@ -567,6 +625,16 @@ export default function GlobeView({
       const east = _scratchEnu.x, north = _scratchEnu.y, up = _scratchEnu.z
       const horiz = Math.hypot(east, north)
       if (horiz > 0.5) {
+        // Gate the EMA-based heading / pitch / roll updates on actual
+        // playback advance. Position above is deterministic from vt so
+        // it's always fresh; these EMAs are NOT and will over-converge
+        // if Cesium fires extra preUpdate events at the same vt
+        // (imagery loads, camera input, internal events). Skipping the
+        // EMA step on a same-vt frame keeps the orientation stable.
+        const vt = virtualTimeRef?.current ?? rows[0]._tSec
+        if (vt === lastEmaVt) return
+        lastEmaVt = vt
+
         // Heading: compass-CW-from-north. atan2(east, north) gives that.
         const newHdg = ((Math.atan2(east, north) * 180 / Math.PI) + 360) % 360
         const dHdg = ((newHdg - aircraftHdgRef.current + 540) % 360) - 180
@@ -576,20 +644,32 @@ export default function GlobeView({
         const newPitch = Math.atan2(up, horiz) * 180 / Math.PI
         aircraftPitchRef.current += (newPitch - aircraftPitchRef.current) * 0.10
 
-        // Roll: simulated bank from heading-change rate. Positive
-        // turn-rate → bank right (positive roll). Scale to keep the
-        // bank in a believable range; cap at ±35°. Roll lerps so it
-        // doesn't snap on transient jitter.
-        const vt = virtualTimeRef?.current ?? rows[0]._tSec
-        if (lastPoseVt != null) {
-          const dt = vt - lastPoseVt
-          if (dt > 0) {
-            const dHdgPerSec = dHdg / dt
-            const targetRoll = Math.max(-35, Math.min(35, dHdgPerSec * 0.45))
-            aircraftRollRef.current += (targetRoll - aircraftRollRef.current) * 0.08
-          }
-        }
-        lastPoseVt = vt
+        // Roll: derived from PATH CURVATURE, not from `dHdg / dt`.
+        // The previous version computed bank from the per-frame
+        // heading-EMA delta divided by the vt delta; with rAF cadence
+        // varying 2.5–100 ms in the wild, that ratio swung 40× between
+        // frames and the resulting target roll oscillated visibly even
+        // with 0.08 EMA smoothing. (Confirmed via burst-extract from
+        // flicker_retained.mp4 — wing-bank angle alternated every
+        // ~33 ms between heavy-right and near-level on a steady cruise.)
+        //
+        // New approach: split the existing behind/ahead window into
+        // two halves (behind→mid, mid→ahead) using the same scratch
+        // ENU frame, compute the heading at each half, and use the
+        // heading change between them as a pure-geometric "how sharply
+        // is the path turning here" signal. No time involved → no
+        // dt-noise. EMA still smooths transient curve discontinuities.
+        Cesium.Cartesian3.subtract(_scratchPos, behind, _scratchA)
+        Cesium.Matrix4.multiplyByPointAsVector(_scratchM4Inv, _scratchA, _scratchEnu)
+        const hEarly = Math.atan2(_scratchEnu.x, _scratchEnu.y) * 180 / Math.PI
+        Cesium.Cartesian3.subtract(ahead, _scratchPos, _scratchA)
+        Cesium.Matrix4.multiplyByPointAsVector(_scratchM4Inv, _scratchA, _scratchEnu)
+        const hLate = Math.atan2(_scratchEnu.x, _scratchEnu.y) * 180 / Math.PI
+        const dHdgWindow = ((hLate - hEarly + 540) % 360) - 180
+        // Gain 1.5: a 30° turn over the full window (~1 s of flight at
+        // typical playback) reads as 45° → clamped to ±35° max bank.
+        const targetRoll = Math.max(-35, Math.min(35, dHdgWindow * 1.5))
+        aircraftRollRef.current += (targetRoll - aircraftRollRef.current) * 0.08
       }
     }
     updateAircraftPose()
@@ -723,7 +803,16 @@ export default function GlobeView({
         }, false),
         model: {
           uri: url,
-          minimumPixelSize: 48,
+          // minimumPixelSize disabled (was 48). Cesium scales the model
+          // up to enforce a minimum on-screen size, but that scale is a
+          // continuous function of camera distance — even sub-pixel
+          // smooth.dist jitter produced sub-frame scale changes that
+          // showed up as the model "breathing" between frames during
+          // the camera-director investigation. Removing the scaling
+          // eliminates the artefact. Trade-off: the model can become
+          // small at far chase distance — at 700 m chase distance /
+          // ~10 m wingspan it's ~15 px wide, still visible.
+          minimumPixelSize: 0,
           maximumScale: 8000,
         },
       })
@@ -742,10 +831,19 @@ export default function GlobeView({
       // glTF wingtip (±4.85, 0.30, -0.4) → Cesium (-0.4, ±4.85, 0.30).
       const LEFT_WT  = new Cesium.Cartesian3(-0.4, -4.85, 0.30)
       const RIGHT_WT = new Cesium.Cartesian3(-0.4,  4.85, 0.30)
-      const navAircraftEntityGetter = () => aircraftEntity
-      const leftStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, LEFT_WT,
+      // Direct refs to the aircraft pose state — strobe positions read
+      // these instead of chaining through ac.position.getValue, which
+      // had a sub-frame timing skew that drifted the strobes off the
+      // wingtips for a single frame every ~333 ms.
+      const strobePoseRefs = {
+        posRef: aircraftPosRef,
+        hdgRef: aircraftHdgRef,
+        pitchRef: aircraftPitchRef,
+        rollRef: aircraftRollRef,
+      }
+      const leftStrobe = addWingtipStrobe(viewer, strobePoseRefs, LEFT_WT,
                        Cesium.Color.fromCssColorString('#ff2020'), 0)
-      const rightStrobe = addWingtipStrobe(viewer, navAircraftEntityGetter, RIGHT_WT,
+      const rightStrobe = addWingtipStrobe(viewer, strobePoseRefs, RIGHT_WT,
                        Cesium.Color.fromCssColorString('#20ff60'), 250)
 
       // Debug hooks: lets the user isolate visual issues by turning off
@@ -794,6 +892,29 @@ export default function GlobeView({
     const manualTransformScratch = new Cesium.Matrix4()
     const manualTargetScratch = new Cesium.Cartesian3()
 
+    // ── Active camera view (Phase A of the camera-director feature) ──────────
+    // The auto-mode camera block reads `cameraViewRef.current` (kept in sync
+    // with the React `cameraView` state by an effect at component top).
+    // Default is CHASE (current behaviour); URL param `?camera=...`,
+    // the on-canvas button row, and `window.__setCamera(name)` all
+    // funnel through `setCameraView` so the button highlight always
+    // matches what's rendering.
+    if (typeof window !== 'undefined') {
+      window.__setCamera = (name) => {
+        const next = String(name || '').toLowerCase()
+        if (!CAMERA_VIEWS[next]) {
+          return `unknown view: ${name}. valid: ${Object.keys(CAMERA_VIEWS).join(', ')}`
+        }
+        setCameraView(next)
+        viewer.scene.requestRender()
+        return next
+      }
+      window.__listCameras = () =>
+        Object.entries(CAMERA_VIEWS).map(([k, v]) => ({
+          name: k, label: v.name, description: v.description,
+        }))
+    }
+
     // ── Fly-away guard state ─────────────────────────────────────────────────
     // Counts consecutive frames in which the camera/smooth state has gone
     // CATASTROPHICALLY bad (NaN/Infinity, or camera 30+ km from aircraft).
@@ -836,6 +957,17 @@ export default function GlobeView({
     // (camera lookAt, fly-away guard, path primitive rebuild, gauge
     // cluster drives) and reads the SAME fresh refs that the entity
     // already used — keeping camera and entity perfectly co-located.
+    // Run pose update every preUpdate. Position is deterministic from
+    // fracIdx so it's safe to recompute on every render — and crucially
+    // it MUST be recomputed each render so the entity's CallbackProperty
+    // sees a fresh pos. (An earlier attempt to gate the whole updateAircraftPose
+    // on vt change caused a stale-position glitch every ~10 frames where
+    // the aircraft visibly snapped backward for one frame, then forward
+    // — root cause was an extra Cesium-internal render firing without an
+    // actual vt advance, the gate skipped the position recompute, and
+    // the entity rendered last-vt's position.) The EMA step inside
+    // updateAircraftPose has its own internal gate on lastEmaVt to
+    // avoid over-converging heading / pitch / roll smoothing.
     viewer.scene.preUpdate.addEventListener(() => {
       updateTubeIdx()
       updateAircraftPose()
@@ -910,7 +1042,7 @@ export default function GlobeView({
               // re-engages.
               smooth.pos = null
               smooth.hdg = 0
-              smooth.dist = 500
+              smooth.dist = DEFAULT_CHASE_M
               smooth.userDistOverride = false
               smooth.lastReal = null
               smooth.lastVt = null
@@ -1055,7 +1187,23 @@ export default function GlobeView({
         ? Cesium.Cartesian3.clone(aircraftPosRef.current, new Cesium.Cartesian3())
         : Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
       const targetHdg  = aircraftHdgRef.current
-      const targetDist = Math.max(150, Math.min(600, spdMs * 5 + alt * 1.5 + 150))
+      // Fixed chase distance. The dynamic `spdMs * 5 + alt * 1.5 + 150`
+      // formula was the original chase-cam, and even with the 0.05 EMA
+      // smoothing it produced enough sub-frame noise (combined with the
+      // model's minimumPixelSize-driven scale changes) to read as
+      // visible flicker. A constant default gives a deterministic,
+      // jitter-free chase camera. Speed/altitude tracking is now
+      // eliminated as a flicker source. Trade-off: at very low altitude
+      // the camera doesn't pull back, at very high altitude it doesn't
+      // drift further away. Acceptable while we settle the camera-
+      // director Phase A vocabulary; a future view (CLOSE / WIDE) can
+      // re-introduce dynamic distance per-view. The constant lives in
+      // src/utils/cameraViews.js so other views can scale relative to
+      // it (TAIL/ORBIT/TOPDOWN multiply their base by smoothDistM /
+      // DEFAULT_CHASE_M to track the user's wheel-zoom intent).
+      const rawTargetDist = DEFAULT_CHASE_M
+      if (smoothTargetDistRef.current == null) smoothTargetDistRef.current = rawTargetDist
+      const targetDist = smoothTargetDistRef.current
 
       // Detect playback speed by measuring how much virtual time
       // advanced per real second since the last frame. The damping
@@ -1074,14 +1222,22 @@ export default function GlobeView({
       smooth.lastVt = vt
 
       if (!smooth.pos) {
-        smooth.pos  = target.clone()
-        smooth.hdg  = targetHdg
-        const camDist = Cesium.Cartesian3.distance(viewer.camera.position, smooth.pos)
-        // If the camera position came in as NaN (e.g. recovering from a
-        // corrupted state), camDist is NaN — clamp falls through to
-        // NaN which then poisons the next frame. Default to 500 m.
-        const safe = Number.isFinite(camDist) ? camDist : 500
-        smooth.dist = Math.max(150, Math.min(600, safe))
+        // Init branch — smooth.pos got reset (fly-to complete,
+        // toggleAuto-back-to-auto, or fly-away guard). Set smooth.dist
+        // straight to targetDist so we don't get a one-frame anomaly:
+        // the previous code read distance(camera, aircraft) and clamped
+        // 150-600. If the camera happened to be < 150 m from the
+        // aircraft (e.g., user had scroll-zoomed close in manual
+        // before toggling back to auto), smooth.dist clamped to 150,
+        // and the very next frame's normal branch overwrote it with
+        // targetDist (often 400-600), producing the camera-collapse
+        // flicker the user kept reporting (450 m jump in one frame
+        // confirmed via console diagnostic on user's session).
+        smooth.pos = target.clone()
+        smooth.hdg = targetHdg
+        if (!smooth.userDistOverride) {
+          smooth.dist = targetDist
+        }
       } else if (speedFactor > 200) {
         // Big jump (scrub or initial seek) — teleport rather than chase.
         // Threshold raised from 50 → 200 so normal high-speed playback
@@ -1097,38 +1253,50 @@ export default function GlobeView({
           smooth.dist = targetDist
         }
       } else {
-        const hdgDamp = Math.min(1, 0.004 * speedFactor)
-        const distDamp = Math.min(1, 0.008 * speedFactor)
-        // Camera position locks DIRECTLY to the aircraft position —
-        // no per-frame damping. The previous lerp (5%/frame at 1×)
-        // left the camera lagging the aircraft a tiny bit each frame,
-        // and the gap shifted between frames as smooth.pos chased
-        // target. That gap was the visible aircraft "vibration" the
-        // user reported. Aircraft and target both come from the same
-        // path-following pose so locking them together produces no
-        // relative motion.
+        // Camera locks 1:1 to the aircraft pose every frame — no lerping
+        // of position, heading, or distance. The historical smoothing was
+        // there to absorb telemetry-pitch noise on the aircraft target,
+        // but PR #22 moved the target onto the path-following pose which
+        // is already smooth, so the lerps are now solving a problem that
+        // doesn't exist and introducing a new one: per-frame `smooth.dist`
+        // and `smooth.hdg` lerps cause the camera to translate even when
+        // the aircraft barely moves, and `speedFactor`-scaled damping
+        // amplifies that into a 14 m camera lurch on every frame where
+        // the rAF cadence is uneven (your `flicker_not_fixed.mp4`).
+        // The probe's per-frame residual (cam_step − ac_step) collapses
+        // from a max of 14.76 m to ~0 with these three direct assigns.
         Cesium.Cartesian3.clone(target, smooth.pos)
-        // Heading: deadband so small drifts/turns don't rotate the camera.
-        // Only follow if offset > 45°, and then at the speed-scaled rate.
-        const hdgDelta = ((targetHdg - smooth.hdg + 540) % 360) - 180
-        if (Math.abs(hdgDelta) > 45) smooth.hdg = lerpHdg(smooth.hdg, targetHdg, hdgDamp)
-        smooth.hdg = ((smooth.hdg % 360) + 360) % 360  // wrap to [0,360)
-        // Skip the auto distance lerp if the user manually scrolled.
-        // The flag stays set for the rest of the session unless they
-        // re-enable auto via the toggle button below — earlier this was
-        // a 2.5 s timer but that read as "zoom snaps back" once it
-        // lapsed.
+        smooth.hdg = ((targetHdg % 360) + 360) % 360
+        // Respect the user's manual scroll-zoom — `userDistOverride` is
+        // set when the wheel handler bumps `smooth.dist` directly. Auto
+        // distance is the constant `targetDist` (DEFAULT_CHASE_M), applied
+        // each frame.
         if (!smooth.userDistOverride) {
-          smooth.dist += (targetDist - smooth.dist) * distDamp
+          smooth.dist = targetDist
         }
       }
 
+      // Active view picks heading / pitch / range; the lookAt target
+      // is always the smoothed aircraft position so all views stay
+      // co-located with the model entity. CHASE reads the smooth.*
+      // state machine (heading deadband + dynamic distance) — every
+      // other view ignores it and reads the live aircraft state, so
+      // they react instantly to turns / dive-and-climb / scrubs.
+      const view = CAMERA_VIEWS[cameraViewRef.current] || CAMERA_VIEWS.chase
+      const camParams = view.compute({
+        aircraftHdgDeg: aircraftHdgRef.current,
+        altM: alt,
+        spdMs,
+        vtSec: vt,
+        smoothHdgDeg: smooth.hdg,
+        smoothDistM: smooth.dist,
+      })
       viewer.camera.lookAt(
         smooth.pos,
         new Cesium.HeadingPitchRange(
-          Cesium.Math.toRadians(smooth.hdg + 180),
-          Cesium.Math.toRadians(-18),
-          smooth.dist,
+          camParams.headingRad,
+          camParams.pitchRad,
+          camParams.rangeM,
         )
       )
     })
@@ -1146,7 +1314,7 @@ export default function GlobeView({
       complete: () => {
         const r0 = gpsRows[0]
         const anchor = Cesium.Cartesian3.fromDegrees(r0._lon, r0._lat, Math.max(0, r0['Alt(m)'] || 0))
-        smooth.dist = Math.min(600, Cesium.Cartesian3.distance(viewer.camera.position, anchor))
+        smooth.dist = Math.min(DEFAULT_CHASE_M * 1.5, Cesium.Cartesian3.distance(viewer.camera.position, anchor))
         smooth.pos = null
       },
     })
@@ -1231,12 +1399,27 @@ export default function GlobeView({
     // ever queries this; the property is named with a __ prefix as an
     // explicit "internal / dev" marker. Reading it has zero side effects.
     if (typeof window !== 'undefined') {
+      // Reusable scratch for the tail-position computation in __viewerState.
+      const _tailLocalOffset = new Cesium.Cartesian3(-3, 0, 0) // ~3 m behind the model origin in Cesium model frame
+      const _tailRotMatrix = new Cesium.Matrix3()
+      const _tailDelta = new Cesium.Cartesian3()
+      const _tailWorld = new Cesium.Cartesian3()
       window.__viewerState = () => {
         const s = stateRef.current
         if (!s) return null
         const ac = s.getAircraftEntity?.()
         const acPos = ac?.position?.getValue?.(s.viewer.clock.currentTime) ?? null
+        const acOri = ac?.orientation?.getValue?.(s.viewer.clock.currentTime) ?? null
         const camPos = s.viewer.camera.positionWC
+        let tailPos = null
+        if (acPos && acOri) {
+          // Rotate the local tail offset by the aircraft's world
+          // orientation, then add to the aircraft's world position.
+          Cesium.Matrix3.fromQuaternion(acOri, _tailRotMatrix)
+          Cesium.Matrix3.multiplyByVector(_tailRotMatrix, _tailLocalOffset, _tailDelta)
+          Cesium.Cartesian3.add(acPos, _tailDelta, _tailWorld)
+          tailPos = { x: _tailWorld.x, y: _tailWorld.y, z: _tailWorld.z }
+        }
         return {
           autoMode: autoRef.current,
           smooth: {
@@ -1263,11 +1446,20 @@ export default function GlobeView({
             ),
           },
           aircraft: acPos ? { x: acPos.x, y: acPos.y, z: acPos.z } : null,
+          tail: tailPos,
           camToAircraftMeters: acPos
             ? Cesium.Cartesian3.distance(camPos, acPos)
             : null,
+          camToTailMeters: tailPos
+            ? Cesium.Cartesian3.distance(camPos, _tailWorld)
+            : null,
           trackedEntity: !!s.viewer.trackedEntity,
           flyAwayCount: window.__flyAwayCount ?? 0,
+          // Virtual time at this exact sample. Probes that need to
+          // measure the dt-cap fix (probe-flicker-regression.js) read
+          // this as the controlled variable — Δvt across consecutive
+          // samples is what the cap directly bounds.
+          vt: virtualTimeRef?.current,
         }
       }
       // Test-only hook: lets the harness deliberately corrupt camera state
@@ -1294,7 +1486,7 @@ export default function GlobeView({
         if (!s) return false
         s.smooth.pos = null
         s.smooth.hdg = 0
-        s.smooth.dist = 500
+        s.smooth.dist = DEFAULT_CHASE_M
         s.smooth.userDistOverride = false
         s.smooth.lastReal = null
         s.smooth.lastVt = null
@@ -1368,8 +1560,51 @@ export default function GlobeView({
       resizeObserver.observe(wrap)
     }
 
+    // ── vt watcher: trigger Cesium render whenever virtualTimeRef advances ──
+    // With requestRenderMode=true Cesium only paints on explicit request.
+    // During PLAY virtualTimeRef advances every Dashboard rAF tick, so we
+    // mirror that: a tiny watcher rAF here fires `scene.requestRender()`
+    // whenever vt changes since the last check. During PAUSE vt is static
+    // and no renders are requested — Cesium goes idle and GPU usage drops
+    // to ~zero. Camera drag, scrub, mode toggle all auto-trigger via
+    // Cesium's own input listeners, so they stay smooth too.
+    let vtWatchRaf = 0
+    let lastVtSeen = null
+    const vtWatch = () => {
+      const vt = virtualTimeRef?.current
+      if (vt !== lastVtSeen) {
+        viewer.scene.requestRender()
+        lastVtSeen = vt
+      }
+      vtWatchRaf = requestAnimationFrame(vtWatch)
+    }
+    vtWatchRaf = requestAnimationFrame(vtWatch)
+
+    // ── FPS overlay (debug, ?fps=1) ──────────────────────────────────────────
+    // Counts actual rendered frames over a 1-second sliding window. With
+    // requestRenderMode=true this is a true measure of GPU work — the
+    // counter will read at the monitor refresh rate during play and ~0
+    // during pause. Sets state on the component via setFps so the overlay
+    // div re-renders. Removed before merging.
+    let fpsCount = 0
+    let fpsLastMs = performance.now()
+    const fpsListener = () => {
+      if (!fpsEnabledRef.current) return
+      fpsCount++
+      const now = performance.now()
+      const elapsed = now - fpsLastMs
+      if (elapsed >= 1000) {
+        setFps(Math.round((fpsCount * 1000) / elapsed))
+        fpsCount = 0
+        fpsLastMs = now
+      }
+    }
+    viewer.scene.postRender.addEventListener(fpsListener)
+
     return () => {
       cancelled = true
+      cancelAnimationFrame(vtWatchRaf)
+      try { viewer.scene.postRender.removeEventListener(fpsListener) } catch (_) {}
       el.removeEventListener('pointerdown', releaseAuto, true)
       el.removeEventListener('mousedown', releaseAuto, true)
       el.removeEventListener('wheel', onWheelAuto)
@@ -1383,6 +1618,8 @@ export default function GlobeView({
         delete window.__flyAwayCount
         delete window.__toggleStrobes
         delete window.__toggleAircraft
+        delete window.__setCamera
+        delete window.__listCameras
       }
       if (glbUrlRef.current) { URL.revokeObjectURL(glbUrlRef.current); glbUrlRef.current = null }
       try { viewer.destroy() } catch (_) {}
@@ -1409,7 +1646,7 @@ export default function GlobeView({
           new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(s.smooth.hdg + 180),
             Cesium.Math.toRadians(-18),
-            Math.max(150, Math.min(800, s.smooth.dist || 500)),
+            Math.max(50, Math.min(5000, s.smooth.dist || DEFAULT_CHASE_M)),
           ),
         )
       }
@@ -1444,7 +1681,7 @@ export default function GlobeView({
           new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(s.smooth.hdg + 180),
             Cesium.Math.toRadians(-18),
-            Math.max(150, Math.min(800, s.smooth.dist || 500)),
+            Math.max(50, Math.min(5000, s.smooth.dist || DEFAULT_CHASE_M)),
           ),
         )
       }
@@ -1504,6 +1741,11 @@ export default function GlobeView({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {fpsEnabled && (
+        <div className="globe-fps-overlay" aria-hidden="true">
+          {fps} fps
+        </div>
+      )}
       <button
         className={`globe-auto-btn${autoMode ? ' active' : ''}`}
         onClick={toggleAuto}
@@ -1511,6 +1753,35 @@ export default function GlobeView({
       >
         {autoMode ? '⊙ AUTO' : '✥ MANUAL'}
       </button>
+
+      {/* Camera-view picker — Phase A of the camera-director feature.
+          Switches the AUTO-mode camera between CHASE / TAIL / ORBIT /
+          TOPDOWN. Disabled when MANUAL is active (the user's free-orbit
+          state would be clobbered by a view click). */}
+      <div
+        className="globe-camera-views"
+        onMouseDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+        aria-label="Camera view picker"
+      >
+        {Object.entries(CAMERA_VIEWS).map(([key, view]) => (
+          <button
+            key={key}
+            className={`cam-btn${cameraView === key ? ' active' : ''}`}
+            onClick={() => {
+              setCameraView(key)
+              // If user is in MANUAL, route through toggleAuto so the
+              // lookAtTransform is properly released and smooth state
+              // re-inits — picking a view implies "give me the auto
+              // camera again."
+              if (!autoMode) toggleAuto()
+            }}
+            title={view.description}
+          >
+            {view.name}
+          </button>
+        ))}
+      </div>
 
       {/* Google Earth-style nav widget: compass + tilt + zoom */}
       <div className="globe-nav" onMouseDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
