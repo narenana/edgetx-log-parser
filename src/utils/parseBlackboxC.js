@@ -52,7 +52,10 @@ export async function parseBlackboxBufferC(bytes, filename, onProgress, onDiag) 
   const diag = msg => {
     const line = `+${(performance.now() - t0).toFixed(0)}ms ${msg} (C parser)`
     if (onDiag) onDiag(line)
-    if (typeof console !== 'undefined') console.log('[bb-parse-c]', line)
+    // The onDiag callback is the production channel (surfaces to the UI
+    // / Sentry breadcrumbs). The console.log is dev-only — Vite strips
+    // it from prod builds via the `import.meta.env.DEV` constant fold.
+    if (import.meta.env.DEV && typeof console !== 'undefined') console.log('[bb-parse-c]', line)
   }
 
   diag(`received ${filename} (${bytes.length.toLocaleString()} bytes)`)

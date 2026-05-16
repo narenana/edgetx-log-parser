@@ -38,13 +38,15 @@ export default defineConfig(() => {
     !!sentryAuthToken && !!sentryOrg && !!sentryProject && !isDesktop
 
   const pwa = VitePWA({
-    // ⚠️ Self-destroying SW deploy — flushes a stale SW that was caching
-    // landing-page HTML at /log-viewer/index.html (caused by a Worker bug
-    // where Pages' 308 `Location: /` redirect leaked past the prefix).
-    // The Worker bug is fixed in narenana-website. After verifying users
-    // recover, flip `selfDestroying` back to false in a follow-up deploy
-    // to re-enable the PWA.
-    selfDestroying: true,
+    // Re-enabled after the self-destroying flush deploy ran for ~2 weeks.
+    // History: a Worker bug (Pages' 308 `Location: /` redirect leaked past
+    // the `/log-viewer/` prefix) caused the SW to cache the landing page
+    // HTML under the viewer's precache key. The Worker fix shipped in
+    // narenana-website, then this config ran with `selfDestroying: true`
+    // long enough that any user who'd loaded the viewer during the bug
+    // window would have flushed the bad SW. PWA install + offline now
+    // work again.
+    selfDestroying: false,
     registerType: 'autoUpdate',
     injectRegister: 'auto',
     devOptions: { enabled: false },
