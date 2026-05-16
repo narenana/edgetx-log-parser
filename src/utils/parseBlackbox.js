@@ -313,7 +313,10 @@ async function parseOnMainThread(bytes, filename, onProgress, onDiag) {
   const diag = msg => {
     const line = `+${(performance.now() - t0).toFixed(0)}ms ${msg} (main-thread fallback)`
     if (onDiag) onDiag(line)
-    console.log('[bb-parse]', line)
+    // The onDiag callback is the production channel (surfaces to the UI
+    // / Sentry breadcrumbs). The console.log is dev-only — Vite strips
+    // it from prod builds via the `import.meta.env.DEV` constant fold.
+    if (import.meta.env.DEV) console.log('[bb-parse]', line)
   }
 
   diag(`received ${filename} (${bytes.length.toLocaleString()} bytes)`)
