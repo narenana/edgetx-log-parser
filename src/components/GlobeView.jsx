@@ -18,6 +18,14 @@ const FM_COLORS = {
 }
 function fmColor(m) { return FM_COLORS[m] || '#7aa2f7' }
 
+// Respect the OS "reduce motion" preference: when set, the wingtip nav
+// lights are held at a steady baseline instead of strobing (WCAG 2.3.3).
+// Evaluated once at module load — good enough for this purpose.
+const PREFERS_REDUCED_MOTION =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
 // Catmull-Rom smooth a Cartesian3[] array
 function catmullRomSmooth(pts, steps = 8) {
   if (pts.length < 2) return pts
@@ -59,6 +67,7 @@ function lerpHdg(from, to, t) {
 // the period and lowering both peak/baseline keeps the nav-light
 // effect without dominating the visible model.
 function strobeBrightness(phaseMs = 0) {
+  if (PREFERS_REDUCED_MOTION) return 0.30   // steady nav light, no flashing
   const PERIOD = 2500
   const t = (((Date.now() + phaseMs) % PERIOD) + PERIOD) % PERIOD / PERIOD
   if (t < 0.024) return 1.0                                       // ~60 ms peak

@@ -57,6 +57,7 @@ export default function Dashboard({ log, theme = 'light' }) {
   // globe so the preRender callback can call update(r) on each.
   const gaugeClusterRef = useRef(null)
   const controlsClusterRef = useRef(null)
+  const dockRef = useRef(null)
   // Mirror bookmarks into a ref so the rAF playback loop can read the
   // latest list without restarting every time the array changes.
   const bookmarksRef = useRef(bookmarks)
@@ -217,6 +218,30 @@ export default function Dashboard({ log, theme = 'light' }) {
     return () => cancelAnimationFrame(raf)
   }, [playing, rows])
 
+  // ── Keep the dashboard's bottom reserve in sync with the dock ────────────────
+  // The fixed dock's height varies (event-marker row, wrapped cursor-info,
+  // mobile speed popover). Publish its measured height as --dock-h so
+  // App.css padding-bottom matches it exactly — a hardcoded reserve used to
+  // be shorter than the dock and clipped the bottom of the globe/gauge
+  // column behind it.
+  useEffect(() => {
+    const el = dockRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const apply = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height)
+      // Clamp so a degenerate measurement (e.g. a 0-width viewport that
+      // wraps the dock into a tall column) can't blow out the reserve.
+      if (h > 0) document.documentElement.style.setProperty('--dock-h', `${Math.min(h + 8, 360)}px`)
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      document.documentElement.style.removeProperty('--dock-h')
+    }
+  }, [])
+
   // ── Space bar to play/pause ─────────────────────────────────────────────────
   useEffect(() => {
     const onKey = e => {
@@ -295,10 +320,10 @@ export default function Dashboard({ log, theme = 'light' }) {
 
   // ── Cursor info string ──────────────────────────────────────────────────────
   const cursorRow = rows[cursorIndex]
+  const fmtClock = s => `${Math.floor(s / 60)}:${(Math.round(s) % 60).toString().padStart(2, '0')}`
+  const totalSec = rows.length ? rows[rows.length - 1]._tSec : 0
   const tStr = cursorRow
-    ? `T+${Math.floor(cursorRow._tSec / 60)}:${(Math.round(cursorRow._tSec) % 60)
-        .toString()
-        .padStart(2, '0')}  ${cursorRow['FM'] || ''}  Alt ${cursorRow['Alt(m)']}m  ${cursorRow['GSpd(kmh)']} km/h`
+    ? `T+${fmtClock(cursorRow._tSec)} / ${fmtClock(totalSec)}  ${cursorRow['FM'] || ''}  Alt ${cursorRow['Alt(m)']}m  ${cursorRow['GSpd(kmh)']} km/h`
     : ''
 
   return (
@@ -400,7 +425,7 @@ export default function Dashboard({ log, theme = 'light' }) {
         </div>
       </div>
 
-      <div className="dashboard-bottom">
+      <div className="dashboard-bottom" ref={dockRef}>
         {/* Playback controls */}
         <div className="playback-row">
           <button

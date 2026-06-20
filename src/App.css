@@ -11,7 +11,10 @@
 
   --text:  #ffffff;
   --text2: #d6dcef;
-  --text3: #8893b6;
+  /* --text3 lightened from #8893b6 so the many 10–11px secondary labels
+     (stat labels, cursor readout, chart ticks) clear WCAG AA 4.5:1 even
+     on the lighter --bg3 surface. */
+  --text3: #9aa6c8;
 
   --green:  #a6e36a;
   --red:    #ff5f7d;
@@ -35,6 +38,13 @@
   --hud-shadow:     0 0 6px #000, 0 0 12px #000;
   --on-blue-text:   #06192e;       /* dark text on solid blue button */
   --attitude-bg:    #080f1a;       /* 3D attitude viewport */
+
+  /* Error / danger surface — theme-aware so the error banner reads in
+     both themes (it previously used hardcoded dark inline colors that
+     were invisible on the default light theme). */
+  --danger-bg:     #2d1b1e;
+  --danger-text:   #ff8fa3;
+  --danger-border: #5a2a33;
 }
 
 [data-theme="dark"] {
@@ -47,7 +57,7 @@
 
   --text:  #ffffff;
   --text2: #d6dcef;
-  --text3: #8893b6;
+  --text3: #9aa6c8;
 
   --green:  #a6e36a;
   --red:    #ff5f7d;
@@ -81,7 +91,9 @@
   /* Text tier — dark slate progression. Stays readable on white. */
   --text:  #0f1a2c;
   --text2: #2c3e5c;
-  --text3: #6478a0;
+  /* Darkened from #6478a0 (~3.6:1 on white) to clear WCAG AA 4.5:1 — this
+     token colors nearly every small secondary label in the data layer. */
+  --text3: #4a5c80;
 
   /* Accents — slightly darker than the dark-theme variants so they have
      contrast against white. Same palette identity (greenish-green,
@@ -107,6 +119,10 @@
   --hud-shadow:     0 0 4px rgba(255, 255, 255, 0.9), 0 0 8px rgba(255, 255, 255, 0.6);
   --on-blue-text:   #ffffff;       /* white text on solid blue in light mode */
   --attitude-bg:    #e8ecf3;       /* 3D attitude viewport (light) */
+
+  --danger-bg:     #fdeef1;
+  --danger-text:   #b3123c;
+  --danger-border: #f1b6c2;
 }
 
 * {
@@ -350,7 +366,6 @@ body {
   margin-top: 4px;
   color: var(--text3);
   font-size: 11px;
-  opacity: 0.7;
 }
 
 /* ── View mode toggle ── */
@@ -398,8 +413,12 @@ body {
   overflow: hidden;
   min-height: 0;
   /* Reserve space for the fixed bottom dock so chart bodies above it
-     don't sit behind it. Adjusted per-viewport in @media blocks. */
-  padding-bottom: 110px;
+     don't sit behind it. The dock's real height is measured by a
+     ResizeObserver in Dashboard.jsx and published as --dock-h, so the
+     reserve can never drift out of sync as the event row / wrapped
+     cursor-info / speed popover change the dock height (previously a
+     hardcoded 110px reserve under a 143px dock clipped the column). */
+  padding-bottom: var(--dock-h, 150px);
 }
 
 .dashboard-main {
@@ -1256,8 +1275,10 @@ body {
 }
 
 @media (max-width: 960px) {
-  body { overflow: auto; height: auto; min-height: 100vh; }
-  .app { height: auto; min-height: 100vh; padding-bottom: 180px; }
+  /* dvh (with vh fallback) so the dock/scrubber aren't clipped under the
+     mobile browser URL bar on first load. */
+  body { overflow: auto; height: auto; min-height: 100vh; min-height: 100dvh; }
+  .app { height: auto; min-height: 100vh; min-height: 100dvh; padding-bottom: var(--dock-h, 190px); }
 
   /* Stack left + right vertically so the globe + charts are full-width. */
   .dashboard-main { flex-direction: column; overflow: visible; }
@@ -1863,5 +1884,66 @@ body {
   }
   .summary-modal-title {
     font-size: 18px;
+  }
+}
+
+/* ── Error banner ────────────────────────────────────────────────────────
+   Theme-aware via --danger-* tokens (was inline hardcoded dark colors that
+   rendered as an unreadable maroon bar on the default light theme). */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-bottom: 1px solid var(--danger-border);
+  padding: 8px 14px;
+  font-size: 12.5px;
+  flex: none;
+}
+.error-banner-dismiss {
+  margin-left: auto;
+  flex: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.75;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.error-banner-dismiss:hover { opacity: 1; background: rgba(127, 127, 127, 0.18); }
+
+/* ── Focus visibility (WCAG 2.4.7) ───────────────────────────────────────
+   Previously only .summary-cta had a focus style, so keyboard users could
+   not tell what was focused. One global rule covers every focusable
+   element; globe overlays get a companion ring so the indicator survives
+   arbitrary satellite imagery underneath. */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.fullscreen-btn:focus-visible,
+.globe-auto-btn:focus-visible,
+.globe-camera-views .cam-btn:focus-visible,
+.globe-nav .nav-btn:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--overlay-bg);
+}
+
+/* ── Reduced motion (WCAG 2.3.3) ─────────────────────────────────────────
+   Honor the OS preference: collapse the modal scale/fade/pulse/bar-slide,
+   the consent slide-up, and the PWA toast to instant. The strobing wingtip
+   lights are Cesium primitives gated separately in GlobeView.jsx. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

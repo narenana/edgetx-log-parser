@@ -62,7 +62,7 @@ export default function StatsPanel({ log, cursorRow }) {
   }
   items.push(
     { label: 'Max Climb', value: fmt(stats.maxClimb, 1), unit: 'm/s' },
-    { label: 'Max Sink',  value: fmt(stats.maxSink,  1), unit: 'm/s' },
+    { label: 'Max Sink',  value: fmt(Math.abs(stats.maxSink), 1), unit: 'm/s' },
   )
   if (hasBattery && stats.minVoltage != null) {
     items.push({ label: 'Min Voltage', value: fmt(stats.minVoltage, 1), unit: 'V' })

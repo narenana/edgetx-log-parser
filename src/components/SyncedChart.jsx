@@ -27,9 +27,12 @@ const crosshairPlugin = {
     ctx.beginPath()
     ctx.moveTo(x, chartArea.top)
     ctx.lineTo(x, chartArea.bottom)
-    ctx.strokeStyle = 'rgba(224, 175, 104, 0.7)'
-    ctx.lineWidth = 1
-    ctx.setLineDash([3, 3])
+    // Distinct from every series color (the old #e0af68 was byte-identical
+    // to the Heading and Voltage series, so the playhead vanished on those
+    // charts). Theme-aware value is set on the instance per render.
+    ctx.strokeStyle = chart._cursorColor || 'rgba(150, 150, 160, 0.9)'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([4, 3])
     ctx.stroke()
     ctx.restore()
   },
@@ -84,8 +87,9 @@ export default function SyncedChart({
     const chart = chartRef.current
     if (!chart) return
     chart._cursorIdx = cursorIndex
+    chart._cursorColor = theme === 'dark' ? '#e6ebf5' : '#1a2740'
     chart.draw()
-  }, [cursorIndex])
+  }, [cursorIndex, theme])
 
   const data = useMemo(() => ({ labels, datasets }), [labels, datasets])
 
@@ -128,10 +132,12 @@ export default function SyncedChart({
           padding: 8,
         },
       },
-      onHover: (_event, elements) => {
-        if (elements.length > 0) {
-          onCursorRef.current?.(elements[0].index)
-        }
+      // Hover shows the tooltip only (read a value in place). Committing
+      // the global playback cursor requires a deliberate click, so
+      // inspecting a chart no longer scrubs the whole 3D scene + gauges.
+      onClick: (event, _elements, chart) => {
+        const pts = chart.getElementsAtEventForMode(event, 'index', { intersect: false }, false)
+        if (pts.length > 0) onCursorRef.current?.(pts[0].index)
       },
       scales: {
         x: {

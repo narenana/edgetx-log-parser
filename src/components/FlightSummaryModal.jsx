@@ -112,20 +112,14 @@ export default function FlightSummaryModal({ log, parsing, onProceed, onCloseLog
   useEffect(() => {
     if (isAsyncRef.current) return
     if (!log) return
-    let cancelled = false
-    const timers = []
-    for (let s = 0; s < STEPS.length; s++) {
-      timers.push(setTimeout(() => {
-        if (!cancelled) setCurrentStep(s + 1)
-      }, (s + 1) * STEP_MS))
-    }
-    timers.push(setTimeout(() => {
-      if (!cancelled) setPhase('summary')
-    }, STEPS.length * STEP_MS + REVEAL_MS))
-    return () => {
-      cancelled = true
-      timers.forEach(clearTimeout)
-    }
+    // Sync (CSV) parse already finished before this modal mounted — reveal
+    // the summary immediately instead of padding ~840ms of fake "Parsing /
+    // Detecting / Computing" theatrics in front of data the dashboard
+    // already displays (it contradicted the "replay in seconds" promise and
+    // also delayed the empty-file message). The staged checklist is reserved
+    // for the genuinely-async blackbox worker path below.
+    setCurrentStep(STEPS.length)
+    setPhase('summary')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -153,6 +147,22 @@ export default function FlightSummaryModal({ log, parsing, onProceed, onCloseLog
       timers.forEach(clearTimeout)
     }
   }, [!!log])
+
+  // The modal gates the dashboard, so give keyboard users a way out:
+  // Escape / Enter dismiss once the summary is showing (Enter mirrors the
+  // primary CTA; both proceed for a real log or close an empty one).
+  useEffect(() => {
+    if (phase !== 'summary') return
+    const onKey = e => {
+      if (e.key === 'Escape' || e.key === 'Enter') {
+        e.preventDefault()
+        if (hasRealData) onProceed()
+        else onCloseLog()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [phase, hasRealData, onProceed, onCloseLog])
 
   const model = modelFromFilename(filename)
   const dateStr = dateFromFilename(filename)
@@ -222,7 +232,7 @@ export default function FlightSummaryModal({ log, parsing, onProceed, onCloseLog
                 <Tile label="Total distance" value={fmtDistance(log.stats.distanceKm)} />
               )}
               <Tile label="Max climb" value={log.stats.maxClimb.toFixed(1)} unit="m/s" />
-              <Tile label="Max sink" value={log.stats.maxSink.toFixed(1)} unit="m/s" />
+              <Tile label="Max sink" value={Math.abs(log.stats.maxSink).toFixed(1)} unit="m/s" />
               {log.hasBattery && log.stats.minVoltage != null && (
                 <Tile label="Min voltage" value={log.stats.minVoltage.toFixed(1)} unit="V" />
               )}
@@ -324,12 +334,14 @@ function fmtDistance(km) {
 }
 
 function modelFromFilename(filename) {
-  return filename
-    .replace(/\.csv$/i, '')
-    .replace(/\.bbl$/i, '')
-    .replace(/\.bfl$/i, '')
-    .replace(/\.txt$/i, '')
+  const base = filename
+    .replace(/\.(csv|bbl|bfl|txt)$/i, '')
     .replace(/-\d{4}-\d{2}-\d{2}-\d{6}$/, '')
+    .replace(/^sample-/i, '')
+  if (!base) return filename
+  // De-hyphenate + capitalize so the subtitle reads "Fixed wing" rather
+  // than the raw "sample-fixed-wing" slug.
+  return base.charAt(0).toUpperCase() + base.slice(1).replace(/-/g, ' ')
 }
 
 function dateFromFilename(filename) {

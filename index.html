@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0e1117" />
+    <meta name="theme-color" content="#f5f7fb" />
 
     <title>RC Log Viewer — replay EdgeTX & iNAV / Betaflight flight logs in 3D</title>
     <meta name="description" content="Drop EdgeTX CSV or iNAV / Betaflight blackbox logs and replay the entire flight on a 3D globe with synced charts. Works in the browser — your logs never leave your machine." />
@@ -94,6 +94,8 @@
           var saved = localStorage.getItem('theme')
           var theme = saved === 'dark' || saved === 'light' ? saved : 'light'
           document.documentElement.dataset.theme = theme
+          var m = document.querySelector('meta[name="theme-color"]')
+          if (m) m.setAttribute('content', theme === 'dark' ? '#11151c' : '#f5f7fb')
         } catch (_) {
           document.documentElement.dataset.theme = 'light'
         }

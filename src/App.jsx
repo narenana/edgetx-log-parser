@@ -24,15 +24,24 @@ function modelName(filename) {
   return filename.replace(/\.csv$/i, '').replace(/-\d{4}-\d{2}-\d{2}-\d{6}$/, '')
 }
 
+// Turn a filename stem into a readable label: strip a leading "sample-"
+// and replace hyphens with spaces (e.g. "sample-fixed-wing" → "Fixed wing").
+function prettyModel(base) {
+  const cleaned = base.replace(/^sample-/i, '')
+  if (!cleaned) return base
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).replace(/-/g, ' ')
+}
+
 function shortName(filename) {
-  const base = filename.replace(/\.csv$/i, '')
-  const parts = base.split('-')
-  // last 2 parts are date + time, skip them; format as "model HH:MM"
-  const time = parts[parts.length - 1]
-  const hh = time.slice(0, 2)
-  const mm = time.slice(2, 4)
-  const name = parts.slice(0, -2).join('-')
-  return `${name} ${hh}:${mm}`
+  const base = filename.replace(/\.(csv|bbl|bfl|txt)$/i, '')
+  // EdgeTX names look like "Model-2026-04-26-101500" → show "Model 10:15".
+  // Anything else (blackbox dumps, arbitrary names) keeps a readable
+  // basename rather than blindly slicing the last two hyphen tokens as
+  // date+time — which used to turn "log.bbl" into " :" and even the two
+  // shipped demos ("sample-fixed-wing") into "sample wi:ng".
+  const m = base.match(/^(.*)-\d{4}-\d{2}-\d{2}-(\d{2})(\d{2})\d{2}$/)
+  if (m) return `${prettyModel(m[1])} ${m[2]}:${m[3]}`
+  return prettyModel(base)
 }
 
 // Built-in demo flights — both shipped under public/ and routed via
@@ -90,6 +99,11 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     try { localStorage.setItem('theme', theme) } catch { /* ignore */ }
+    // Keep the mobile browser chrome (theme-color) in sync with the active
+    // theme — it was a static dark value that tinted the URL bar dark over
+    // the default light app.
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#f5f7fb' : '#11151c')
   }, [theme])
 
   const toggleTheme = useCallback(() => {
@@ -117,11 +131,17 @@ export default function App() {
   const loadFiles = useCallback(async files => {
     setError(null)
     const results = []
+    let anyMatched = false
     for (const file of files) {
       const lower = file.name.toLowerCase()
       const looksCsv = lower.endsWith('.csv')
       const looksBblExt = lower.endsWith('.bbl') || lower.endsWith('.bfl') || lower.endsWith('.txt')
+      // .bbl/.bfl are unambiguously binary blackbox; .txt is ambiguous
+      // (iNAV text blackbox vs an EdgeTX text export) so it stays on the
+      // sniff-then-CSV fallback path below.
+      const looksBinBlackbox = lower.endsWith('.bbl') || lower.endsWith('.bfl')
       if (!looksCsv && !looksBblExt) continue
+      anyMatched = true
       try {
         // For ambiguous extensions (`.txt` is used by both EdgeTX text
         // logs and iNAV blackbox), sniff the first bytes for the
@@ -151,6 +171,11 @@ export default function App() {
             },
           )
           track('log_loaded', { source: 'file', format: 'blackbox' })
+        } else if (looksBinBlackbox) {
+          // Extension says blackbox but the magic header is missing — do
+          // NOT fall through to the CSV parser on binary bytes (which
+          // produces nonsense). Most likely truncated or unsupported FW.
+          throw new Error('not a valid blackbox log (missing header) — it may be truncated or from an unsupported firmware')
         } else {
           // Text decoding only on the CSV path — blackbox is binary.
           const text = new TextDecoder('utf-8').decode(u8)
@@ -162,6 +187,9 @@ export default function App() {
       } finally {
         setParsing(null)
       }
+    }
+    if (!anyMatched && files.length) {
+      setError('Unsupported file type. Drop an EdgeTX .csv or an iNAV / Betaflight blackbox (.bbl, .bfl, .txt).')
     }
     if (results.length) {
       track('log_loaded', { source: 'file', count: results.length })
@@ -264,6 +292,7 @@ export default function App() {
                 key={i}
                 className={`tab${i === activeIndex ? ' active' : ''}`}
                 onClick={() => setActiveIndex(i)}
+                title={log.filename}
               >
                 {shortName(log.filename)}
                 <span className="tab-close" onClick={e => closeTab(e, i)}>
@@ -290,22 +319,16 @@ export default function App() {
       </header>
 
       {error && (
-        <div
-          style={{
-            background: '#2d1b1e',
-            color: '#f7768e',
-            padding: '6px 14px',
-            fontSize: 12,
-            borderBottom: '1px solid #414868',
-          }}
-        >
-          {error}
-          <span
-            style={{ marginLeft: 8, cursor: 'pointer', opacity: 0.6 }}
+        <div className="error-banner" role="alert">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="error-banner-dismiss"
             onClick={() => setError(null)}
+            aria-label="Dismiss error"
           >
             ×
-          </span>
+          </button>
         </div>
       )}
 
