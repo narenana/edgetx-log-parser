@@ -310,25 +310,24 @@ async function buildAircraftGLB() {
 
 /**
  * GlobeView props (cockpit clusters):
- *   gaugeClusterRef    — forwardRef handle from GaugeCluster (instruments)
- *   controlsClusterRef — forwardRef handle from ControlsCluster (pilot inputs)
+ *   telemetryBarRef — forwardRef handle from TelemetryBar (readouts +
+ *                     pilot-input module)
  *
- * Both are optional. When provided, GlobeView calls `update(r)` on each
- * inside the Cesium preRender callback so the entire UI runs on a
- * SINGLE rAF (Cesium's). interpRows runs ONCE per frame and the result
- * is shared between aircraft pose, camera math, gauges, and controls.
+ * Optional. When provided, GlobeView calls `update(r)` on it inside the
+ * Cesium preRender callback so the entire UI runs on a SINGLE rAF
+ * (Cesium's). interpRows runs ONCE per frame and the result is shared
+ * between aircraft pose, camera math, and the bar.
  *
- * The clusters live OUTSIDE the globe-wrap (in a strip below it owned
- * by Dashboard) — this avoids a backdrop-filter:blur rendering on top
- * of a continuously-invalidating WebGL canvas, which was the dominant
- * cost of the earlier overlay layout.
+ * The bar lives OUTSIDE the globe-wrap (below it, owned by Dashboard) —
+ * this avoids a backdrop-filter:blur rendering on top of a continuously-
+ * invalidating WebGL canvas, which was the dominant cost of the earlier
+ * overlay layout.
  */
 export default function GlobeView({
   rows,
   cursorIndex,
   virtualTimeRef,
-  gaugeClusterRef,
-  controlsClusterRef,
+  telemetryBarRef,
 }) {
   const containerRef  = useRef(null)
   const stateRef      = useRef(null)
@@ -1113,14 +1112,13 @@ export default function GlobeView({
         attitudeRollRef.current += (r._rollDeg - attitudeRollRef.current) * 0.05
       }
 
-      // Drive the cockpit clusters (instruments + pilot inputs) from this
-      // same callback. Single rAF for the whole UI; the row `r` we just
-      // interpolated above is already what each cluster needs. Calling
-      // update(r) is a few SVG attribute mutations — cheap compared to
-      // the camera math we're about to do, so the order here doesn't
-      // matter much.
-      gaugeClusterRef?.current?.update(r)
-      controlsClusterRef?.current?.update(r)
+      // Drive the telemetry bar (readouts + pilot inputs) from this same
+      // callback. Single rAF for the whole UI; the row `r` we just
+      // interpolated above is already what the bar needs. Calling
+      // update(r) is a handful of textContent/attribute mutations —
+      // cheap compared to the camera math we're about to do, so the
+      // order here doesn't matter much.
+      telemetryBarRef?.current?.update(r)
 
       if (!autoRef.current) {
         // Manual mode — keep the orbit anchored to the aircraft. Approach:

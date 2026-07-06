@@ -1,0 +1,172 @@
+/* ── READOUT/72 telemetry bar ─────────────────────────────────────────────
+ * Token-pure: every color is a theme token, so the bar is a light surface
+ * in light theme like any other card (the old "instrument panels stay
+ * dark" override is gone). Flat: 1px hairlines, no gradients, no bezels,
+ * no per-element drop-shadows.
+ *
+ * The bar NEVER wraps — cells hide by priority via [data-tier] set from a
+ * ResizeObserver in TelemetryBar.jsx (a / b / c / d). Type floor is 10px.
+ * ────────────────────────────────────────────────────────────────────── */
+
+.tm-bar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: 72px;
+  overflow: hidden;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  font-family: 'Consolas', ui-monospace, 'Cascadia Mono', monospace;
+}
+
+.tm-cell {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 12px 7px;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.tm-lab {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  white-space: nowrap;
+}
+
+.tm-valrow { display: flex; align-items: baseline; gap: 3px; white-space: nowrap; }
+.tm-val {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tm-unit { font-size: 11px; font-weight: 500; color: var(--text2); }
+.tm-sub { font-size: 11px; color: var(--text2); margin-left: 6px; font-variant-numeric: tabular-nums; }
+
+/* State color goes on the NUMBER, and only for real thresholds. */
+.tm-green  { color: var(--green); }
+.tm-yellow { color: var(--yellow); }
+.tm-red    { color: var(--red); }
+
+/* Fused vertical-speed token — a computed derivative → magenta grammar. */
+.tm-vs { font-size: 11px; font-weight: 600; color: var(--text); }
+.tm-chev { color: var(--pink); }
+
+.tm-spark { display: block; }
+.tm-sparkline { fill: none; stroke: var(--text3); stroke-width: 1.5; opacity: 0.65; }
+.tm-future { stroke: var(--pink); opacity: 1; }
+.tm-floor { stroke: var(--red); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.45; }
+
+/* HDG */
+.tm-cell-hdg .tm-card { letter-spacing: 0.14em; color: var(--text2); }
+
+/* ATT — unclamped digit pairs + roll micro-glyph */
+.tm-att-inner { display: flex; align-items: center; gap: 10px; }
+.tm-att-nums div {
+  display: flex; justify-content: space-between; gap: 6px;
+  font-size: 12px; line-height: 1.4;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tm-att-nums span { color: var(--text3); font-weight: 500; }
+.tm-att-nums b { color: var(--text); font-weight: 600; min-width: 52px; text-align: right; }
+.tm-chipframe { fill: var(--bg3); stroke: var(--border-bright); }
+.tm-chipline { stroke: var(--text2); stroke-width: 2; stroke-linecap: round; }
+.tm-chipdot { fill: var(--text2); }
+
+/* HOME — bearing arrow is derived data → magenta */
+.tm-cell-home { position: relative; }
+.tm-home-svg { position: absolute; right: 10px; bottom: 8px; }
+.tm-homearrow { fill: var(--pink); }
+
+/* WARN chip — canonical strings, blink via CSS animation so it keeps
+ * blinking while Cesium is idle (requestRenderMode) and collapses to a
+ * steady block under the global prefers-reduced-motion rule. */
+.tm-warn {
+  display: none;
+  align-self: center;
+  margin: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--red);
+  border-radius: 4px;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+.tm-warn.tm-warn-show { display: block; animation: tm-blink 0.625s steps(1) infinite; }
+@keyframes tm-blink { 50% { opacity: 0.35; } }
+
+/* ── input module ── */
+.tm-input {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  position: relative;
+}
+.tm-thr {
+  position: relative;
+  width: 12px; height: 56px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  flex: none;
+}
+.tm-thr-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: var(--green); }
+.tm-thr i { position: absolute; left: 0; right: 0; height: 1px; background: var(--bg); opacity: 0.55; }
+
+.tm-stickbox { flex: none; }
+.tm-box-frame { fill: none; stroke: var(--border-bright); stroke-width: 1.5; }
+.tm-box-guide { stroke: var(--border); stroke-width: 1; fill: none; }
+.tm-box-half { stroke-dasharray: 3 3; }
+.tm-trail { fill: none; stroke: var(--pink); stroke-width: 2; stroke-linecap: round; opacity: 0.42; }
+.tm-dot { fill: var(--cyan); }
+.tm-box-label { font-size: 8px; fill: var(--text3); font-family: inherit; }
+
+.tm-readout { display: flex; flex-direction: column; gap: 2px; width: 56px; flex: none; }
+.tm-readout div {
+  display: flex; justify-content: space-between;
+  font-size: 11px; line-height: 1.15;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tm-readout span { color: var(--text3); }
+.tm-readout b { color: var(--text); font-weight: 600; }
+
+/* No stick channels in the log: empty boxes, never a fake centred dot. */
+.tm-input-empty { opacity: 0.5; }
+.tm-nostick {
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: 10px; letter-spacing: 0.06em; color: var(--text3);
+  max-width: 150px; white-space: normal; line-height: 1.35;
+}
+.tm-nostick span { text-transform: none; letter-spacing: 0; font-family: var(--sans, 'Segoe UI', system-ui, sans-serif); font-size: 10px; }
+/* Mid-log dropout (sticks logged elsewhere, absent at cursor). */
+.tm-input-gap .tm-dot { opacity: 0.15; }
+.tm-input-gap .tm-trail { opacity: 0.1; }
+
+/* ── responsive tiers (never wrap; hide by priority) ── */
+[data-tier='b'] .tm-cell-home { display: none; }
+[data-tier='c'] .tm-cell-home,
+[data-tier='c'] .tm-cell-hdg { display: none; }
+[data-tier='c'] .tm-att-chip { display: none; }
+[data-tier='d'] .tm-cell-home,
+[data-tier='d'] .tm-cell-hdg,
+[data-tier='d'] .tm-att-chip,
+[data-tier='d'] .tm-spark,
+[data-tier='d'] .tm-readout,
+[data-tier='d'] .tm-sub { display: none; }
+[data-tier='d'] .tm-bar,
+.tm-bar[data-tier='d'] { height: 56px; }
+[data-tier='d'] .tm-val { font-size: 16px; }
+[data-tier='d'] .tm-cell { padding: 7px 10px 6px; }
+[data-tier='d'] .tm-thr { height: 40px; }
+[data-tier='d'] .tm-stickbox { width: 42px; height: 42px; }

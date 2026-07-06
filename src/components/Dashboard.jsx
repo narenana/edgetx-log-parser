@@ -17,13 +17,13 @@ import { track } from '../utils/analytics'
 // users on the alternate view skip the download entirely until they switch.
 const GlobeView = lazy(() => import('./GlobeView'))
 const AltitudeAttitudeView = lazy(() => import('./AltitudeAttitudeView'))
-// Cockpit clusters live OUTSIDE the globe view (below it, in a strip), so
-// we render them at this level. They expose imperative `update(row)`
-// methods; GlobeView's preRender callback drives them via refs we own
-// here. Single-rAF UI ⇒ no backdrop-filter perf cost over the WebGL
-// canvas, no duplicate interpRows work.
-const GaugeCluster = lazy(() => import('./gauges/GaugeCluster'))
-const ControlsCluster = lazy(() => import('./gauges/ControlsCluster'))
+// The READOUT/72 telemetry bar lives OUTSIDE the globe view (below it),
+// and OUTSIDE the view-mode branch so Classic-view and no-GPS logs get
+// telemetry too. It exposes an imperative `update(row)` method;
+// GlobeView's preRender callback drives it in 3D view (single-rAF UI, no
+// backdrop-filter over the WebGL canvas), and a cursor effect below
+// drives it everywhere else.
+const TelemetryBar = lazy(() => import('./telemetry/TelemetryBar'))
 
 const SPEEDS = [0.1, 0.5, 1, 2, 5, 10, 30, 60]
 
@@ -51,12 +51,11 @@ export default function Dashboard({ log, theme = 'light' }) {
   const [bookmarks, setBookmarks] = useState([]) // sorted ascending row indices
   const speedRef = useRef(speed)
   const virtualTimeRef = useRef(0)
-  // Cluster refs are owned at this level (above GlobeView) because the
-  // strip lives below the globe — but GlobeView's Cesium preRender is
-  // the single rAF that drives them. We pass the refs DOWN into the
-  // globe so the preRender callback can call update(r) on each.
-  const gaugeClusterRef = useRef(null)
-  const controlsClusterRef = useRef(null)
+  // The telemetry bar's ref is owned at this level (above GlobeView)
+  // because the bar renders below the visualization in BOTH view modes.
+  // In 3D view, GlobeView's Cesium preRender drives it (we pass the ref
+  // down); everywhere else the cursor effect below drives it.
+  const telemetryBarRef = useRef(null)
   const dockRef = useRef(null)
   // Mirror bookmarks into a ref so the rAF playback loop can read the
   // latest list without restarting every time the array changes.
@@ -236,11 +235,25 @@ export default function Dashboard({ log, theme = 'light' }) {
     apply()
     const ro = new ResizeObserver(apply)
     ro.observe(el)
+    // window-resize fallback for environments that miss RO deliveries.
+    window.addEventListener('resize', apply)
     return () => {
       ro.disconnect()
+      window.removeEventListener('resize', apply)
       document.documentElement.style.removeProperty('--dock-h')
     }
   }, [])
+
+  // ── Telemetry bar fallback driver ────────────────────────────────────────────
+  // In 3D view Cesium's preRender calls telemetryBarRef.update(r) with a
+  // smoothly interpolated row. In Classic view (and for no-GPS logs)
+  // there is no Cesium loop, so drive the bar from cursor changes here.
+  // Running unconditionally is safe: update() is idempotent, cheap, and
+  // this also covers scrubs while the 3D scene is idle.
+  useEffect(() => {
+    const row = rows[cursorIndex]
+    if (row) telemetryBarRef.current?.update(row)
+  }, [cursorIndex, rows, viewMode])
 
   // ── Space bar to play/pause ─────────────────────────────────────────────────
   useEffect(() => {
@@ -371,20 +384,8 @@ export default function Dashboard({ log, theme = 'light' }) {
                       rows={rows}
                       cursorIndex={cursorIndex}
                       virtualTimeRef={virtualTimeRef}
-                      gaugeClusterRef={gaugeClusterRef}
-                      controlsClusterRef={controlsClusterRef}
+                      telemetryBarRef={telemetryBarRef}
                     />
-                  </Suspense>
-                </div>
-                {/* Cockpit strip — instruments LEFT, pilot inputs RIGHT.
-                    Lives BELOW the globe (not over it) so no backdrop-
-                    filter blur over the continuously-invalidating WebGL
-                    canvas. GlobeView's Cesium preRender drives the
-                    cluster updates via the refs we own here. */}
-                <div className="cockpit-strip" aria-label="Cockpit panel">
-                  <Suspense fallback={null}>
-                    <GaugeCluster ref={gaugeClusterRef} rows={rows} />
-                    <ControlsCluster ref={controlsClusterRef} />
                   </Suspense>
                 </div>
               </>
@@ -407,6 +408,13 @@ export default function Dashboard({ log, theme = 'light' }) {
               </Suspense>
             </>
           )}
+
+          {/* READOUT/72 telemetry bar — below the visualization in BOTH
+              view modes, and present for no-GPS logs too (battery is
+              never hidden). Replaces the gauge cluster + RC controller. */}
+          <Suspense fallback={null}>
+            <TelemetryBar ref={telemetryBarRef} log={log} />
+          </Suspense>
         </div>
 
         <div className="dashboard-right">
