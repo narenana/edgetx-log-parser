@@ -56,6 +56,11 @@ export default function Dashboard({ log, theme = 'light' }) {
   // In 3D view, GlobeView's Cesium preRender drives it (we pass the ref
   // down); everywhere else the cursor effect below drives it.
   const telemetryBarRef = useRef(null)
+  // Latest cursor row, readable by the bar's attach callback below —
+  // the lazy chunk can finish loading AFTER the cursor effect last ran,
+  // and without this the bar would sit at '– –' until the next cursor
+  // move (acute for no-GPS logs where no Cesium loop drives it).
+  const cursorRowRef = useRef(null)
   const dockRef = useRef(null)
   // Mirror bookmarks into a ref so the rAF playback loop can read the
   // latest list without restarting every time the array changes.
@@ -255,6 +260,13 @@ export default function Dashboard({ log, theme = 'light' }) {
     if (row) telemetryBarRef.current?.update(row)
   }, [cursorIndex, rows, viewMode])
 
+  // Attach callback for the lazy bar: push the current row the moment
+  // the imperative handle exists, instead of waiting for a cursor move.
+  const attachTelemetryBar = useCallback(node => {
+    telemetryBarRef.current = node
+    if (node && cursorRowRef.current) node.update(cursorRowRef.current)
+  }, [])
+
   // ── Space bar to play/pause ─────────────────────────────────────────────────
   useEffect(() => {
     const onKey = e => {
@@ -333,6 +345,7 @@ export default function Dashboard({ log, theme = 'light' }) {
 
   // ── Cursor info string ──────────────────────────────────────────────────────
   const cursorRow = rows[cursorIndex]
+  cursorRowRef.current = cursorRow ?? null
   const fmtClock = s => `${Math.floor(s / 60)}:${(Math.round(s) % 60).toString().padStart(2, '0')}`
   const totalSec = rows.length ? rows[rows.length - 1]._tSec : 0
   const tStr = cursorRow
@@ -412,8 +425,8 @@ export default function Dashboard({ log, theme = 'light' }) {
           {/* READOUT/72 telemetry bar — below the visualization in BOTH
               view modes, and present for no-GPS logs too (battery is
               never hidden). Replaces the gauge cluster + RC controller. */}
-          <Suspense fallback={null}>
-            <TelemetryBar ref={telemetryBarRef} log={log} />
+          <Suspense fallback={<div className="tm-bar-placeholder" aria-hidden="true" />}>
+            <TelemetryBar ref={attachTelemetryBar} log={log} />
           </Suspense>
         </div>
 

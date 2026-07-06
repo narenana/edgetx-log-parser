@@ -140,6 +140,11 @@ export function stickOffsets({ throttle, yaw, pitch, roll }) {
     yawV,
     pitchV,
     rollV,
+    // Per-channel presence, so the UI can show "–" for channels the log
+    // never carried instead of a fabricated centered zero.
     hasThr: tOk,
+    hasYaw: yOk,
+    hasPitch: pOk,
+    hasRoll: rOk,
   }
 }

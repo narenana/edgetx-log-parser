@@ -32,7 +32,9 @@ const InputModule = forwardRef(function InputModule({ rows }, ref) {
   // the boxes render EMPTY — never a fake centred dot, which would read
   // as "the pilot made no inputs" in crash review.
   const hasSticks = useMemo(
-    () => rows.some(r => Number.isFinite(r._throttle) || Number.isFinite(r._stickRoll)),
+    () => rows.some(r =>
+      Number.isFinite(r._throttle) || Number.isFinite(r._stickRoll) ||
+      Number.isFinite(r._stickPitch) || Number.isFinite(r._stickYaw)),
     [rows],
   )
 
@@ -64,11 +66,17 @@ const InputModule = forwardRef(function InputModule({ rows }, ref) {
       }
       if (root) root.classList.remove('tm-input-gap')
 
+      // A box whose BOTH axes are absent renders no dot — a centered
+      // dot that wasn't measured reads as "the pilot made no inputs".
+      const leftLive = off.hasThr || off.hasYaw
+      const rightLive = off.hasPitch || off.hasRoll
       if (dotL.current) {
+        dotL.current.style.display = leftLive ? '' : 'none'
         dotL.current.setAttribute('cx', (C + off.lx * TRAVEL).toFixed(1))
         dotL.current.setAttribute('cy', (C + off.ly * TRAVEL).toFixed(1))
       }
       if (dotR.current) {
+        dotR.current.style.display = rightLive ? '' : 'none'
         dotR.current.setAttribute('cx', (C + off.rx * TRAVEL).toFixed(1))
         dotR.current.setAttribute('cy', (C + off.ry * TRAVEL).toFixed(1))
       }
@@ -88,6 +96,8 @@ const InputModule = forwardRef(function InputModule({ rows }, ref) {
           lp.push((C + o.lx * TRAVEL).toFixed(1) + ',' + (C + o.ly * TRAVEL).toFixed(1))
           rp.push((C + o.rx * TRAVEL).toFixed(1) + ',' + (C + o.ry * TRAVEL).toFixed(1))
         }
+        trailL.current.style.display = leftLive ? '' : 'none'
+        trailR.current.style.display = rightLive ? '' : 'none'
         trailL.current.setAttribute('points', lp.join(' '))
         trailR.current.setAttribute('points', rp.join(' '))
       }
@@ -95,10 +105,10 @@ const InputModule = forwardRef(function InputModule({ rows }, ref) {
       if (thrFill.current) {
         thrFill.current.style.height = off.hasThr ? off.thr.toFixed(0) + '%' : '0%'
       }
-      if (roT.current) roT.current.textContent = off.hasThr ? String(Math.round(off.thr)) : '– –'
-      if (roY.current) roY.current.textContent = signed(off.yawV)
-      if (roP.current) roP.current.textContent = signed(off.pitchV)
-      if (roR.current) roR.current.textContent = signed(off.rollV)
+      if (roT.current) roT.current.textContent = off.hasThr ? String(Math.round(off.thr)) : '–'
+      if (roY.current) roY.current.textContent = off.hasYaw ? signed(off.yawV) : '–'
+      if (roP.current) roP.current.textContent = off.hasPitch ? signed(off.pitchV) : '–'
+      if (roR.current) roR.current.textContent = off.hasRoll ? signed(off.rollV) : '–'
     },
   }), [rows, hasSticks])
 

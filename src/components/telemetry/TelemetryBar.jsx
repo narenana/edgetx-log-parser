@@ -28,7 +28,7 @@ import './telemetry.css'
  *   mutation only; zero React renders per frame.
  */
 
-const SPARK_EVERY = 3 // recompute sparklines every Nth update call
+const SPARK_MIN_MS = 50 // wall-clock throttle for sparkline recomputes
 
 const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
   const { rows } = log
@@ -60,7 +60,8 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
     warn: useRef(null),
     input: useRef(null),
   }
-  const frameCount = useRef(0)
+  const lastSparkMs = useRef(-Infinity)
+  const warnOn = useRef(false)
 
   // Responsive tiers: hide cells by priority instead of ever wrapping
   // (the silent-rewrap failure mode is what created the old 262px band).
@@ -69,7 +70,7 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
     if (!root || typeof ResizeObserver === 'undefined') return
     const apply = () => {
       const w = root.clientWidth
-      root.dataset.tier = w >= 840 ? 'a' : w >= 700 ? 'b' : w >= 560 ? 'c' : 'd'
+      root.dataset.tier = w >= 840 ? 'a' : w >= 700 ? 'b' : w >= 560 ? 'c' : w >= 530 ? 'd' : 'e'
     }
     apply()
     const ro = new ResizeObserver(apply)
@@ -88,8 +89,14 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
     update(row) {
       if (!row) return
       const t = row._tSec
-      frameCount.current++
-      const doSpark = frameCount.current % SPARK_EVERY === 0 || frameCount.current === 1
+      // Wall-clock throttle, NOT a frame counter: during 60fps playback
+      // sparklines recompute at ~20Hz (same cost as every-3rd-frame),
+      // but an isolated update — a bookmark/chart/mode-bar jump while
+      // paused — always recomputes, so sparklines can never be left
+      // showing the previous cursor position.
+      const nowMs = performance.now()
+      const doSpark = nowMs - lastSparkMs.current >= SPARK_MIN_MS
+      if (doSpark) lastSparkMs.current = nowMs
 
       /* BATT — the one honest instrument's semantics, ported verbatim */
       if (has.batt) {
@@ -132,12 +139,19 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
             }
           }
         }
-        // WARN chip — real thresholds only. CSS animation blinks it, so
+        // WARN chip — real thresholds only, with hysteresis (on <3.5,
+        // off >3.6 V/cell) so voltage sag bouncing around the threshold
+        // doesn't re-fire the role=alert every crossing; non-finite
+        // samples leave the latch unchanged. CSS animation blinks it, so
         // it keeps blinking while Cesium is idle/paused (amendment C),
         // and the global prefers-reduced-motion rule collapses it to a
         // steady block.
+        if (Number.isFinite(perCell)) {
+          if (perCell < 3.5) warnOn.current = true
+          else if (perCell > 3.6) warnOn.current = false
+        }
         if (el.warn.current) {
-          el.warn.current.classList.toggle('tm-warn-show', Number.isFinite(perCell) && perCell < 3.5)
+          el.warn.current.classList.toggle('tm-warn-show', warnOn.current)
         }
       }
 
@@ -185,7 +199,7 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
       if (has.hdg) {
         const h = row['Hdg(°)']
         const ok = typeof h === 'number' && Number.isFinite(h)
-        if (el.hdgVal.current) el.hdgVal.current.textContent = ok ? String(Math.round(((h % 360) + 360) % 360)).padStart(3, '0') + '°' : '– –'
+        if (el.hdgVal.current) el.hdgVal.current.textContent = ok ? String(Math.round(((h % 360) + 360) % 360) % 360).padStart(3, '0') + '°' : '– –'
         if (el.hdgCard.current) {
           const cards = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
           el.hdgCard.current.textContent = ok ? cards[Math.round((((h % 360) + 360) % 360) / 45) % 8] : ''
@@ -204,17 +218,26 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
       }
 
       /* HOME — distance + bearing arrow (replaces the heading dial) */
-      if (home && row._lat != null && row._lon != null) {
-        const d = distMeters(row._lat, row._lon, home.lat, home.lon)
-        if (el.homeVal.current) {
-          el.homeVal.current.textContent = d >= 1000 ? (d / 1000).toFixed(2) : String(Math.round(d))
-        }
-        const homeUnit = el.homeVal.current && el.homeVal.current.nextElementSibling
-        if (homeUnit) homeUnit.textContent = d >= 1000 ? 'km' : 'm'
-        if (el.homeArrow.current) {
-          const brg = bearingDeg(row._lat, row._lon, home.lat, home.lon)
-          const hd = typeof row['Hdg(°)'] === 'number' ? row['Hdg(°)'] : 0
-          el.homeArrow.current.setAttribute('transform', `rotate(${(((brg - hd) % 360) + 360) % 360} 8 8)`)
+      if (home) {
+        const okPos = row._lat != null && row._lon != null
+        if (okPos) {
+          const d = distMeters(row._lat, row._lon, home.lat, home.lon)
+          if (el.homeVal.current) {
+            el.homeVal.current.textContent = d >= 1000 ? (d / 1000).toFixed(2) : String(Math.round(d))
+          }
+          const homeUnit = el.homeVal.current && el.homeVal.current.nextElementSibling
+          if (homeUnit) homeUnit.textContent = d >= 1000 ? 'km' : 'm'
+          if (el.homeArrow.current) {
+            const brg = bearingDeg(row._lat, row._lon, home.lat, home.lon)
+            const hd = typeof row['Hdg(°)'] === 'number' ? row['Hdg(°)'] : 0
+            el.homeArrow.current.setAttribute('transform', `rotate(${(((brg - hd) % 360) + 360) % 360} 8 8)`)
+            el.homeArrow.current.style.opacity = ''
+          }
+        } else {
+          // No fix at the cursor (pre-takeoff rows) — never show a stale
+          // distance as if it were current.
+          if (el.homeVal.current) el.homeVal.current.textContent = '– –'
+          if (el.homeArrow.current) el.homeArrow.current.style.opacity = '0.25'
         }
       }
 
@@ -254,7 +277,7 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
         </div>
       )}
       {has.spd && (
-        <div className="tm-cell">
+        <div className="tm-cell tm-cell-spd">
           <div className="tm-lab">SPD · GPS</div>
           <div className="tm-valrow">
             <span className="tm-val" ref={el.spdVal}>– –</span>

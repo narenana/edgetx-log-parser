@@ -93,7 +93,7 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: #fff;
+  color: var(--on-red-text);
   background: var(--red);
   border-radius: 4px;
   padding: 5px 10px;
@@ -130,7 +130,7 @@
 .tm-box-half { stroke-dasharray: 3 3; }
 .tm-trail { fill: none; stroke: var(--pink); stroke-width: 2; stroke-linecap: round; opacity: 0.42; }
 .tm-dot { fill: var(--cyan); }
-.tm-box-label { font-size: 8px; fill: var(--text3); font-family: inherit; }
+.tm-box-label { font-size: 10px; fill: var(--text3); font-family: inherit; }
 
 .tm-readout { display: flex; flex-direction: column; gap: 2px; width: 56px; flex: none; }
 .tm-readout div {
@@ -153,6 +153,11 @@
 .tm-input-gap .tm-dot { opacity: 0.15; }
 .tm-input-gap .tm-trail { opacity: 0.1; }
 
+/* Light theme: solid --pink/--red on --bg2 pass 3:1, but the trail/floor
+ * default opacities dip below it — lift them (measured: ≥0.75 passes). */
+[data-theme='light'] .tm-trail { opacity: 0.8; }
+[data-theme='light'] .tm-floor { opacity: 0.8; }
+
 /* ── responsive tiers (never wrap; hide by priority) ── */
 [data-tier='b'] .tm-cell-home { display: none; }
 [data-tier='c'] .tm-cell-home,
@@ -164,9 +169,27 @@
 [data-tier='d'] .tm-spark,
 [data-tier='d'] .tm-readout,
 [data-tier='d'] .tm-sub { display: none; }
-[data-tier='d'] .tm-bar,
-.tm-bar[data-tier='d'] { height: 56px; }
+.tm-bar[data-tier='d'],
+.tm-bar[data-tier='e'] { height: 56px; }
 [data-tier='d'] .tm-val { font-size: 16px; }
 [data-tier='d'] .tm-cell { padding: 7px 10px 6px; }
 [data-tier='d'] .tm-thr { height: 40px; }
 [data-tier='d'] .tm-stickbox { width: 42px; height: 42px; }
+/* Counter-scale so the label stays ≈10px effective at 42/56 scale. */
+[data-tier='d'] .tm-box-label { font-size: 13px; }
+
+/* Tier e (<~530px, small phones): keep BATT + ALT + a compact input
+ * module; SPD/ATT drop too. Everything tier-d hides stays hidden. */
+[data-tier='e'] .tm-cell-home,
+[data-tier='e'] .tm-cell-hdg,
+[data-tier='e'] .tm-cell-spd,
+[data-tier='e'] .tm-cell-att,
+[data-tier='e'] .tm-spark,
+[data-tier='e'] .tm-readout,
+[data-tier='e'] .tm-sub { display: none; }
+[data-tier='e'] .tm-val { font-size: 16px; }
+[data-tier='e'] .tm-cell { padding: 7px 8px 6px; }
+[data-tier='e'] .tm-input { gap: 6px; padding: 6px 8px; }
+[data-tier='e'] .tm-thr { height: 40px; }
+[data-tier='e'] .tm-stickbox { width: 42px; height: 42px; }
+[data-tier='e'] .tm-box-label { font-size: 13px; }

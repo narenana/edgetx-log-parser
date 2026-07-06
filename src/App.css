@@ -45,6 +45,9 @@
   --danger-bg:     #2d1b1e;
   --danger-text:   #ff8fa3;
   --danger-border: #5a2a33;
+  /* Text on a solid --red chip (mirrors --on-blue-text): dark ink on the
+     pastel dark-theme red (#ff5f7d), white on the deep light-theme red. */
+  --on-red-text:   #11151c;
 }
 
 [data-theme="dark"] {
@@ -123,6 +126,17 @@
   --danger-bg:     #fdeef1;
   --danger-text:   #b3123c;
   --danger-border: #f1b6c2;
+  --on-red-text:   #ffffff;
+}
+
+/* Reserves the telemetry bar's slot while its lazy chunk loads, so the
+ * globe/map doesn't get a 72px layout pop after first paint. Lives here
+ * (not telemetry.css) because that stylesheet arrives WITH the chunk. */
+.tm-bar-placeholder {
+  flex: none;
+  height: 72px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
 }
 
 * {
@@ -824,11 +838,13 @@ body {
 .dashboard-right {
   /* Clamped instead of a naive 50-50 flex split: the globe gets better
      with every extra pixel, Chart.js panels get worse past ~620px. The
-     left column absorbs ultrawide surplus. Also guarantees the 72px
-     telemetry bar's default cell inventory fits the left column at
-     1280px (redesign amendment D). */
+     left column absorbs ultrawide surplus. The 380px minimum keeps the
+     left column ≥ ~580px all the way down to the 960px stack breakpoint,
+     so the telemetry bar degrades monotonically (tier b → c → stacked)
+     instead of dipping into its most-compact tier just above the
+     breakpoint (redesign amendment D). */
   flex: none;
-  width: clamp(420px, 40%, 620px);
+  width: clamp(380px, 40%, 620px);
   overflow-y: auto;
   padding: 6px 10px 10px;
   scrollbar-width: thin;

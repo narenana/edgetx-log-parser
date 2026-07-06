@@ -460,12 +460,17 @@ export default function GlobeView({
     // 2) `maximumRenderTimeChange = Infinity` disables Cesium's clock-based
     //    auto-render — our vt watcher is the single source of truth for
     //    when to draw, so we don't want the internal clock racing it.
-    // 3) Fog + atmospheric scattering are pretty but expensive shader
-    //    passes that add nothing at the follow distances we render at.
+    // 3) Sky atmosphere is back ON (owner request): at chase-camera
+    //    altitudes the horizon is in frame constantly, and a black void
+    //    above the terrain reads as broken. With requestRenderMode
+    //    limiting how often we draw, the scattering pass is affordable.
+    //    Fog stays off — it mainly softens distant terrain and costs a
+    //    full-scene pass.
     viewer.scene.requestRenderMode = true
     viewer.scene.maximumRenderTimeChange = Infinity
     viewer.scene.fog.enabled = false
-    viewer.scene.skyAtmosphere.show = false
+    viewer.scene.skyAtmosphere.show = true
+    viewer.scene.globe.showGroundAtmosphere = true
 
     // Disable inertia — zoom/pan/orbit should stop the instant the user releases input
     const ssc = viewer.scene.screenSpaceCameraController
@@ -759,11 +764,20 @@ export default function GlobeView({
     addDot(gpsRows[0], '#9ece6a')
     addDot(gpsRows[gpsRows.length - 1], '#f7768e')
 
-    // ── 3D aircraft model (async GLB build) ───────────────────────────────────
+    // ── 3D aircraft model ──────────────────────────────────────────────────────
+    // Prefer the bundled desert-camo UAV wing (public/models/wing.glb —
+    // baked from the owner's Blender source: textures wired, wingspan
+    // normalized to 10 m, nose baked to glTF -Z so the existing HPR
+    // orientation math applies unchanged). Falls back to the procedural
+    // GLB if the file is missing (e.g. desktop builds pre-asset-sync).
+    const EXTERNAL_MODEL_URL = './models/wing.glb'
     let cancelled = false
     let aircraftEntity = null
-    buildAircraftGLB().then(url => {
-      if (cancelled) { URL.revokeObjectURL(url); return }
+    fetch(EXTERNAL_MODEL_URL, { method: 'HEAD' })
+      .then(res => (res.ok ? EXTERNAL_MODEL_URL : buildAircraftGLB()))
+      .catch(() => buildAircraftGLB())
+      .then(url => {
+      if (cancelled) { if (url.startsWith('blob:')) URL.revokeObjectURL(url); return }
       glbUrlRef.current = url
 
       // Reusable scratch for fallback aircraft position (when ref is

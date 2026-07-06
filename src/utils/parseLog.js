@@ -13,7 +13,14 @@ function parseGPS(str) {
   if (parts.length < 2) return [null, null]
   const lat = parseFloat(parts[0])
   const lon = parseFloat(parts[1])
-  return isNaN(lat) || isNaN(lon) ? [null, null] : [lat, lon]
+  if (isNaN(lat) || isNaN(lon)) return [null, null]
+  // EdgeTX logs "0.0 0.0" before the GPS has a fix (logging starts on
+  // power-up, fix arrives later). 0,0 is a no-fix sentinel, not Null
+  // Island — blackbox-mapper.js applies the same guard. Without this,
+  // home-distance/bearing and the flight-distance stats absorb an
+  // ~8,600 km hop from (0,0) to the first real fix.
+  if (lat === 0 && lon === 0) return [null, null]
+  return [lat, lon]
 }
 
 function haversineKm(lat1, lon1, lat2, lon2) {
