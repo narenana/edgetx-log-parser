@@ -766,10 +766,12 @@ export default function GlobeView({
 
     // ── 3D aircraft model ──────────────────────────────────────────────────────
     // Prefer the bundled desert-camo UAV wing (public/models/wing.glb —
-    // baked from the owner's Blender source: textures wired, wingspan
-    // normalized to 10 m, nose baked to glTF -Z so the existing HPR
-    // orientation math applies unchanged). Falls back to the procedural
-    // GLB if the file is missing (e.g. desktop builds pre-asset-sync).
+    // the same proven GLB the fpvsim project flies: one clean camo
+    // material, ~0.28 MB. Its nose already sits on glTF -Z with +Y up
+    // and wings on X, so the existing HPR math applies unchanged; we
+    // only recentre it on the origin and scale the wingspan to 10 m.
+    // Falls back to the procedural GLB if the file is missing (e.g.
+    // desktop builds pre-asset-sync).
     const EXTERNAL_MODEL_URL = './models/wing.glb'
     let cancelled = false
     let aircraftEntity = null
