@@ -45,17 +45,22 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
   const i_rssi = idxOf(mainFieldNames, 'rssi')
   const i_motor0 = idxOf(mainFieldNames, 'motor[0]')
   const i_navState = idxOf(mainFieldNames, 'navState')
-  // Pilot input channels — iNAV / Betaflight log post-RC-curves stick
-  // commands as rcCommand[0..3] = roll, pitch, yaw, throttle.
-  // Roll/pitch/yaw range: -500..+500 (centered at 0).
-  // Throttle range:       1000..2000 (raw 1500-µs RC value).
-  // We normalize to (-100..+100) for sticks and (0..100) for throttle —
-  // same shape parseLog.js produces, so the controls UI is firmware-
-  // agnostic.
+  // Pilot input channels. Roll/pitch/yaw come from rcCommand[0..2]
+  // (post-curve stick command, -500..+500 → -100..+100 %).
+  //
+  // Throttle is special: rcCommand[3] is NOT firmware-agnostic. Betaflight
+  // logs it 1000..2000, but iNAV floors it at `minthrottle` (~1080..2000
+  // on these SPEEDYBEE F405 WING logs), so dividing by the 1000..2000
+  // scale made motor-idle read ~8 % instead of 0 % and shifted the whole
+  // range up. rcData[3] is the RAW receiver throttle channel — 1000 idle
+  // / 2000 full in BOTH firmwares, i.e. the pilot's actual stick position
+  // — so we prefer it and only fall back to rcCommand[3] when rcData
+  // wasn't logged. Verified against 8 real iNAV 8.0.1 DOLPHIN logs.
   const i_rcRoll  = idxOf(mainFieldNames, 'rcCommand[0]')
   const i_rcPitch = idxOf(mainFieldNames, 'rcCommand[1]')
   const i_rcYaw   = idxOf(mainFieldNames, 'rcCommand[2]')
-  const i_rcThr   = idxOf(mainFieldNames, 'rcCommand[3]')
+  const i_rcDataThr = idxOf(mainFieldNames, 'rcData[3]')
+  const i_rcThr   = i_rcDataThr >= 0 ? i_rcDataThr : idxOf(mainFieldNames, 'rcCommand[3]')
 
   const i_gpsLat = hasGps ? idxOf(gpsFieldNames, 'GPS_coord[0]') : -1
   const i_gpsLon = hasGps ? idxOf(gpsFieldNames, 'GPS_coord[1]') : -1
@@ -116,9 +121,10 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
     const vbat = i_vbat >= 0 ? cell(mainFrames, i, i_vbat, mainCols) / 100 : null
     const amperage = i_amp >= 0 ? cell(mainFrames, i, i_amp, mainCols) / 100 : null
 
-    // rcCommand → normalized pilot input. Sticks are ±500 → ±100 %;
-    // throttle is 1000..2000 → 0..100 %. Null when the channel was not
-    // logged (some iNAV configurations strip rcCommand to save flash).
+    // Normalized pilot input. Sticks are ±500 → ±100 %; throttle stick
+    // (rcData[3], preferred) is 1000..2000 → 0..100 %. Null when the
+    // channel was not logged (some iNAV configs strip rcCommand/rcData
+    // to save flash).
     const stickRoll  = i_rcRoll  >= 0 ? cell(mainFrames, i, i_rcRoll,  mainCols) / 5 : null
     const stickPitch = i_rcPitch >= 0 ? cell(mainFrames, i, i_rcPitch, mainCols) / 5 : null
     const stickYaw   = i_rcYaw   >= 0 ? cell(mainFrames, i, i_rcYaw,   mainCols) / 5 : null
