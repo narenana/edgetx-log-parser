@@ -1,0 +1,31 @@
+name: Unit Tests
+
+# Fast Vitest suite over the pure parse/telemetry logic (src/**/*.test.js).
+# Complements the heavier Chrome-driven visualisation gate (test-viz.yml).
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: unit-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run unit tests
+        run: npm test

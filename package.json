@@ -12,6 +12,8 @@
     "build:desktop": "cross-env VITE_BUILD_TARGET=desktop vite build",
     "preview": "vite preview",
     "dist": "npm run build:desktop && electron-builder",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "bb:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/bb-check.mjs"
   },
   "build": {
@@ -99,6 +101,7 @@
     "vite-plugin-pwa": "^1.2.0",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0",
+    "vitest": "^4.1.10",
     "wait-on": "^8.0.0"
   }
 }

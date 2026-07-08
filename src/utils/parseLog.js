@@ -7,7 +7,7 @@ function normHdg(h) {
   return ((h % 360) + 360) % 360
 }
 
-function parseGPS(str) {
+export function parseGPS(str) {
   if (!str || typeof str !== 'string') return [null, null]
   const parts = str.trim().split(/\s+/)
   if (parts.length < 2) return [null, null]
