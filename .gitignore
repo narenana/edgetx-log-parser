@@ -8,6 +8,11 @@ release/
 *.tmp.*
 debug_bbl*.mjs
 .env
+
+# Local blackbox fixtures for `npm run bb:check`. NEVER commit real logs —
+# they embed GPS coordinates (your flying-field location).
+test-logs/
+
 .env.local
 .env.*.local
 

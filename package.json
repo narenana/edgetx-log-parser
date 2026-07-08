@@ -11,7 +11,8 @@
     "build": "cross-env VITE_BUILD_TARGET=web vite build",
     "build:desktop": "cross-env VITE_BUILD_TARGET=desktop vite build",
     "preview": "vite preview",
-    "dist": "npm run build:desktop && electron-builder"
+    "dist": "npm run build:desktop && electron-builder",
+    "bb:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/bb-check.mjs"
   },
   "build": {
     "appId": "com.narenana.edgetx-log-parser",
