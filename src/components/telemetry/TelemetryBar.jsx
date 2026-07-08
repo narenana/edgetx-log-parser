@@ -50,7 +50,7 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
 
   const el = {
     root: useRef(null),
-    battVal: useRef(null), battSub: useRef(null), battSpark: useRef(null), battFloor: useRef(null),
+    battVal: useRef(null), battSub: useRef(null),
     altVal: useRef(null), vsChev: useRef(null), vsVal: useRef(null),
     altSpark: useRef(null), altFuture: useRef(null),
     spdVal: useRef(null), spdSpark: useRef(null),
@@ -112,32 +112,7 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
           const parts = []
           if (ok) parts.push(v.toFixed(1) + 'V')
           if (has.current && typeof row['Curr(A)'] === 'number') parts.push(row['Curr(A)'].toFixed(1) + 'A')
-          if (has.capacity && typeof row['Capa(mAh)'] === 'number') parts.push(Math.round(row['Capa(mAh)']) + 'mAh')
           el.battSub.current.textContent = parts.join(' · ') || ' '
-        }
-        if (doSpark && el.battSpark.current && Number.isFinite(t)) {
-          const vals = sampleWindow(rows, t, 30, 20, r => {
-            const b = r['RxBt(V)']
-            return typeof b === 'number' && b > 0 ? b / cfg.cells : NaN
-          })
-          const sp = sparkPoints(vals, 88, 15)
-          el.battSpark.current.setAttribute('points', sp.points)
-          el.battSpark.current.style.stroke =
-            Number.isFinite(perCell) && perCell < 3.5 ? 'var(--red)'
-              : Number.isFinite(perCell) && perCell < 3.7 ? 'var(--yellow)'
-                : 'var(--green)'
-          // dashed floor line at the 3.5V/cell equivalent, when in range
-          if (el.battFloor.current) {
-            const { min, max } = sp
-            if (max > min && 3.5 >= min && 3.5 <= max) {
-              const y = 15 - 2 - (15 - 4) * ((3.5 - min) / (max - min))
-              el.battFloor.current.setAttribute('y1', y.toFixed(1))
-              el.battFloor.current.setAttribute('y2', y.toFixed(1))
-              el.battFloor.current.style.display = ''
-            } else {
-              el.battFloor.current.style.display = 'none'
-            }
-          }
         }
         // WARN chip — real thresholds only, with hysteresis (on <3.5,
         // off >3.6 V/cell) so voltage sag bouncing around the threshold
@@ -254,16 +229,12 @@ const TelemetryBar = forwardRef(function TelemetryBar({ log }, ref) {
           <div className="tm-valrow">
             <span className="tm-val" ref={el.battVal}>– –</span>
             <span className="tm-unit">V/cell</span>
-            <span className="tm-sub" ref={el.battSub}></span>
           </div>
-          <svg className="tm-spark" width="88" height="15" viewBox="0 0 88 15" aria-hidden="true">
-            <line ref={el.battFloor} x1="0" x2="88" y1="12" y2="12" className="tm-floor" />
-            <polyline ref={el.battSpark} points="" className="tm-sparkline" style={{ stroke: 'var(--green)' }} />
-          </svg>
+          <div className="tm-sub2" ref={el.battSub}></div>
         </div>
       )}
       {has.alt && (
-        <div className="tm-cell">
+        <div className="tm-cell tm-cell-alt">
           <div className="tm-lab">ALT · TLM</div>
           <div className="tm-valrow">
             <span className="tm-val" ref={el.altVal}>– –</span>

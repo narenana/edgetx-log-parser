@@ -24,10 +24,22 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 8px 12px 7px;
+  padding: 7px 9px 6px;
   border-right: 1px solid var(--border);
   min-width: 0;
 }
+
+/* Fixed cell widths (desktop tiers) so a value gaining or losing a digit
+ * during playback can NEVER resize its cell and shove the rest of the bar.
+ * Each is sized for its worst-case content; the value field below reserves
+ * its own max width so units/sub-text stay put too. Overridden to auto on
+ * the mobile tiers (d/e), which content-size a smaller cell set. */
+.tm-cell-batt { width: 120px; }
+.tm-cell-alt  { width: 124px; }
+.tm-cell-spd  { width: 106px; }
+.tm-cell-hdg  { width: 70px; }
+.tm-cell-att  { width: 118px; }
+.tm-cell-home { width: 84px; }
 
 .tm-lab {
   font-size: 10px;
@@ -37,24 +49,41 @@
   white-space: nowrap;
 }
 
-.tm-valrow { display: flex; align-items: baseline; gap: 3px; white-space: nowrap; }
+.tm-valrow { display: flex; align-items: baseline; gap: 2px; white-space: nowrap; }
 .tm-val {
   font-size: 22px;
   font-weight: 600;
   color: var(--text);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  /* Reserve the value's max width and right-align it so a 2→3 digit change
+   * only consumes the reserved space — the trailing unit / sub never move.
+   * Per-cell min-widths below size each field to its worst case. */
+  display: inline-block;
+  text-align: right;
 }
+.tm-cell-batt .tm-val { min-width: 3.6ch; }   /* X.XX */
+.tm-cell-alt  .tm-val { min-width: 5.0ch; }   /* up to 936.7 / 1298 */
+.tm-cell-spd  .tm-val { min-width: 5.0ch; }   /* up to 160.8 */
+.tm-cell-hdg  .tm-val { min-width: 3.6ch; }   /* 056° */
+.tm-cell-home .tm-val { min-width: 3.4ch; }
 .tm-unit { font-size: 11px; font-weight: 500; color: var(--text2); }
-.tm-sub { font-size: 11px; color: var(--text2); margin-left: 6px; font-variant-numeric: tabular-nums; }
+/* BATT pack V / current on its own row (was inline, which made the cell
+ * wide and variable). Nowrap + tabular so it never reflows. */
+.tm-sub2 { font-size: 11px; color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* State color goes on the NUMBER, and only for real thresholds. */
 .tm-green  { color: var(--green); }
 .tm-yellow { color: var(--yellow); }
 .tm-red    { color: var(--red); }
 
-/* Fused vertical-speed token — a computed derivative → magenta grammar. */
-.tm-vs { font-size: 11px; font-weight: 600; color: var(--text); }
+/* Fused vertical-speed token — a computed derivative → magenta grammar.
+ * Fixed width + right-align so the chevron stays put as the value changes. */
+.tm-vs {
+  font-size: 11px; font-weight: 600; color: var(--text);
+  display: inline-block; min-width: 4.2ch; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .tm-chev { color: var(--pink); }
 
 .tm-spark { display: block; }
@@ -73,7 +102,7 @@
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .tm-att-nums span { color: var(--text3); font-weight: 500; }
-.tm-att-nums b { color: var(--text); font-weight: 600; min-width: 52px; text-align: right; }
+.tm-att-nums b { color: var(--text); font-weight: 600; min-width: 56px; text-align: right; }
 .tm-chipframe { fill: var(--bg3); stroke: var(--border-bright); }
 .tm-chipline { stroke: var(--text2); stroke-width: 2; stroke-linecap: round; }
 .tm-chipdot { fill: var(--text2); }
@@ -103,13 +132,16 @@
 @keyframes tm-blink { 50% { opacity: 0.35; } }
 
 /* ── input module ── */
+/* Packs directly after the last telemetry cell (no margin-left:auto float)
+ * so there's no loose gap in the middle of the bar; a slightly stronger
+ * left divider separates pilot-input from telemetry. */
 .tm-input {
-  margin-left: auto;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 9px;
+  padding: 8px 10px 8px 12px;
+  border-left: 1px solid var(--border-bright);
   position: relative;
 }
 .tm-thr {
@@ -159,6 +191,11 @@
 [data-theme='light'] .tm-floor { opacity: 0.8; }
 
 /* ── responsive tiers (never wrap; hide by priority) ── */
+/* Mobile tiers content-size their smaller cell set — release the desktop
+ * fixed widths so the compact bar isn't forced to desktop dimensions. */
+[data-tier='d'] .tm-cell,
+[data-tier='e'] .tm-cell { width: auto; }
+
 [data-tier='b'] .tm-cell-home { display: none; }
 [data-tier='c'] .tm-cell-home,
 [data-tier='c'] .tm-cell-hdg { display: none; }
