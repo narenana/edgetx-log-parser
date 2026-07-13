@@ -1,0 +1,10 @@
+# RC Log Viewer — served at https://www.narenana.com/log-viewer/robots.txt
+# (and at the *.pages.dev host roots). For the www host, only the ROOT
+# robots.txt (www.narenana.com/robots.txt, maintained in narenana-website)
+# governs crawling — this file's job is to kill the SPA-fallback soft-404
+# at this path and to give the pages.dev hosts a real robots file.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://www.narenana.com/log-viewer/sitemap.xml

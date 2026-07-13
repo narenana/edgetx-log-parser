@@ -24,3 +24,21 @@
 # occasionally — keep the cache short so demo refreshes pick up changes.
 /sample-*.csv
   Cache-Control: public, max-age=3600
+
+# Social/OG card — cacheable but NOT immutable (we may redesign it at the
+# same URL; scrapers re-fetch on their own schedule anyway).
+/og-card.png
+  Cache-Control: public, max-age=86400
+
+# ── Duplicate-host noindex ──────────────────────────────────────────────
+# Keep the raw *.pages.dev hosts (production alias + preview deployments)
+# out of the search index; www.narenana.com/log-viewer/ is the canonical.
+# SAFE ONLY BECAUSE the narenana-website Worker strips X-Robots-Tag when
+# forwarding to narenana.com hosts (src/index.js forward()) — without that
+# strip these headers would flow through and noindex the canonical page.
+# rel=canonical already points at www from every host; this is the
+# directive on top of the hint.
+https://edgetx-log-parser.pages.dev/*
+  X-Robots-Tag: noindex
+https://:version.edgetx-log-parser.pages.dev/*
+  X-Robots-Tag: noindex

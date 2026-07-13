@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import cesium from 'vite-plugin-cesium'
@@ -22,6 +23,18 @@ import { sentryVitePlugin } from '@sentry/vite-plugin'
 // switch to `base: '/log-viewer/'` and add a post-build step to flatten
 // vite-plugin-cesium's nested output. For now, query-param sharing keeps things
 // simple.
+const pkg = createRequire(import.meta.url)('./package.json')
+
+// Replaces %APP_VERSION% in index.html (JSON-LD softwareVersion) with the
+// package.json version at build time, so structured data never drifts from
+// the released version.
+const htmlVersionToken = {
+  name: 'html-version-token',
+  transformIndexHtml(html) {
+    return html.replace(/%APP_VERSION%/g, pkg.version)
+  },
+}
+
 export default defineConfig(() => {
   const isDesktop = process.env.VITE_BUILD_TARGET === 'desktop'
 
@@ -90,7 +103,9 @@ export default defineConfig(() => {
       // visitor to precache it before ever opening the globe. We lazy-cache
       // it via runtimeCaching below.
       globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,csv}'],
-      globIgnores: ['cesium/**/*'],
+      // og-card.png is for link scrapers, not app users — keep it out of
+      // every visitor's precache.
+      globIgnores: ['cesium/**/*', 'og-card.png'],
       maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
 
       // Cesium runtime gets CacheFirst — first globe open downloads, every
@@ -118,6 +133,7 @@ export default defineConfig(() => {
     // sentryVitePlugin must come LAST so it sees the final emitted bundle
     // for source-map upload + release tagging.
     plugins: [
+      htmlVersionToken,
       react(),
       wasm(),
       topLevelAwait(),

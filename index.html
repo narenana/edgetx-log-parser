@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f5f7fb" />
 
-    <title>RC Log Viewer — replay EdgeTX & iNAV / Betaflight flight logs in 3D</title>
-    <meta name="description" content="Drop EdgeTX CSV or iNAV / Betaflight blackbox logs and replay the entire flight on a 3D globe with synced charts. Works in the browser — your logs never leave your machine." />
+    <title>RC Log Viewer — EdgeTX & Betaflight/iNAV Blackbox in 3D</title>
+    <meta name="description" content="Replay EdgeTX CSV and iNAV/Betaflight blackbox logs on a 3D globe with synced telemetry charts. Free, in-browser — logs never leave your machine." />
     <meta name="author" content="narenana" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
 
@@ -31,17 +31,17 @@
     <meta property="og:url" content="https://www.narenana.com/log-viewer/" />
     <meta property="og:title" content="RC Log Viewer — replay every flight in 3D" />
     <meta property="og:description" content="Drop EdgeTX CSV or iNAV / Betaflight blackbox logs. Replay your flight in 3D with synced telemetry charts. Browser-native — your logs never leave your machine." />
-    <meta property="og:image" content="https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg" />
-    <meta property="og:image:type" content="image/jpeg" />
-    <meta property="og:image:width" content="1280" />
-    <meta property="og:image:height" content="720" />
+    <meta property="og:image" content="https://www.narenana.com/log-viewer/og-card.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="RC Log Viewer — 3D flight replay on a satellite globe with synced telemetry charts" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="RC Log Viewer — replay every flight in 3D" />
     <meta name="twitter:description" content="Drop EdgeTX CSV or iNAV / Betaflight blackbox. Replay every flight in 3D with synced telemetry charts. Browser-native, nothing uploaded." />
-    <meta name="twitter:image" content="https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg" />
+    <meta name="twitter:image" content="https://www.narenana.com/log-viewer/og-card.png" />
     <meta name="twitter:image:alt" content="RC Log Viewer — 3D flight replay" />
 
     <!-- Schema.org SoftwareApplication. Makes the tool eligible for
@@ -53,34 +53,71 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "RC Log Viewer",
-        "alternateName": ["narenana RC Log Viewer", "EdgeTX Log Viewer", "iNAV Blackbox Viewer"],
-        "url": "https://www.narenana.com/log-viewer/",
-        "applicationCategory": "UtilitiesApplication",
-        "applicationSubCategory": "Flight log analysis",
-        "operatingSystem": "Web Browser, Windows, macOS, Linux",
-        "browserRequirements": "Requires WebGL 2 and ES2022. Chrome 100+, Firefox 100+, Safari 16+.",
-        "description": "Drop EdgeTX CSV or iNAV / Betaflight blackbox logs and replay the entire flight on a 3D globe with synced telemetry charts. Runs entirely in the browser; nothing uploaded. Also ships as a desktop app for Windows, macOS, and Linux.",
-        "image": "https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg",
-        "screenshot": "https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg",
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        },
-        "softwareVersion": "5.0.0",
-        "license": "https://www.gnu.org/licenses/gpl-3.0.html",
-        "author": {
-          "@type": "Organization",
-          "name": "narenana",
-          "url": "https://www.narenana.com/"
-        },
-        "isPartOf": {
-          "@type": "WebSite",
-          "name": "narenana",
-          "url": "https://www.narenana.com/"
-        }
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://www.narenana.com/log-viewer/#app",
+            "name": "RC Log Viewer",
+            "alternateName": ["narenana RC Log Viewer", "EdgeTX Log Viewer", "iNAV Blackbox Viewer", "Betaflight Blackbox Viewer"],
+            "url": "https://www.narenana.com/log-viewer/",
+            "applicationCategory": "UtilitiesApplication",
+            "applicationSubCategory": "Flight log analysis",
+            "operatingSystem": "Web Browser, Windows, macOS, Linux",
+            "browserRequirements": "Requires WebGL 2 and ES2022. Chrome 100+, Firefox 100+, Safari 16+.",
+            "description": "Drop EdgeTX CSV or iNAV / Betaflight blackbox logs and replay the entire flight on a 3D globe with synced telemetry charts. Runs entirely in the browser; nothing uploaded. Also ships as a desktop app for Windows, macOS, and Linux.",
+            "featureList": [
+              "3D flight replay on a satellite globe (chase, tail, orbit and top-down cameras)",
+              "EdgeTX / OpenTX CSV telemetry logs",
+              "iNAV and Betaflight blackbox logs (.bbl, .bfl, .txt)",
+              "Live telemetry bar: battery per-cell voltage, altitude, speed, heading, attitude, stick inputs",
+              "Synced telemetry charts with playback scrubbing and bookmarks",
+              "100% client-side parsing — logs never leave your machine",
+              "Installable PWA, works offline"
+            ],
+            "image": "https://www.narenana.com/log-viewer/og-card.png",
+            "screenshot": "https://www.narenana.com/log-viewer/og-card.png",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "softwareVersion": "%APP_VERSION%",
+            "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+            "sameAs": ["https://github.com/narenana/edgetx-log-parser"],
+            "author": {
+              "@type": "Organization",
+              "name": "narenana",
+              "url": "https://www.narenana.com/",
+              "sameAs": [
+                "https://www.youtube.com/@narenana",
+                "https://github.com/narenana"
+              ]
+            },
+            "isPartOf": {
+              "@type": "WebSite",
+              "name": "narenana",
+              "url": "https://www.narenana.com/"
+            }
+          },
+          {
+            "@type": "VideoObject",
+            "@id": "https://www.narenana.com/log-viewer/#demo",
+            "name": "RC Log Viewer demo — replaying a fixed-wing flight log in 3D",
+            "description": "A real EdgeTX/iNAV flight log replayed on the 3D globe with synced telemetry.",
+            "thumbnailUrl": "https://img.youtube.com/vi/6MLQCoG5t2w/maxresdefault.jpg",
+            "uploadDate": "2026-04-26",
+            "embedUrl": "https://www.youtube.com/embed/6MLQCoG5t2w",
+            "contentUrl": "https://www.youtube.com/watch?v=6MLQCoG5t2w",
+            "publisher": { "@id": "https://www.narenana.com/log-viewer/#app" }
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              { "@type": "ListItem", "position": 1, "name": "narenana", "item": "https://www.narenana.com/" },
+              { "@type": "ListItem", "position": 2, "name": "RC Log Viewer", "item": "https://www.narenana.com/log-viewer/" }
+            ]
+          }
+        ]
       }
     </script>
   </head>
@@ -102,7 +139,83 @@
       })()
     </script>
 
-    <div id="root"></div>
+    <!-- ── Static, crawlable landing shell ─────────────────────────────
+         Real server-rendered content for search engines, AI assistants,
+         and no-JS visitors. React's createRoot().render() REPLACES the
+         children of #root wholesale on mount, so this doubles as the
+         pre-JS splash and never conflicts with hydration (there is none).
+         Keep this copy truthful and in sync with the app's empty state —
+         it must describe what the tool actually does, nothing more. -->
+    <style>
+      .seo-shell { max-width: 780px; margin: 0 auto; padding: 48px 24px 64px;
+        font-family: 'Segoe UI', system-ui, sans-serif; color: #2c3e5c; line-height: 1.6; }
+      .seo-shell h1 { font-size: 28px; line-height: 1.25; color: #0f1a2c; margin: 0 0 6px; }
+      .seo-shell .seo-tag { font-size: 16px; color: #4a5c80; margin: 0 0 28px; }
+      .seo-shell h2 { font-size: 18px; color: #0f1a2c; margin: 28px 0 8px; }
+      .seo-shell p, .seo-shell li { font-size: 14.5px; margin: 0 0 8px; }
+      .seo-shell ol, .seo-shell ul { padding-left: 22px; margin: 0 0 8px; }
+      .seo-shell table { border-collapse: collapse; font-size: 14px; margin: 6px 0 10px; }
+      .seo-shell th, .seo-shell td { border: 1px solid #d7dde8; padding: 6px 12px; text-align: left; }
+      .seo-shell th { background: #f5f7fb; color: #0f1a2c; }
+      .seo-shell dt { font-weight: 600; color: #0f1a2c; margin-top: 12px; }
+      .seo-shell dd { margin: 2px 0 0 0; }
+      .seo-shell a { color: #2272d8; }
+      .seo-shell .seo-foot { margin-top: 32px; font-size: 13px; color: #4a5c80; }
+    </style>
+    <div id="root">
+      <div class="seo-shell">
+        <h1>RC Log Viewer — replay EdgeTX &amp; iNAV / Betaflight flight logs in 3D</h1>
+        <p class="seo-tag">Free and open-source. Runs entirely in your browser — your logs never leave your machine.</p>
+
+        <h2>How it works</h2>
+        <ol>
+          <li><strong>Open a log.</strong> Drop an EdgeTX CSV from your radio's SD card, or an iNAV / Betaflight blackbox file — or try a built-in sample flight.</li>
+          <li><strong>Watch the replay.</strong> Your whole flight is rebuilt on a 3D satellite globe with a chase camera, a live telemetry bar (battery per-cell voltage, altitude, speed, heading, attitude and stick inputs), and playback controls.</li>
+          <li><strong>Analyze it.</strong> Scrub the timeline, jump between takeoff / RTH / landing events, set bookmarks, and read synced charts for attitude, altitude, speed, battery and signal.</li>
+        </ol>
+
+        <h2>Supported log formats</h2>
+        <table>
+          <tr><th>Source</th><th>Format</th><th>Typical file</th></tr>
+          <tr><td>EdgeTX / OpenTX radios</td><td>SD-card telemetry logs (CSV)</td><td><code>Model-2026-04-26.csv</code></td></tr>
+          <tr><td>iNAV flight controllers</td><td>Blackbox logs</td><td><code>.bbl</code>, <code>.bfl</code>, <code>.txt</code></td></tr>
+          <tr><td>Betaflight flight controllers</td><td>Blackbox logs</td><td><code>.bbl</code>, <code>.bfl</code>, <code>.txt</code></td></tr>
+        </table>
+
+        <h2>Private by design</h2>
+        <p>Logs are parsed in your browser with WebAssembly. Nothing is uploaded, there are no accounts, and the viewer works offline once installed as an app. GPS traces of your flying spots stay on your machine.</p>
+
+        <h2>Frequently asked questions</h2>
+        <dl>
+          <dt>Is my flight log uploaded anywhere?</dt>
+          <dd>No. Parsing and 3D replay run entirely client-side. The only network traffic is fetching map imagery tiles.</dd>
+          <dt>How do I get logs off my radio?</dt>
+          <dd>Enable SD-card logging on your EdgeTX/OpenTX radio (a Special Function on a switch), fly, then copy the CSV from the <code>/LOGS</code> folder of the SD card.</dd>
+          <dt>Which firmware versions are supported?</dt>
+          <dd>EdgeTX and OpenTX CSV logs; iNAV blackbox up to 8.x and Betaflight blackbox up to 4.5.x (two independent parsers — most real-world files open fine).</dd>
+          <dt>My log has no GPS — is it still useful?</dt>
+          <dd>Yes. Without GPS you still get the telemetry bar and all synced charts (attitude, altitude, battery, signal); the 3D globe needs coordinates.</dd>
+          <dt>Does it work offline?</dt>
+          <dd>Yes — it's an installable PWA. After the first visit the viewer loads without a connection.</dd>
+          <dt>Is there a desktop app?</dt>
+          <dd>Yes, free Electron builds for Windows, macOS and Linux are on the <a href="https://github.com/narenana/edgetx-log-parser/releases">GitHub releases page</a>.</dd>
+        </dl>
+
+        <p class="seo-foot">
+          <a href="https://www.narenana.com/log-viewer/?sample=fixed-wing&amp;autoplay=1">Watch a sample flight</a> ·
+          <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
+          <a href="https://www.youtube.com/watch?v=6MLQCoG5t2w">Video demo</a> ·
+          Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
+          alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
+        </p>
+      </div>
+    </div>
+    <noscript>
+      <p style="max-width:780px;margin:0 auto;padding:0 24px 40px;font-family:'Segoe UI',system-ui,sans-serif;color:#2c3e5c">
+        RC Log Viewer needs JavaScript (and WebGL) to parse logs and render the 3D replay.
+        Everything above describes what it does; enable JavaScript to use it.
+      </p>
+    </noscript>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

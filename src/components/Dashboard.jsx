@@ -42,7 +42,7 @@ function ds(label, data, color, extra = {}) {
   }
 }
 
-export default function Dashboard({ log, theme = 'light' }) {
+export default function Dashboard({ log, theme = 'light', autoPlay = false, onAutoPlayConsumed }) {
   const [viewMode, setViewMode] = useState(2) // 1 = classic, 2 = 3D globe
   const [cursorIndex, setCursorIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -266,6 +266,34 @@ export default function Dashboard({ log, theme = 'light' }) {
     telemetryBarRef.current = node
     if (node && cursorRowRef.current) node.update(cursorRowRef.current)
   }, [])
+
+  // ── Deep-link autoplay (&autoplay=1) ────────────────────────────────────────
+  // Consumed once on mount so a subsequent manually-loaded log doesn't
+  // inherit the deep link's intent.
+  useEffect(() => {
+    if (!autoPlay) return
+    setPlaying(true)
+    track('playback_started', { speed, source: 'deep-link' })
+    onAutoPlayConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── North-star event: playback completed ────────────────────────────────────
+  // Fires when playback STOPS at the last row (playing true → false at the
+  // end of the flight). Deliberately outside the rAF/state updaters —
+  // React updaters must stay pure (StrictMode double-invokes them), so we
+  // watch the transition instead.
+  const wasPlayingRef = useRef(false)
+  useEffect(() => {
+    if (wasPlayingRef.current && !playing && cursorIndex >= rows.length - 1 && rows.length > 1) {
+      track('playback_completed', {
+        duration_sec: Math.round(rows[rows.length - 1]._tSec ?? 0),
+        speed,
+      })
+    }
+    wasPlayingRef.current = playing
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing])
 
   // ── Space bar to play/pause ─────────────────────────────────────────────────
   useEffect(() => {

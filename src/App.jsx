@@ -91,6 +91,9 @@ export default function App() {
   // the worker. The page would otherwise look frozen since the user just
   // dropped a file but no log has appeared yet. { filename, stage, pct }.
   const [parsing, setParsing] = useState(null)
+  // Set by an &autoplay=1 deep link: the next Dashboard mount starts
+  // playback immediately (consumed once via onAutoPlayConsumed).
+  const [autoPlayArmed, setAutoPlayArmed] = useState(false)
   const fileInputRef = useRef(null)
 
   // Apply the theme to <html data-theme="..."> + persist. CSS variables
@@ -217,18 +220,42 @@ export default function App() {
     }
   }, [appendLog])
 
-  // Phase-2 share hook: ?log=<url> auto-loads a remote CSV on mount.
-  // Disabled by default until we ship a backend; the parser stays the same.
+  // Deep links (growth plan §quick-wins):
+  //   ?log=<url>            — replay a remote log (CORS-permitting hosts,
+  //                           e.g. GitHub raw/gist, work today)
+  //   ?sample=fixed-wing|quad — load a built-in demo flight
+  //   &autoplay=1           — skip the summary modal and start playback,
+  //                           so a shared link is "watch a flight in 5s"
+  // Query params (not paths) deliberately dodge the Vite base:'./' +
+  // Worker path-mount caveat documented in vite.config.js.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    const autoplay = params.get('autoplay') === '1'
+    const arm = log => {
+      if (autoplay) {
+        dismissSummary(log.filename)
+        setAutoPlayArmed(true)
+      }
+      appendLog(log)
+    }
     const remote = params.get('log')
-    if (!remote) return
-    loadLogFromUrl(remote)
-      .then(log => {
-        track('log_loaded', { source: 'shared-url' })
-        appendLog(log)
-      })
-      .catch(e => setError(`Failed to load shared log: ${e.message}`))
+    const sampleKind = params.get('sample')
+    if (remote) {
+      loadLogFromUrl(remote)
+        .then(log => {
+          track('log_loaded', { source: 'shared-url' })
+          arm(log)
+        })
+        .catch(e => setError(`Failed to load shared log: ${e.message}`))
+    } else if (sampleKind && SAMPLES[sampleKind]) {
+      loadLogFromUrl(SAMPLES[sampleKind].url, { displayName: SAMPLES[sampleKind].displayName })
+        .then(log => {
+          track('log_loaded', { source: 'sample', sample_type: sampleKind, deep_link: true })
+          arm(log)
+        })
+        .catch(e => setError(`Failed to load ${sampleKind} sample: ${e.message}`))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appendLog])
 
   const onDrop = useCallback(
@@ -338,12 +365,16 @@ export default function App() {
             key={activeLog.filename}
             log={activeLog}
             theme={theme}
+            autoPlay={autoPlayArmed}
+            onAutoPlayConsumed={() => setAutoPlayArmed(false)}
           />
         </Suspense>
       ) : (
         <div className={`drop-overlay${isDragOver ? ' drag-over' : ''}`}>
           <div className="drop-icon">✈</div>
-          <div className="drop-title">RC Log Viewer</div>
+          {/* h1 (not div) so the pre-JS static shell in index.html and the
+              mounted app agree on the page's single H1. */}
+          <h1 className="drop-title">RC Log Viewer</h1>
           <div className="drop-sub">
             Drop a flight log here, or click below to open one
           </div>
