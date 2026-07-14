@@ -27,7 +27,7 @@
 
 # Social/OG card — cacheable but NOT immutable (we may redesign it at the
 # same URL; scrapers re-fetch on their own schedule anyway).
-/og-card.png
+/og-card.jpg
   Cache-Control: public, max-age=86400
 
 # ── Duplicate-host noindex ──────────────────────────────────────────────

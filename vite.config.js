@@ -103,9 +103,9 @@ export default defineConfig(() => {
       // visitor to precache it before ever opening the globe. We lazy-cache
       // it via runtimeCaching below.
       globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,csv}'],
-      // og-card.png is for link scrapers, not app users — keep it out of
+      // og-card.jpg is for link scrapers, not app users — keep it out of
       // every visitor's precache.
-      globIgnores: ['cesium/**/*', 'og-card.png'],
+      globIgnores: ['cesium/**/*', 'og-card.jpg'],
       maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
 
       // Cesium runtime gets CacheFirst — first globe open downloads, every
