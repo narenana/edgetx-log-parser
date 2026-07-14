@@ -25,9 +25,11 @@
 /sample-*.csv
   Cache-Control: public, max-age=3600
 
-# Social/OG card — cacheable but NOT immutable (we may redesign it at the
-# same URL; scrapers re-fetch on their own schedule anyway).
+# Social/OG card + JSON-LD screenshot — cacheable but NOT immutable (we may
+# redesign them at the same URL; scrapers re-fetch on their own schedule anyway).
 /og-card.jpg
+  Cache-Control: public, max-age=86400
+/screenshot.jpg
   Cache-Control: public, max-age=86400
 
 # ── Duplicate-host noindex ──────────────────────────────────────────────
