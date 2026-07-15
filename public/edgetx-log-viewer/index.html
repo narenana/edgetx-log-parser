@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EdgeTX Log Viewer — Open Radio CSV Logs</title>
+<meta name="description" content="Open EdgeTX and OpenTX SD-card telemetry CSV logs in your browser. Charts for every flight, plus a 3D globe when your log has a GPS sensor. Free, private." />
+<meta name="author" content="narenana" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://www.narenana.com/log-viewer/edgetx-log-viewer/" />
+<link rel="icon" type="image/jpeg" href="https://www.narenana.com/log-viewer/narenana.jpg" sizes="200x200" />
+<link rel="icon" type="image/svg+xml" href="https://www.narenana.com/log-viewer/favicon.svg" />
+<link rel="apple-touch-icon" href="https://www.narenana.com/log-viewer/narenana.jpg" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="narenana" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:url" content="https://www.narenana.com/log-viewer/edgetx-log-viewer/" />
+<meta property="og:title" content="EdgeTX / OpenTX Log Viewer — Open Radio CSV Logs" />
+<meta property="og:description" content="Open EdgeTX and OpenTX SD-card telemetry CSV logs in your browser. Every sensor charted, plus a 3D globe when your log has GPS. Free, open-source, nothing uploaded." />
+<meta property="og:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="EdgeTX / OpenTX Log Viewer — Open Radio CSV Logs" />
+<meta name="twitter:description" content="Open EdgeTX and OpenTX SD-card telemetry CSV logs in your browser. Every sensor charted, plus a 3D globe when your log has GPS. Free, open-source, nothing uploaded." />
+<meta name="twitter:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://www.narenana.com/log-viewer/edgetx-log-viewer/#page",
+      "name": "EdgeTX Log Viewer — Open Radio CSV Logs",
+      "headline": "EdgeTX Log Viewer for Radio Telemetry CSV Files",
+      "description": "Open EdgeTX and OpenTX SD-card telemetry CSV logs in your browser. Charts for every flight, plus a 3D globe when your log has a GPS sensor. Free, private.",
+      "url": "https://www.narenana.com/log-viewer/edgetx-log-viewer/",
+      "inLanguage": "en",
+      "image": "https://www.narenana.com/log-viewer/og-card.jpg",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "RC Log Viewer",
+        "url": "https://www.narenana.com/log-viewer/"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "narenana",
+          "item": "https://www.narenana.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "RC Log Viewer",
+          "item": "https://www.narenana.com/log-viewer/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "EdgeTX Log Viewer for Radio Telemetry CSV Files",
+          "item": "https://www.narenana.com/log-viewer/edgetx-log-viewer/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f5f7fb;color:#2c3e5c;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+  a{color:#2272d8}
+  .topbar{border-bottom:1px solid #e2e7f0;background:#fff}
+  .topbar .in{max-width:820px;margin:0 auto;padding:12px 24px;display:flex;
+    gap:16px;align-items:center;font-size:14px}
+  .topbar .brand{font-weight:700;color:#0f1a2c;text-decoration:none}
+  .topbar .sp{flex:1}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px}
+  .crumbs{font-size:13px;color:#5a6b8c;margin:0 0 18px}
+  h1{font-size:30px;line-height:1.2;color:#0f1a2c;margin:0 0 10px}
+  .lede{font-size:16px;color:#3a4c70;margin:0 0 22px}
+  h2{font-size:19px;color:#0f1a2c;margin:30px 0 8px}
+  p,li{font-size:15px;margin:0 0 10px}
+  ol,ul{padding-left:22px;margin:0 0 10px}
+  table{border-collapse:collapse;font-size:14px;margin:8px 0 12px;width:100%}
+  th,td{border:1px solid #d7dde8;padding:7px 12px;text-align:left;vertical-align:top}
+  th{background:#eef2f9;color:#0f1a2c}
+  code{background:#eef2f9;border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .cta{display:inline-block;margin:8px 0 4px;padding:11px 20px;border-radius:8px;
+    background:#2272d8;color:#fff;font-weight:600;text-decoration:none}
+  .faq dt{font-weight:600;color:#0f1a2c;margin-top:14px}
+  .faq dd{margin:2px 0 0}
+  .related{margin-top:8px}
+  .related li{margin-bottom:4px}
+  footer{max-width:820px;margin:0 auto;padding:24px;border-top:1px solid #e2e7f0;
+    font-size:13px;color:#5a6b8c}
+  @media(prefers-color-scheme:dark){
+    body{background:#0e1117;color:#c4cfe0}
+    .topbar{background:#11151c;border-color:#232a36}
+    .topbar .brand,h1,h2,th,.faq dt{color:#e8eef8}
+    .lede{color:#a9b6cd}.crumbs{color:#8394b0}
+    a{color:#5aa2f0}
+    th{background:#1a2029}td,th{border-color:#2a323f}
+    code{background:#1a2029}
+    footer{border-color:#232a36;color:#8394b0}
+  }</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <a class="brand" href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a>
+  <span class="sp"></span>
+  <a href="https://www.narenana.com/log-viewer/">Open the viewer →</a>
+</div></div>
+<main class="wrap">
+  <p class="crumbs"><a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> › EdgeTX Log Viewer for Radio Telemetry CSV Files</p>
+  <h1>EdgeTX Log Viewer for Radio Telemetry CSV Files</h1>
+  <div class="lede"><p>RC Log Viewer opens EdgeTX and OpenTX telemetry logs — the CSV files your radio writes to its SD card — directly in the browser, with no upload and no account. Drop a <code>.csv</code> from the radio's <code>/LOGS</code> folder onto <a href="https://www.narenana.com/log-viewer/">the viewer</a> and it charts every telemetry sensor the radio recorded: attitude, altitude and vertical speed, speed and heading, battery per-cell voltage, signal (RSSI/LQ), and RC stick inputs.</p><p>If the log includes a GPS telemetry sensor, you also get a 3D flight replay on a satellite globe. If it doesn't — common on a pure quad with no GPS — the globe is unavailable but every synced chart and the live telemetry bar still work.</p></div>
+  <p><a class="cta" href="https://www.narenana.com/log-viewer/">Open a log in the browser →</a></p>
+  <h2>How EdgeTX and OpenTX write CSV logs to the SD card</h2>
+<p>When telemetry logging is enabled, EdgeTX and OpenTX write a plain CSV file to the <code>/LOGS</code> folder on the radio's SD card. Each row is a timestamped snapshot, and the columns are the telemetry sensors your model has discovered — so the exact columns differ from model to model. Typical columns include a date/time, <code>RxBt</code> or <code>VFAS</code> for pack voltage, cell data, <code>RSSI</code>/<code>RQly</code>/<code>TQly</code> for link quality, plus whatever your flight controller or vario feeds back.</p><ul><li>File names look like <code>ModelName-YYYY-MM-DD.csv</code>, one file per model per day, with sessions appended.</li><li>The header row names every sensor; the viewer reads those names to decide which charts to build.</li><li>Logging can be started by a switch or logical function, so a single file can hold several flights — scrub the timeline to move between them.</li></ul><p>Copy the file off the card over USB mass storage or with a card reader, then drop it on the viewer — there's nothing to configure and no import step.</p>
+<h2>When you get the 3D globe (GPS) and when you don't</h2>
+<p>The 3D replay needs latitude and longitude in the log. In EdgeTX/OpenTX, that position comes from a <strong>GPS telemetry sensor</strong> — most often a flight controller passing GPS over CRSF/MSP, or a standalone GPS module on the model. If a <code>GPS</code> sensor (with its coordinate pair) is present in the CSV columns, the viewer places your flight on a satellite globe with chase, tail, orbit, and top-down cameras.</p><ul><li><strong>Fixed-wing and GPS-equipped setups:</strong> usually have a GPS sensor, so you get the full 3D flight replay.</li><li><strong>Pure quad telemetry with no GPS:</strong> the globe is unavailable, but attitude, altitude, speed, battery, signal, and RC-input charts all still render from the other sensors.</li></ul><p>You can preview the globe experience with a sample: <a href="https://www.narenana.com/log-viewer/?sample=fixed-wing&autoplay=1">fixed-wing demo</a>.</p>
+<h2>What the viewer shows from a radio log</h2>
+<p>Everything is driven by the sensors present in your CSV, synced to one scrubbable timeline:</p><ul><li><strong>Live telemetry bar</strong> — battery per-cell voltage, altitude, speed, heading, attitude, and stick inputs at the current playhead.</li><li><strong>Synced charts</strong> — attitude; altitude and vertical speed; speed and heading; battery; signal (RSSI/LQ); RC inputs.</li><li><strong>Event jumps</strong> — skip between takeoff, RTH, and landing points, plus your own bookmarks.</li><li><strong>3D replay</strong> — on the satellite globe when GPS is present, with four camera modes.</li></ul><p>If a chart looks empty, it usually means the radio never logged that sensor — for example, no vario means no independent vertical-speed source, and no current sensor means no battery-current trace.</p>
+<h2>Private by design, and works offline</h2>
+<p>Parsing happens entirely in your browser using WebAssembly. Your CSV is never uploaded to a server, and there's no account to create. That matters for radio logs specifically: a GPS-tagged CSV embeds the coordinates of your flying field, and because the file is read locally, those coordinates never leave your machine.</p><p>The viewer is a free, open-source (GPL-3.0) installable PWA that runs offline once loaded, and there are free desktop builds for Windows, macOS, and Linux on the project's GitHub releases if you prefer a standalone app.</p>
+  <h2>Frequently asked questions</h2>
+<dl class="faq">
+<dt>Does the EdgeTX log viewer work with OpenTX logs too?</dt>
+<dd>Yes. OpenTX and EdgeTX write telemetry CSV in the same way, and the viewer reads both. If your radio runs either firmware, drop the CSV from its /LOGS folder and it opens.</dd>
+<dt>Where do I find the CSV log on my radio?</dt>
+<dd>On the SD card in the /LOGS folder. Files are named per model and date, like ModelName-2026-07-15.csv. Copy them off via USB mass storage or a card reader, then open them in the viewer.</dd>
+<dt>Why is the 3D globe missing for my log?</dt>
+<dd>The globe needs GPS coordinates, which come from a GPS telemetry sensor. If your model has no GPS (common on racing/freestyle quads), the log has no position data, so the globe is unavailable — but all the telemetry charts still render.</dd>
+<dt>Are my logs or my flying-field location uploaded anywhere?</dt>
+<dd>No. All parsing is done locally in your browser with WebAssembly. The CSV — including any GPS coordinates of your field — never leaves your computer.</dd>
+<dt>Which EdgeTX and OpenTX versions are supported?</dt>
+<dd>The viewer reads the standard EdgeTX and OpenTX telemetry CSV format written to the SD card, so it isn't tied to a specific firmware version. It reads whichever sensor columns your radio recorded.</dd>
+<dt>Can I view blackbox logs from a flight controller here too?</dt>
+<dd>Yes, but those are a different format. For Betaflight or iNAV blackbox files see the <a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a> and <a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV blackbox viewer</a> pages.</dd>
+</dl>
+  <h2>Related</h2>
+<ul class="related">
+<li><a href="https://www.narenana.com/log-viewer/">Open the RC Log Viewer</a></li>
+<li><a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a></li>
+<li><a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV blackbox viewer</a></li>
+<li><a href="https://www.narenana.com/">Free browser tools for RC pilots</a></li>
+</ul>
+</main>
+<footer>
+  <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> ·
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> ·
+  <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
+  Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
+  alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
+</footer>
+</body>
+</html>

@@ -1,0 +1,68 @@
+{
+  "slug": "enable-blackbox-inav",
+  "title": "How to Enable Blackbox in iNAV (Step-by-Step)",
+  "metaDescription": "Enable Blackbox in iNAV Configurator: open the Blackbox tab, set the device to onboard flash or SD, pick a rate, fly and export the log to view in 3D.",
+  "h1": "How to Enable Blackbox in iNAV Configurator",
+  "ogTitle": "How to Enable Blackbox in iNAV, Step by Step",
+  "ogDescription": "Turn on Blackbox in iNAV Configurator, log to onboard flash or SD, keep GPS configured, then replay your flight in 3D — logs stay on your machine.",
+  "introHtml": "<p>To enable Blackbox in iNAV, connect your flight controller to iNAV Configurator, make sure the Blackbox feature is on in the Configuration tab, then open the <strong>Blackbox tab</strong>, set the logging device to <strong>onboard flash</strong> or an <strong>SD card</strong>, and choose a logging rate. Save and reboot, then arm and fly — the log records to the device you picked.</p><p>iNAV logs have one advantage over most Betaflight logs: with a GPS module fitted and configured, iNAV records position, so the flight can replay as a real path over a 3D satellite globe. The setup for that is covered below.</p>",
+  "sections": [
+    {
+      "heading": "Enable Blackbox in iNAV Configurator, step by step",
+      "html": "<p>Plug the flight controller into your computer over USB and connect in iNAV Configurator, then:</p><ol><li>Open the <strong>Configuration</strong> tab and confirm the <strong>Blackbox</strong> feature is enabled. If you just turned it on, <strong>Save and Reboot</strong>.</li><li>Open the <strong>Blackbox</strong> tab.</li><li>Set the <strong>logging device</strong> to <strong>Onboard flash</strong> (the dataflash chip on the board) or <strong>SD card</strong> if your FC has a card slot.</li><li>Set the <strong>logging rate</strong> — higher rate captures more detail but fills storage faster (more on that below).</li><li>Click <strong>Save</strong> in the Blackbox tab.</li></ol><p>That's the whole enable step. Nothing logs until the craft is armed, so you can arm on the bench for a quick test or wait until you're at the field.</p>"
+    },
+    {
+      "heading": "Onboard flash vs SD card, and picking a rate",
+      "html": "<p><strong>Onboard flash</strong> is a small chip soldered to the FC. It's convenient (nothing to insert) but limited — often just a few minutes of high-rate logging — so you download it over USB and erase it between sessions. <strong>SD card</strong> holds far more, records as separate files per flight, and you just pull the card to grab them.</p><p>On the logging rate: a higher rate gives smoother traces and better resolution on fast events like a bounce or a desync, but it eats storage quickly on onboard flash. For general flight review and GPS replay a moderate rate is plenty; bump it up only when you're chasing something that happens in a fraction of a second. If you're logging to flash, check the free-space readout in the Blackbox tab before you go fly.</p>"
+    },
+    {
+      "heading": "Configure GPS so the 3D globe works",
+      "html": "<p>The 3D satellite globe needs GPS coordinates in the log, and iNAV only writes them if a GPS module is fitted and configured. To get position into your log:</p><ul><li>Assign the GPS to a UART in the <strong>Ports</strong> tab.</li><li>Enable the <strong>GPS</strong> feature and set the correct protocol in the <strong>Configuration</strong> tab.</li><li>Before you fly, wait outside until you have a solid <strong>3D fix</strong> (enough satellites). If iNAV never gets a fix, there are no coordinates to log and the globe can't be drawn.</li></ul><p>With a fix, an iNAV log replays as a real flight path over satellite imagery, with chase, tail, orbit, and top-down cameras following the aircraft. Even without GPS, the telemetry bar and every synced chart (attitude, altitude and vertical speed, speed and heading, battery, signal, RC inputs) still work — you just lose the map. Betaflight quads are usually the no-GPS case; see the <a href=\"https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/\">Betaflight blackbox guide</a> for that path.</p>"
+    },
+    {
+      "heading": "Fly, then export and open the log",
+      "html": "<p>After the flight, get the log off the craft:</p><ul><li><strong>SD card:</strong> power down, pull the card, and copy the log files — iNAV writes a numbered log file per flight with a <code>.txt</code> extension (the contents are binary, not plain text).</li><li><strong>Onboard flash:</strong> reconnect in Configurator, open the Blackbox tab, and use <strong>Save flash to file</strong> to download the dataflash. Erase it afterward to free space for next time.</li></ul><p>Then open <a href=\"https://www.narenana.com/log-viewer/inav-blackbox-viewer/\">RC Log Viewer</a> and drag the file in. It accepts iNAV blackbox logs (<code>.bbl</code>, <code>.bfl</code>, or <code>.txt</code>) and parses them in your browser with WebAssembly — nothing is uploaded, so the GPS coordinates of your flying field never leave your machine. Want to see the result before you fly? Open a <a href=\"https://www.narenana.com/log-viewer/?sample=fixed-wing&autoplay=1\">GPS-equipped sample flight in 3D</a>.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "Do I need an SD card, or can iNAV log to the board itself?",
+      "a": "Either. If your flight controller has an onboard dataflash chip you can log to it with no card, then download over USB and erase between sessions. If the FC has an SD slot, an SD card holds much more and stores one file per flight. Pick whichever your board supports in the Blackbox tab's logging device dropdown."
+    },
+    {
+      "q": "Why doesn't my iNAV log show the 3D globe or map?",
+      "a": "The globe needs GPS coordinates in the log. If your craft had no GPS module, or GPS never reached a 3D fix before you flew, there are no coordinates to plot. Assign GPS to a UART in Ports, enable the GPS feature in Configuration, and wait for a fix outside before flying. The telemetry bar and charts still work without GPS — only the map is unavailable."
+    },
+    {
+      "q": "What file does iNAV produce, and can I open it directly?",
+      "a": "On an SD card, iNAV writes one numbered log file per flight with a .txt extension. From onboard flash, you save the dataflash to a file from the Blackbox tab. RC Log Viewer opens iNAV blackbox logs directly as .bbl, .bfl, or .txt — just drag the file in, no conversion or decode step needed."
+    },
+    {
+      "q": "What logging rate should I set?",
+      "a": "A higher rate records more detail but fills storage faster, which matters most on small onboard flash. For normal flight review and GPS replay a moderate rate is plenty. Raise it only when you're investigating something very fast, like a desync or a hard bounce, where extra resolution helps."
+    },
+    {
+      "q": "Does enabling Blackbox affect flight performance?",
+      "a": "Logging to onboard flash or an SD card runs in the background and has negligible effect on flight behavior. It's a good idea to leave Blackbox on so you always have a log to review after a rough flight or a crash."
+    },
+    {
+      "q": "Are my logs uploaded anywhere when I view them?",
+      "a": "No. RC Log Viewer is 100% client-side — logs are parsed in your browser with WebAssembly and never leave your machine. Since blackbox logs embed the GPS location of your flying field, keeping parsing local means those coordinates stay private. No account is required."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "Open your iNAV log in the browser viewer",
+      "href": "https://www.narenana.com/log-viewer/inav-blackbox-viewer/"
+    },
+    {
+      "text": "How to read a blackbox log",
+      "href": "https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/"
+    },
+    {
+      "text": "How to enable Blackbox in Betaflight",
+      "href": "https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/"
+    }
+  ],
+  "kind": "guide"
+}

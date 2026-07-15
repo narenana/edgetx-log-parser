@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to Enable Blackbox in Betaflight</title>
+<meta name="description" content="Enable Betaflight Blackbox in the Configurator: pick a logging device (flash/SD), set a rate, arm and fly, then download the .bbl and read the charts." />
+<meta name="author" content="narenana" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/" />
+<link rel="icon" type="image/jpeg" href="https://www.narenana.com/log-viewer/narenana.jpg" sizes="200x200" />
+<link rel="icon" type="image/svg+xml" href="https://www.narenana.com/log-viewer/favicon.svg" />
+<link rel="apple-touch-icon" href="https://www.narenana.com/log-viewer/narenana.jpg" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="narenana" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:url" content="https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/" />
+<meta property="og:title" content="Enable Blackbox in Betaflight (step by step)" />
+<meta property="og:description" content="Turn on Blackbox logging in Betaflight Configurator, choose onboard flash or SD, fly, then download the .bbl and open it in a free browser viewer." />
+<meta property="og:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Enable Blackbox in Betaflight (step by step)" />
+<meta name="twitter:description" content="Turn on Blackbox logging in Betaflight Configurator, choose onboard flash or SD, fly, then download the .bbl and open it in a free browser viewer." />
+<meta name="twitter:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/#page",
+      "name": "How to Enable Blackbox in Betaflight",
+      "headline": "How to enable Blackbox in Betaflight and download your log",
+      "description": "Enable Betaflight Blackbox in the Configurator: pick a logging device (flash/SD), set a rate, arm and fly, then download the .bbl and read the charts.",
+      "url": "https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/",
+      "inLanguage": "en",
+      "image": "https://www.narenana.com/log-viewer/og-card.jpg",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "RC Log Viewer",
+        "url": "https://www.narenana.com/log-viewer/"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "narenana",
+          "item": "https://www.narenana.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "RC Log Viewer",
+          "item": "https://www.narenana.com/log-viewer/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Guides",
+          "item": "https://www.narenana.com/log-viewer/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "How to enable Blackbox in Betaflight and download your log",
+          "item": "https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f5f7fb;color:#2c3e5c;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+  a{color:#2272d8}
+  .topbar{border-bottom:1px solid #e2e7f0;background:#fff}
+  .topbar .in{max-width:820px;margin:0 auto;padding:12px 24px;display:flex;
+    gap:16px;align-items:center;font-size:14px}
+  .topbar .brand{font-weight:700;color:#0f1a2c;text-decoration:none}
+  .topbar .sp{flex:1}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px}
+  .crumbs{font-size:13px;color:#5a6b8c;margin:0 0 18px}
+  h1{font-size:30px;line-height:1.2;color:#0f1a2c;margin:0 0 10px}
+  .lede{font-size:16px;color:#3a4c70;margin:0 0 22px}
+  h2{font-size:19px;color:#0f1a2c;margin:30px 0 8px}
+  p,li{font-size:15px;margin:0 0 10px}
+  ol,ul{padding-left:22px;margin:0 0 10px}
+  table{border-collapse:collapse;font-size:14px;margin:8px 0 12px;width:100%}
+  th,td{border:1px solid #d7dde8;padding:7px 12px;text-align:left;vertical-align:top}
+  th{background:#eef2f9;color:#0f1a2c}
+  code{background:#eef2f9;border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .cta{display:inline-block;margin:8px 0 4px;padding:11px 20px;border-radius:8px;
+    background:#2272d8;color:#fff;font-weight:600;text-decoration:none}
+  .faq dt{font-weight:600;color:#0f1a2c;margin-top:14px}
+  .faq dd{margin:2px 0 0}
+  .related{margin-top:8px}
+  .related li{margin-bottom:4px}
+  footer{max-width:820px;margin:0 auto;padding:24px;border-top:1px solid #e2e7f0;
+    font-size:13px;color:#5a6b8c}
+  @media(prefers-color-scheme:dark){
+    body{background:#0e1117;color:#c4cfe0}
+    .topbar{background:#11151c;border-color:#232a36}
+    .topbar .brand,h1,h2,th,.faq dt{color:#e8eef8}
+    .lede{color:#a9b6cd}.crumbs{color:#8394b0}
+    a{color:#5aa2f0}
+    th{background:#1a2029}td,th{border-color:#2a323f}
+    code{background:#1a2029}
+    footer{border-color:#232a36;color:#8394b0}
+  }</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <a class="brand" href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a>
+  <span class="sp"></span>
+  <a href="https://www.narenana.com/log-viewer/">Open the viewer →</a>
+</div></div>
+<main class="wrap">
+  <p class="crumbs"><a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> › <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> › How to enable Blackbox in Betaflight and download your log</p>
+  <h1>How to enable Blackbox in Betaflight and download your log</h1>
+  <div class="lede"><p>To enable Blackbox in Betaflight: open <strong>Betaflight Configurator</strong>, go to the <strong>Blackbox</strong> tab, set the <strong>Blackbox logging device</strong> to your onboard flash chip or SD card, choose a logging rate, and click <strong>Save</strong>. Then arm and fly. Afterward, come back to the Blackbox tab, hit <strong>Download</strong>, and save the <code>.bbl</code> file.</p><p>That log holds gyro, PID, RC command, motor and battery data at a high sample rate. Most racing and freestyle quads log with <strong>no GPS</strong>, so a 3D map usually is not available — but every telemetry channel and synced chart still works in the <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>.</p></div>
+  <p><a class="cta" href="https://www.narenana.com/log-viewer/">Open a log in the browser →</a></p>
+  <h2>Turn on logging in the Blackbox tab</h2>
+<p>Connect your flight controller to Betaflight Configurator over USB, then open the <strong>Blackbox</strong> tab in the left menu. There are three things to set:</p><ol><li><strong>Blackbox logging device</strong> — choose where the log is written. If your FC has an onboard flash chip, pick <code>Onboard flash</code>. If it has an SD card slot, pick <code>SD card</code>. If you only stream Blackbox to an external device over serial, choose <code>Serial</code>, but flash/SD is by far the most common.</li><li><strong>Blackbox logging rate</strong> — this is the fraction of the PID loop that gets logged, shown as a ratio like <code>1/1</code>, <code>1/2</code>, or <code>1/4</code>. <code>1/2</code> is a sensible default that captures clean gyro/PID traces without filling flash too fast. Drop to <code>1/4</code> if you have a small flash chip or want longer flights per log.</li><li><strong>Debug mode</strong> — leave it at <code>NONE</code> for normal PID/filter review. Set a specific debug mode (for example a gyro or RPM filter debug) only when you are chasing one particular issue, because it repurposes the debug channels for that data.</li></ol><p>Click <strong>Save</strong> when done. Nothing is logged until this is set and the quad is armed.</p>
+<h2>Make sure there is room to log</h2>
+<p>Onboard flash is small — often just a few megabytes — so it fills fast, especially at <code>1/1</code> or <code>1/2</code>. Before a session:</p><ul><li>Check the <strong>Used space</strong> readout on the Blackbox tab. If it is near full, download anything you want to keep, then click <strong>Erase Flash</strong> to clear it.</li><li>An SD card gives you far more room and longer continuous logs than a flash chip, if your board has a slot.</li><li>Higher logging rate = more detail but shorter recording time per megabyte. Pick the rate that fits how long your flights are.</li></ul><p>Betaflight logs continuously while armed and stops on disarm, so each arm/disarm cycle is one log segment.</p>
+<h2>Arm, fly, then download the .bbl</h2>
+<p>Once logging is configured, just fly normally — logging starts automatically on arm. After you land and disarm:</p><ol><li>Plug the FC back into USB and open Betaflight Configurator (do not erase yet).</li><li>Go to the <strong>Blackbox</strong> tab and click <strong>Download</strong>. On SD-card boards you can also pull the card and copy the file directly.</li><li>Save the file — Betaflight writes it as a <code>.bbl</code>. A single file can hold several arm/disarm segments concatenated from one session. Some tools also produce <code>.bfl</code> or <code>.txt</code> variants; all three are the same blackbox format.</li></ol><p>Keep the file somewhere you can find it — that is the file you will open to review the flight.</p>
+<h2>Open the .bbl to check it recorded</h2>
+<p>To confirm the log came out clean, drop the <code>.bbl</code> straight into the <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>. It parses the file locally in your browser with WebAssembly — the log is never uploaded, which matters because a blackbox file embeds the GPS coordinates of your flying field whenever GPS is present. No account, nothing to install.</p><p>The viewer reads Betaflight <strong>blackbox up to 4.5.x</strong>. If your quad has <strong>no GPS</strong> — typical for racing and freestyle builds — the 3D globe is unavailable, but the telemetry bar and every synced chart still work. For what each trace actually means once the log is open, see <a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">how to read a blackbox log</a>, or open the <a href="https://www.narenana.com/log-viewer/?sample=quad">quad sample log</a> to poke around first.</p>
+  <h2>Frequently asked questions</h2>
+<dl class="faq">
+<dt>Where is the Blackbox setting in Betaflight?</dt>
+<dd>In Betaflight Configurator, click the Blackbox tab in the left-hand menu. That is where you set the logging device, logging rate, and debug mode, and where you later download or erase logs.</dd>
+<dt>What logging rate should I use?</dt>
+<dd>1/2 is a good default — it captures clean gyro and PID traces without filling flash too quickly. Use 1/4 for a small flash chip or longer flights, or 1/1 for maximum detail if you have SD-card space.</dd>
+<dt>Why is there no map when I open my Betaflight log?</dt>
+<dd>Most racing and freestyle quads have no GPS module, so the log contains no coordinates and the 3D globe can't be drawn. The telemetry bar and every synced chart still work. If you fly a build with GPS, position data will be present.</dd>
+<dt>What file does Betaflight save, and what extension?</dt>
+<dd>Betaflight writes a blackbox log with the .bbl extension. You may also see .bfl or .txt variants from some tools — they are the same blackbox format and all open in the viewer.</dd>
+<dt>Do I need to set a debug mode?</dt>
+<dd>No. Leave debug mode at NONE for normal PID and filter review. Only select a specific debug mode when you are troubleshooting one particular thing, since it repurposes the debug channels for that data.</dd>
+<dt>Is my flying-field location safe when I open the log?</dt>
+<dd>Yes. RC Log Viewer parses the file entirely in your browser — nothing is uploaded. If GPS coordinates are in the log, they never leave your machine.</dd>
+</dl>
+  <h2>Related</h2>
+<ul class="related">
+<li><a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a></li>
+<li><a href="https://www.narenana.com/log-viewer/open-bbl-file/">Open a .bbl file</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">How to read a blackbox log</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/">Analyze a drone crash log</a></li>
+</ul>
+</main>
+<footer>
+  <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> ·
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> ·
+  <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
+  Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
+  alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
+</footer>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to Enable SD Card Logging on EdgeTX</title>
+<meta name="description" content="Enable SD-card telemetry logging on EdgeTX/OpenTX: add an &quot;SD Logs&quot; Special Function on a switch, set a log rate, then copy the CSV from /LOGS." />
+<meta name="author" content="narenana" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://www.narenana.com/log-viewer/guides/edgetx-sd-card-logging/" />
+<link rel="icon" type="image/jpeg" href="https://www.narenana.com/log-viewer/narenana.jpg" sizes="200x200" />
+<link rel="icon" type="image/svg+xml" href="https://www.narenana.com/log-viewer/favicon.svg" />
+<link rel="apple-touch-icon" href="https://www.narenana.com/log-viewer/narenana.jpg" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="narenana" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:url" content="https://www.narenana.com/log-viewer/guides/edgetx-sd-card-logging/" />
+<meta property="og:title" content="Enable EdgeTX SD Card Logging in 5 Minutes" />
+<meta property="og:description" content="Add an &quot;SD Logs&quot; Special Function to a switch, pick a log rate, fly, then copy the CSV from your radio's /LOGS folder and open it in a free browser viewer." />
+<meta property="og:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Enable EdgeTX SD Card Logging in 5 Minutes" />
+<meta name="twitter:description" content="Add an &quot;SD Logs&quot; Special Function to a switch, pick a log rate, fly, then copy the CSV from your radio's /LOGS folder and open it in a free browser viewer." />
+<meta name="twitter:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://www.narenana.com/log-viewer/guides/edgetx-sd-card-logging/#page",
+      "name": "How to Enable SD Card Logging on EdgeTX",
+      "headline": "How to enable SD card logging on EdgeTX (and OpenTX)",
+      "description": "Enable SD-card telemetry logging on EdgeTX/OpenTX: add an \"SD Logs\" Special Function on a switch, set a log rate, then copy the CSV from /LOGS.",
+      "url": "https://www.narenana.com/log-viewer/guides/edgetx-sd-card-logging/",
+      "inLanguage": "en",
+      "image": "https://www.narenana.com/log-viewer/og-card.jpg",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "RC Log Viewer",
+        "url": "https://www.narenana.com/log-viewer/"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "narenana",
+          "item": "https://www.narenana.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "RC Log Viewer",
+          "item": "https://www.narenana.com/log-viewer/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Guides",
+          "item": "https://www.narenana.com/log-viewer/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "How to enable SD card logging on EdgeTX (and OpenTX)",
+          "item": "https://www.narenana.com/log-viewer/guides/edgetx-sd-card-logging/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f5f7fb;color:#2c3e5c;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+  a{color:#2272d8}
+  .topbar{border-bottom:1px solid #e2e7f0;background:#fff}
+  .topbar .in{max-width:820px;margin:0 auto;padding:12px 24px;display:flex;
+    gap:16px;align-items:center;font-size:14px}
+  .topbar .brand{font-weight:700;color:#0f1a2c;text-decoration:none}
+  .topbar .sp{flex:1}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px}
+  .crumbs{font-size:13px;color:#5a6b8c;margin:0 0 18px}
+  h1{font-size:30px;line-height:1.2;color:#0f1a2c;margin:0 0 10px}
+  .lede{font-size:16px;color:#3a4c70;margin:0 0 22px}
+  h2{font-size:19px;color:#0f1a2c;margin:30px 0 8px}
+  p,li{font-size:15px;margin:0 0 10px}
+  ol,ul{padding-left:22px;margin:0 0 10px}
+  table{border-collapse:collapse;font-size:14px;margin:8px 0 12px;width:100%}
+  th,td{border:1px solid #d7dde8;padding:7px 12px;text-align:left;vertical-align:top}
+  th{background:#eef2f9;color:#0f1a2c}
+  code{background:#eef2f9;border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .cta{display:inline-block;margin:8px 0 4px;padding:11px 20px;border-radius:8px;
+    background:#2272d8;color:#fff;font-weight:600;text-decoration:none}
+  .faq dt{font-weight:600;color:#0f1a2c;margin-top:14px}
+  .faq dd{margin:2px 0 0}
+  .related{margin-top:8px}
+  .related li{margin-bottom:4px}
+  footer{max-width:820px;margin:0 auto;padding:24px;border-top:1px solid #e2e7f0;
+    font-size:13px;color:#5a6b8c}
+  @media(prefers-color-scheme:dark){
+    body{background:#0e1117;color:#c4cfe0}
+    .topbar{background:#11151c;border-color:#232a36}
+    .topbar .brand,h1,h2,th,.faq dt{color:#e8eef8}
+    .lede{color:#a9b6cd}.crumbs{color:#8394b0}
+    a{color:#5aa2f0}
+    th{background:#1a2029}td,th{border-color:#2a323f}
+    code{background:#1a2029}
+    footer{border-color:#232a36;color:#8394b0}
+  }</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <a class="brand" href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a>
+  <span class="sp"></span>
+  <a href="https://www.narenana.com/log-viewer/">Open the viewer →</a>
+</div></div>
+<main class="wrap">
+  <p class="crumbs"><a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> › <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> › How to enable SD card logging on EdgeTX (and OpenTX)</p>
+  <h1>How to enable SD card logging on EdgeTX (and OpenTX)</h1>
+  <div class="lede"><p>To enable SD-card logging on EdgeTX or OpenTX, add a <strong>Special Function</strong> to your model, set its action to <strong>SD Logs</strong>, bind it to a switch, and give it a log rate (1.0s is a good default). Flip that switch and your radio writes a timestamped CSV to the <code>/LOGS</code> folder on its SD card. Every telemetry sensor your model receives becomes a column in that file.</p><p>One thing to know up front: the log only contains what your telemetry actually sends. If you want GPS position (and a 3D map afterward), your model needs a GPS sensor reporting to the radio. No GPS sensor means no coordinates in the CSV.</p></div>
+  <p><a class="cta" href="https://www.narenana.com/log-viewer/">Open a log in the browser →</a></p>
+  <h2>Step-by-step: add the SD Logs Special Function</h2>
+<p>This lives per-model, so set it on the model you actually fly. On the radio:</p><ol><li>Long-press <strong>MENU</strong> (or the model icon) to open the model setup pages, then page across to <strong>SPECIAL FUNCTIONS</strong> (older OpenTX calls it <em>Special Functions</em> too).</li><li>Pick an empty <code>SF</code> slot. For the trigger, choose a switch — a spare 2- or 3-position toggle is ideal (e.g. <code>SA</code>). You can also use <code>ON</code> if you want it always logging while the model is on.</li><li>Set the action to <strong>SD Logs</strong>.</li><li>Set the <strong>log rate</strong> (the value next to the action). This is the sample interval in seconds — <code>1.0</code> is a sensible default; <code>0.5</code> or <code>0.2</code> gives finer resolution at the cost of larger files.</li><li>Make sure the function is enabled (the checkbox/tick at the end of the row).</li></ol><p>When the switch is active, the radio logs. When it's off, it stops and closes the file.</p>
+<h2>What actually ends up in the CSV</h2>
+<p>EdgeTX logs whatever telemetry sensors are currently discovered for that model. So the columns you get depend entirely on your hardware and link:</p><ul><li><strong>Always present:</strong> a date and time column, plus timestamp.</li><li><strong>Link stats</strong> (RSSI/LQ, RxBt, etc.) if you run a telemetry-capable link like ELRS or Crossfire.</li><li><strong>Flight-controller data</strong> (attitude, altitude, current, cell voltages) if your FC passes telemetry back over MSP/CRSF.</li><li><strong>GPS latitude/longitude, altitude, speed and heading</strong> only if a GPS sensor is reporting — either a standalone GPS telemetry sensor or an FC feeding GPS up the link.</li></ul><p>If a sensor isn't in your telemetry screen, it won't be in the log. A quick tip: before flying, go to the telemetry page and <strong>Discover new sensors</strong> so everything is registered first. If GPS never shows up there, the CSV won't have position and the 3D globe in the viewer will be unavailable — but every other chart still works.</p>
+<h2>Copy the CSV off the SD card</h2>
+<p>Logs are written to the <code>/LOGS</code> folder at the root of the radio's SD card, named per model with the date, for example <code>MyWing-2026-07-15.csv</code>. To get the file:</p><ul><li><strong>USB mass storage:</strong> plug the radio into your computer with a USB-C/USB cable and, on the radio, choose the <em>USB Storage (SD)</em> option when prompted. The SD card mounts as a drive — open <code>/LOGS</code> and copy the CSV.</li><li><strong>Card reader:</strong> or just pop the microSD out and read it directly.</li></ul><p>Each flight session appends to that model's daily file, so one CSV can hold several flights. That's normal — the viewer's timeline lets you scrub between them.</p>
+<h2>After the flight: open your CSV</h2>
+<p>Once you have the CSV, open it in the <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>. Parsing happens entirely in your browser, so the file — including the GPS coordinates of your flying field — never leaves your machine. You get synced charts and a scrubbable timeline; if the log has GPS columns, you also get a 3D flight replay on a satellite globe.</p><p>For the full tour of what the viewer does with an EdgeTX CSV, see the <a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX log viewer</a> page, or open the <a href="https://www.narenana.com/log-viewer/?sample=fixed-wing&autoplay=1">fixed-wing demo</a> to see it in motion.</p>
+  <h2>Frequently asked questions</h2>
+<dl class="faq">
+<dt>Why is my EdgeTX log empty or missing columns?</dt>
+<dd>A CSV only records the telemetry sensors your radio has discovered. If a value (voltage, GPS, altitude) isn't on your telemetry screen, it won't be logged. Go to the telemetry page and run Discover new sensors before flying, and make sure your link actually sends that data back.</dd>
+<dt>Do I need GPS for SD-card logging to work?</dt>
+<dd>No. Logging works with whatever telemetry you have. GPS only matters if you want map position and 3D replay afterward — that requires a GPS sensor reporting to the radio. Without it you still get every non-position chart (attitude, altitude, battery, signal, RC inputs).</dd>
+<dt>What log rate should I use?</dt>
+<dd>1.0 second is a solid default and keeps files small. Drop to 0.5s or 0.2s if you want finer detail for tuning or crash analysis; the tradeoff is larger CSV files. The rate is the number next to the SD Logs action in the Special Function.</dd>
+<dt>Where does EdgeTX save the log files?</dt>
+<dd>In the /LOGS folder at the root of the radio's SD card. Files are named per model with the date, and multiple flights on the same day append to the same file. Copy them off via USB storage mode or a microSD card reader.</dd>
+<dt>Does this work on OpenTX too?</dt>
+<dd>Yes. The workflow is the same on OpenTX: add a Special Function with the SD Logs action, bind it to a switch, set a rate. Menu labels differ slightly between versions but the concept is identical, and the CSV format opens in the same viewer.</dd>
+<dt>Can I log automatically without flipping a switch?</dt>
+<dd>Yes — set the Special Function trigger to ON instead of a switch, and it logs whenever the model is powered. Binding it to a switch just gives you manual control over when logging starts and stops, which keeps files tidy.</dd>
+</dl>
+  <h2>Related</h2>
+<ul class="related">
+<li><a href="https://www.narenana.com/log-viewer/">RC Log Viewer — open your EdgeTX CSV</a></li>
+<li><a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX log viewer</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">How to read a blackbox log</a></li>
+<li><a href="https://www.narenana.com/">Free browser tools for RC pilots</a></li>
+</ul>
+</main>
+<footer>
+  <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> ·
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> ·
+  <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
+  Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
+  alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
+</footer>
+</body>
+</html>

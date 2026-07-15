@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Analyze a Drone Crash Log: Step-by-Step</title>
+<meta name="description" content="Analyze a drone crash log in your browser: scrub to impact, compare RC inputs vs attitude, check battery sag, RSSI loss and failsafe. Free, private." />
+<meta name="author" content="narenana" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/" />
+<link rel="icon" type="image/jpeg" href="https://www.narenana.com/log-viewer/narenana.jpg" sizes="200x200" />
+<link rel="icon" type="image/svg+xml" href="https://www.narenana.com/log-viewer/favicon.svg" />
+<link rel="apple-touch-icon" href="https://www.narenana.com/log-viewer/narenana.jpg" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="narenana" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:url" content="https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/" />
+<meta property="og:title" content="Analyze a Drone Crash Log the Right Way" />
+<meta property="og:description" content="A calm, ordered crash-analysis workflow using RC Log Viewer: scrub to the last moment, read inputs vs attitude, and rule out battery, link loss, and failsafe." />
+<meta property="og:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Analyze a Drone Crash Log the Right Way" />
+<meta name="twitter:description" content="A calm, ordered crash-analysis workflow using RC Log Viewer: scrub to the last moment, read inputs vs attitude, and rule out battery, link loss, and failsafe." />
+<meta name="twitter:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/#page",
+      "name": "Analyze a Drone Crash Log: Step-by-Step",
+      "headline": "How to analyze a drone crash log",
+      "description": "Analyze a drone crash log in your browser: scrub to impact, compare RC inputs vs attitude, check battery sag, RSSI loss and failsafe. Free, private.",
+      "url": "https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/",
+      "inLanguage": "en",
+      "image": "https://www.narenana.com/log-viewer/og-card.jpg",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "RC Log Viewer",
+        "url": "https://www.narenana.com/log-viewer/"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "narenana",
+          "item": "https://www.narenana.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "RC Log Viewer",
+          "item": "https://www.narenana.com/log-viewer/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Guides",
+          "item": "https://www.narenana.com/log-viewer/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "How to analyze a drone crash log",
+          "item": "https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f5f7fb;color:#2c3e5c;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+  a{color:#2272d8}
+  .topbar{border-bottom:1px solid #e2e7f0;background:#fff}
+  .topbar .in{max-width:820px;margin:0 auto;padding:12px 24px;display:flex;
+    gap:16px;align-items:center;font-size:14px}
+  .topbar .brand{font-weight:700;color:#0f1a2c;text-decoration:none}
+  .topbar .sp{flex:1}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px}
+  .crumbs{font-size:13px;color:#5a6b8c;margin:0 0 18px}
+  h1{font-size:30px;line-height:1.2;color:#0f1a2c;margin:0 0 10px}
+  .lede{font-size:16px;color:#3a4c70;margin:0 0 22px}
+  h2{font-size:19px;color:#0f1a2c;margin:30px 0 8px}
+  p,li{font-size:15px;margin:0 0 10px}
+  ol,ul{padding-left:22px;margin:0 0 10px}
+  table{border-collapse:collapse;font-size:14px;margin:8px 0 12px;width:100%}
+  th,td{border:1px solid #d7dde8;padding:7px 12px;text-align:left;vertical-align:top}
+  th{background:#eef2f9;color:#0f1a2c}
+  code{background:#eef2f9;border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .cta{display:inline-block;margin:8px 0 4px;padding:11px 20px;border-radius:8px;
+    background:#2272d8;color:#fff;font-weight:600;text-decoration:none}
+  .faq dt{font-weight:600;color:#0f1a2c;margin-top:14px}
+  .faq dd{margin:2px 0 0}
+  .related{margin-top:8px}
+  .related li{margin-bottom:4px}
+  footer{max-width:820px;margin:0 auto;padding:24px;border-top:1px solid #e2e7f0;
+    font-size:13px;color:#5a6b8c}
+  @media(prefers-color-scheme:dark){
+    body{background:#0e1117;color:#c4cfe0}
+    .topbar{background:#11151c;border-color:#232a36}
+    .topbar .brand,h1,h2,th,.faq dt{color:#e8eef8}
+    .lede{color:#a9b6cd}.crumbs{color:#8394b0}
+    a{color:#5aa2f0}
+    th{background:#1a2029}td,th{border-color:#2a323f}
+    code{background:#1a2029}
+    footer{border-color:#232a36;color:#8394b0}
+  }</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <a class="brand" href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a>
+  <span class="sp"></span>
+  <a href="https://www.narenana.com/log-viewer/">Open the viewer →</a>
+</div></div>
+<main class="wrap">
+  <p class="crumbs"><a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> › <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> › How to analyze a drone crash log</p>
+  <h1>How to analyze a drone crash log</h1>
+  <div class="lede"><p>To analyze a drone crash log, open the blackbox or CSV file in <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>, scrub the timeline to the last valid sample before impact, then work backwards through four questions: did the pilot command it, did the battery collapse, did the radio link drop, or did a mechanical or control failure take the aircraft away from the sticks? Reading those in order separates pilot error from a real hardware or link failure.</p><p>Everything runs in your browser. The log is parsed locally with WebAssembly and never uploaded, so the GPS coordinates of your field stay on your machine while you work.</p></div>
+  <p><a class="cta" href="https://www.narenana.com/log-viewer/">Open a log in the browser →</a></p>
+  <h2>Start at the end: scrub to the last valid sample</h2>
+<p>Load the file, then drag the timeline to the very end of the log and step backward frame by frame. The crash is almost never the last recorded row — logging usually stops a fraction of a second <strong>after</strong> control was already lost, so the useful evidence is in the seconds leading up to that point.</p><ol><li>Find where the data goes flat or garbage: altitude pinned, attitude frozen, or values dropping to zero. That is roughly the impact or the moment logging died.</li><li>Back up 3–5 seconds from there. This is your window of interest.</li><li>Use the event jumps (takeoff / RTH / landing) to sanity-check the overall flight shape before you zoom in — it tells you whether the craft was in normal flight, a return-to-home, or already descending.</li></ol><p>Keep the live telemetry bar visible while you scrub. Watching per-cell voltage, altitude, speed, heading, and the attitude/stick indicators move together is what turns a wall of numbers into a story.</p>
+<h2>Did the pilot command it? RC inputs vs attitude</h2>
+<p>This is the single most important comparison in a crash log, and it answers the question everyone actually wants answered: did the aircraft do what the pilot told it to, or did it stop responding?</p><p>Open the <strong>RC inputs</strong> chart and the <strong>attitude</strong> chart and read them side by side across your window of interest:</p><ul><li><strong>Inputs match attitude:</strong> stick goes hard over, the craft rolls/pitches to follow, and it flies into the ground. That points to pilot error, disorientation, or simply running out of altitude — not a failure.</li><li><strong>Inputs neutral, attitude diverging:</strong> sticks centered but the craft rolls or pitches away on its own. That is the fingerprint of a mechanical or control problem — a desync, a broken prop, a failing motor, or a tune that let go.</li><li><strong>Inputs frozen or snapping to a fixed position:</strong> the RC trace flat-lining or jumping to a held value usually means the link dropped and failsafe took over. Confirm that against the signal view (next section).</li></ul><p>On EdgeTX/OpenTX CSV the stick channels are logged as the radio saw them; on iNAV and Betaflight blackbox you are reading <code>rcCommand</code>, i.e. what the flight controller received. If the radio shows input but the FC never received it, the break is in the link.</p>
+<h2>Rule out battery sag, link loss, and failsafe</h2>
+<p>With the pilot-input question settled, rule out the two failures that masquerade as bad flying: a battery that collapsed under load, and a radio link that dropped.</p><p><strong>Battery.</strong> Open the battery chart and watch voltage across your window, especially under throttle. Healthy sag recovers when you unload. A hard punch-out that drops a cell far below its resting voltage and does not recover — or voltage falling off a cliff — means the pack (or a bad connection) gave up. On multi-cell logs, read per-cell voltage: one cell diving while the others hold is a dying or damaged cell.</p><p><strong>Signal and failsafe.</strong> Open the signal view and look at RSSI / link quality (RSSI dBm, LQ, or an RxLoss/rc-link flag depending on firmware). A cliff in link quality that lines up with your input-vs-attitude break is your answer: the craft stopped receiving, went to failsafe, and dropped or flew off. Cross-check the timing precisely — the link cliff should come <strong>before</strong> the attitude diverges, not after.</p><p>Do these in order. A voltage collapse and a link drop can look similar in the final second, but the chart that moves <em>first</em> is the cause.</p>
+<h2>Mechanical or control failure, and where it came down</h2>
+<p>If the sticks, battery, and link all read clean but attitude still departed from what the pilot commanded, you are left with a mechanical or control failure: a broken or thrown prop, a motor that lost thrust, a desync, or a tune that let go. The signature is the one you already found in the inputs-vs-attitude comparison — the craft rolling or pitching away while the RC inputs stayed neutral or actively fought it. Watch the <strong>altitude &amp; vertical speed</strong> chart alongside attitude to read how fast it came down and whether the descent was a controlled mush or a dead drop.</p><p><strong>Where it came down.</strong> If the log has GPS, the 3D replay on the satellite globe shows the flight path and where the trace ends — useful both for recovering a lost aircraft and for studying the geometry of the final moments from a chase or orbit camera. GPS availability depends on the log:</p><ul><li><strong>iNAV</strong> logs usually have GPS when a module is fitted, so the globe typically works.</li><li><strong>Betaflight</strong> racing and freestyle logs usually have <strong>no</strong> GPS — the globe is unavailable, but every chart above (RC inputs, attitude, altitude &amp; vertical speed, battery, signal) still works and is where the crash analysis actually happens.</li><li><strong>EdgeTX/OpenTX CSV</strong> shows position when a GPS telemetry sensor was logging.</li></ul><p>No GPS does not stop a crash investigation. The globe tells you <em>where</em>; the charts tell you <em>why</em>.</p>
+  <h2>Frequently asked questions</h2>
+<dl class="faq">
+<dt>What's the first thing to check in a crash log?</dt>
+<dd>Scrub to the last valid sample before the data goes flat, back up a few seconds, then compare RC inputs against attitude. That single comparison tells you whether the craft was following commands or had stopped responding, which decides everything you check next.</dd>
+<dt>How do I tell pilot error from an equipment failure?</dt>
+<dd>Put the RC inputs chart next to the attitude chart. If the aircraft's attitude follows the sticks into the ground, that's control error. If attitude diverges while inputs are neutral or frozen, it's a mechanical, link, or control failure — not the pilot.</dd>
+<dt>Can I analyze a crash from a Betaflight log with no GPS?</dt>
+<dd>Yes. Most Betaflight racing and freestyle logs have no GPS, so the 3D globe is unavailable, but the telemetry bar and every synced chart — RC inputs, attitude, altitude & vertical speed, battery, and signal — still work, and that's where crash analysis happens.</dd>
+<dt>How do I know if the battery caused the crash?</dt>
+<dd>Open the battery chart and watch voltage under load, and per-cell voltage on multi-cell logs. Sag that recovers when you unload throttle is normal; a hard drop that doesn't recover, or one cell diving while others hold, points at the pack or a bad connection.</dd>
+<dt>How can I spot a failsafe or link loss in the log?</dt>
+<dd>Open the signal view and look for a cliff in RSSI or link quality (dBm, LQ, or an rc-link/RxLoss flag depending on firmware). If that cliff comes right before the attitude diverges and the RC trace freezes or snaps to a held value, the link dropped and failsafe took over.</dd>
+<dt>Are my logs uploaded when I analyze them?</dt>
+<dd>No. RC Log Viewer parses everything in your browser with WebAssembly and never uploads the file. The GPS coordinates of your flying field, which are embedded in the log, stay entirely on your machine.</dd>
+</dl>
+  <h2>Related</h2>
+<ul class="related">
+<li><a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">How to read a blackbox log (field-by-field)</a></li>
+<li><a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a></li>
+<li><a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV blackbox viewer</a></li>
+<li><a href="https://www.narenana.com/log-viewer/">Open RC Log Viewer</a></li>
+</ul>
+</main>
+<footer>
+  <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> ·
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> ·
+  <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
+  Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
+  alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
+</footer>
+</body>
+</html>

@@ -1,0 +1,72 @@
+{
+  "slug": "open-bbl-file",
+  "title": "Open a BBL File: View Blackbox Logs Online",
+  "metaDescription": "A .bbl is a Betaflight/iNAV blackbox log. Open and view it free in your browser, no install and no upload. Just drag the file in.",
+  "h1": "How to open a .bbl file (Betaflight & iNAV blackbox logs)",
+  "ogTitle": "Open a .bbl File Online — Free Blackbox Log Viewer",
+  "ogDescription": "A .bbl file is a Betaflight or iNAV blackbox log. Drag it into RC Log Viewer to read it in-browser — no install, no upload, GPS stays local.",
+  "introHtml": "<p>To open a <code>.bbl</code> file, drag it into <a href=\"https://www.narenana.com/log-viewer/\">RC Log Viewer</a> in your browser — a <code>.bbl</code> is a <strong>blackbox log</strong>, the high-rate flight recording written by Betaflight or iNAV firmware. It parses locally with WebAssembly, so nothing is installed and the file is never uploaded. The same tool opens the related <code>.bfl</code> and <code>.txt</code> blackbox exports.</p><p>Double-clicking a <code>.bbl</code> does nothing because it isn't a document format — it's raw binary flight data with no default app registered to it. You need a viewer that decodes the blackbox stream, which is what this page walks through.</p>",
+  "sections": [
+    {
+      "heading": "What a .bbl file actually is",
+      "html": "<p>A <code>.bbl</code> (\"blackbox log\") is a binary recording of your flight controller's internal state, sampled hundreds to thousands of times per second. Depending on how you got it, the same data may carry a different extension:</p><ul><li><strong>.bbl</strong> — a blackbox log pulled off an onboard dataflash chip or SD card.</li><li><strong>.bfl</strong> — \"Betaflight log\", the same binary format under a different name.</li><li><strong>.txt</strong> — some blackbox captures land with a <code>.txt</code> extension (for example a log written over serial to an onboard flash or OpenLog). Despite the extension it is <em>not</em> plain text; opening it in Notepad shows garbled binary.</li></ul><p>All three are the same kind of blackbox stream and all three open the same way. A single <code>.bbl</code> can also contain more than one flight (several arm/disarm \"log sessions\" concatenated), and a good viewer will let you pick which one to look at.</p>"
+    },
+    {
+      "heading": "Open and view your .bbl online — no install, no upload",
+      "html": "<p>Open <a href=\"https://www.narenana.com/log-viewer/\">RC Log Viewer</a> and drop the file in:</p><ol><li>Go to <code>https://www.narenana.com/log-viewer/</code>.</li><li><strong>Drag your <code>.bbl</code> / <code>.bfl</code> / <code>.txt</code> file onto the page</strong> (or click to browse for it).</li><li>The blackbox stream is decoded in-browser and your telemetry appears — attitude, altitude and vertical speed, speed and heading, battery, signal, and RC inputs, all synced to a scrubbable timeline.</li></ol><p>Because parsing runs entirely client-side with WebAssembly, the file never leaves your machine. That matters for blackbox logs specifically: they embed the GPS coordinates of your flying field, and local parsing means those coordinates never get transmitted anywhere. You can also install the tool as an offline PWA, or grab the free desktop apps (Windows/macOS/Linux) from GitHub releases if you prefer opening logs without a browser tab.</p>"
+    },
+    {
+      "heading": "Which firmware made my .bbl?",
+      "html": "<p>Two firmwares write blackbox logs, and it changes what you'll see:</p><table><tr><td><strong>Betaflight</strong></td><td>Racing and freestyle multirotors. Logs are dense with gyro, PID, motor, and RC data. Most quads fly without a GPS module, so a Betaflight <code>.bbl</code> usually has <strong>no GPS</strong> — the 3D globe stays unavailable, but every telemetry chart and the live telemetry bar still work.</td></tr><tr><td><strong>iNAV</strong></td><td>Fixed-wing and GPS-equipped craft. When a GPS module is fitted (typical on iNAV), the log <strong>includes position</strong>, so you also get the 3D flight replay on a satellite globe with chase, tail, orbit, and top-down cameras.</td></tr></table><p>Not sure which you have? The blackbox header records the firmware type and revision, and RC Log Viewer reads it to decode the stream. As a rule of thumb: if it came off a quad tuned in Betaflight Configurator, it's Betaflight; if it came off a wing or a GPS build, it's likely iNAV. For a deeper walkthrough of each, see the <a href=\"https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/\">Betaflight blackbox viewer</a> and <a href=\"https://www.narenana.com/log-viewer/inav-blackbox-viewer/\">iNAV blackbox viewer</a> pages.</p>"
+    },
+    {
+      "heading": "Supported versions and limits",
+      "html": "<p>RC Log Viewer decodes <strong>iNAV blackbox up to 8.x</strong> and <strong>Betaflight blackbox up to 4.5.x</strong>. A few honest notes:</p><ul><li>A <code>.bbl</code> with no GPS frames won't produce a 3D map — that's a property of the log, not the viewer. The charts and telemetry bar still give you the full picture.</li><li>A <code>.txt</code> blackbox capture is still the same binary and opens normally — don't try to read it as text.</li><li>If your log came from an EdgeTX/OpenTX radio's SD card, that's a different, human-readable <strong>CSV</strong> format, not blackbox — open it with the <a href=\"https://www.narenana.com/log-viewer/edgetx-log-viewer/\">EdgeTX log viewer</a> instead.</li></ul>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "What program opens a .bbl file?",
+      "a": "A blackbox log viewer. You don't need to install anything — open RC Log Viewer at narenana.com/log-viewer and drag the .bbl in. It decodes Betaflight and iNAV blackbox logs in your browser."
+    },
+    {
+      "q": "Why does double-clicking my .bbl file do nothing?",
+      "a": "Because .bbl isn't a document format with a default app registered to it — it's raw binary flight data. Windows and macOS don't know what to open it with. You need a dedicated blackbox viewer to decode the stream."
+    },
+    {
+      "q": "Is .bfl or .txt the same as .bbl?",
+      "a": "Yes. .bfl is the same blackbox binary under a different name, and a .txt blackbox capture is a blackbox log despite the extension. All three open the same way in RC Log Viewer."
+    },
+    {
+      "q": "Do I have to upload my .bbl anywhere?",
+      "a": "No. RC Log Viewer parses the file locally in your browser with WebAssembly. The log — including the GPS coordinates of your flying field — never leaves your machine."
+    },
+    {
+      "q": "My .bbl has no map — why?",
+      "a": "The 3D globe needs GPS coordinates in the log. Betaflight quads usually fly without a GPS module, so their logs have no position data. The telemetry bar and every synced chart still work fully; iNAV logs with a GPS module do show the map."
+    },
+    {
+      "q": "How do I know if my log is from Betaflight or iNAV?",
+      "a": "The blackbox header records the firmware type, and RC Log Viewer reads it when decoding your log. Generally, logs off a quad are Betaflight and logs off a fixed-wing or GPS build are iNAV."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "Betaflight blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
+    },
+    {
+      "text": "iNAV blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/inav-blackbox-viewer/"
+    },
+    {
+      "text": "How to read a blackbox log",
+      "href": "https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/"
+    },
+    {
+      "text": "Open RC Log Viewer",
+      "href": "https://www.narenana.com/log-viewer/"
+    }
+  ],
+  "kind": "usecase"
+}

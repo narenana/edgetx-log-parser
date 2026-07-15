@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Betaflight Blackbox Viewer (Browser, No Install)</title>
+<meta name="description" content="Open Betaflight blackbox logs (.bbl/.bfl/.txt) in your browser. RC inputs, attitude, battery and signal charts for crash and tune review. Nothing uploaded." />
+<meta name="author" content="narenana" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/" />
+<link rel="icon" type="image/jpeg" href="https://www.narenana.com/log-viewer/narenana.jpg" sizes="200x200" />
+<link rel="icon" type="image/svg+xml" href="https://www.narenana.com/log-viewer/favicon.svg" />
+<link rel="apple-touch-icon" href="https://www.narenana.com/log-viewer/narenana.jpg" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="narenana" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:url" content="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/" />
+<meta property="og:title" content="Betaflight Blackbox Viewer in the Browser" />
+<meta property="og:description" content="Drop a Betaflight .bbl/.bfl/.txt log into your browser and get synced RC input, attitude, battery and signal charts. Parsed locally, no upload, no install." />
+<meta property="og:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Betaflight Blackbox Viewer in the Browser" />
+<meta name="twitter:description" content="Drop a Betaflight .bbl/.bfl/.txt log into your browser and get synced RC input, attitude, battery and signal charts. Parsed locally, no upload, no install." />
+<meta name="twitter:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/#page",
+      "name": "Betaflight Blackbox Viewer (Browser, No Install)",
+      "headline": "Betaflight blackbox viewer that runs in your browser",
+      "description": "Open Betaflight blackbox logs (.bbl/.bfl/.txt) in your browser. RC inputs, attitude, battery and signal charts for crash and tune review. Nothing uploaded.",
+      "url": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/",
+      "inLanguage": "en",
+      "image": "https://www.narenana.com/log-viewer/og-card.jpg",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "RC Log Viewer",
+        "url": "https://www.narenana.com/log-viewer/"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "narenana",
+          "item": "https://www.narenana.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "RC Log Viewer",
+          "item": "https://www.narenana.com/log-viewer/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Betaflight blackbox viewer that runs in your browser",
+          "item": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f5f7fb;color:#2c3e5c;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+  a{color:#2272d8}
+  .topbar{border-bottom:1px solid #e2e7f0;background:#fff}
+  .topbar .in{max-width:820px;margin:0 auto;padding:12px 24px;display:flex;
+    gap:16px;align-items:center;font-size:14px}
+  .topbar .brand{font-weight:700;color:#0f1a2c;text-decoration:none}
+  .topbar .sp{flex:1}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px}
+  .crumbs{font-size:13px;color:#5a6b8c;margin:0 0 18px}
+  h1{font-size:30px;line-height:1.2;color:#0f1a2c;margin:0 0 10px}
+  .lede{font-size:16px;color:#3a4c70;margin:0 0 22px}
+  h2{font-size:19px;color:#0f1a2c;margin:30px 0 8px}
+  p,li{font-size:15px;margin:0 0 10px}
+  ol,ul{padding-left:22px;margin:0 0 10px}
+  table{border-collapse:collapse;font-size:14px;margin:8px 0 12px;width:100%}
+  th,td{border:1px solid #d7dde8;padding:7px 12px;text-align:left;vertical-align:top}
+  th{background:#eef2f9;color:#0f1a2c}
+  code{background:#eef2f9;border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .cta{display:inline-block;margin:8px 0 4px;padding:11px 20px;border-radius:8px;
+    background:#2272d8;color:#fff;font-weight:600;text-decoration:none}
+  .faq dt{font-weight:600;color:#0f1a2c;margin-top:14px}
+  .faq dd{margin:2px 0 0}
+  .related{margin-top:8px}
+  .related li{margin-bottom:4px}
+  footer{max-width:820px;margin:0 auto;padding:24px;border-top:1px solid #e2e7f0;
+    font-size:13px;color:#5a6b8c}
+  @media(prefers-color-scheme:dark){
+    body{background:#0e1117;color:#c4cfe0}
+    .topbar{background:#11151c;border-color:#232a36}
+    .topbar .brand,h1,h2,th,.faq dt{color:#e8eef8}
+    .lede{color:#a9b6cd}.crumbs{color:#8394b0}
+    a{color:#5aa2f0}
+    th{background:#1a2029}td,th{border-color:#2a323f}
+    code{background:#1a2029}
+    footer{border-color:#232a36;color:#8394b0}
+  }</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <a class="brand" href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a>
+  <span class="sp"></span>
+  <a href="https://www.narenana.com/log-viewer/">Open the viewer →</a>
+</div></div>
+<main class="wrap">
+  <p class="crumbs"><a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> › Betaflight blackbox viewer that runs in your browser</p>
+  <h1>Betaflight blackbox viewer that runs in your browser</h1>
+  <div class="lede"><p><strong>RC Log Viewer is a browser-based Betaflight blackbox viewer:</strong> drop a <code>.bbl</code>, <code>.bfl</code>, or <code>.txt</code> log onto <a href="https://www.narenana.com/log-viewer/">the tool</a> and it decodes it in your browser, then draws synced charts for RC inputs, attitude (roll/pitch/yaw), battery voltage, altitude, and radio signal. Nothing installs and nothing uploads — the log is parsed locally with WebAssembly.</p><p>For most racing and freestyle quads the log has no GPS, so the 3D globe stays off. That's fine: crash and tune review lives in the telemetry bar and the charts, and those work on every Betaflight log regardless of GPS.</p></div>
+  <p><a class="cta" href="https://www.narenana.com/log-viewer/">Open a log in the browser →</a></p>
+  <h2>What you get from a Betaflight log (GPS or not)</h2>
+<p>Betaflight blackbox is mostly about what the flight controller was doing, not where it was. RC Log Viewer reads the record and gives you:</p><ul><li><strong>RC inputs</strong> — your stick commands over time, so you can line up a twitch or a crash with what you actually asked the quad to do.</li><li><strong>Attitude</strong> — roll, pitch, and yaw, so you can see oscillation, bounce-back, or a flip.</li><li><strong>Battery</strong> — pack voltage and per-cell voltage in the live telemetry bar, so you can spot a sag that browned out the FC mid-punch.</li><li><strong>Altitude &amp; vertical speed</strong> and <strong>signal</strong> — where the log includes them.</li></ul><p>Scrub the timeline and every chart plus the telemetry bar move together, so you read one moment across all channels at once. For a walkthrough of what each trace means, see <a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">how to read a blackbox log</a>.</p>
+<h2>Why most Betaflight logs skip the 3D globe</h2>
+<p>The 3D satellite replay needs real GPS coordinates in the log. Racing and freestyle quads usually fly without a GPS module, so a Betaflight blackbox from a typical quad has <strong>no position data</strong> — the globe is simply unavailable for that log. That's expected, not a failure of the file.</p><p>Everything else still works. The telemetry bar and all synced charts read fine from a GPS-less log, which is exactly what you want for tuning and crash review. If your quad <em>does</em> carry a GPS (a long-range or cruiser build), those coordinates get picked up and the globe becomes available. GPS-equipped and fixed-wing builds on iNAV are more likely to have full position — that's covered on the <a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV blackbox viewer</a> page.</p>
+<h2>Opening a .bbl, .bfl, or .txt file</h2>
+<p>Betaflight writes blackbox in a few shapes depending on where it was logged and how you pulled it off:</p><ul><li><code>.bbl</code> / <code>.bfl</code> — the raw binary blackbox, either from onboard dataflash or an SD card.</li><li><code>.txt</code> — a log some setups export; RC Log Viewer reads these too.</li></ul><p>Steps: open <a href="https://www.narenana.com/log-viewer/">the viewer</a>, then drag the file in (or click to browse). One thing to know about the format: a single <code>.bbl</code> can contain more than one arm/disarm session concatenated into the same file, so a big file is often several short flights back to back. If you're not sure which format you have or how to get the file off the quad, see <a href="https://www.narenana.com/log-viewer/guides/open-bbl-file/">how to open a .bbl file</a>.</p>
+<h2>How this differs from Betaflight Blackbox Explorer</h2>
+<p>The official Betaflight Blackbox Explorer is a desktop app you download and install. RC Log Viewer covers the common review workflow without any of that:</p><ul><li><strong>Nothing to install</strong> — it runs in the browser. There's also an installable PWA that works offline, plus free desktop builds for Windows, macOS, and Linux on GitHub releases if you prefer an app icon.</li><li><strong>Nothing uploaded</strong> — parsing happens on your machine with WebAssembly. When a GPS is fitted, your blackbox embeds the coordinates of your flying field; because nothing leaves your machine, that stays private.</li><li><strong>Core review data</strong> — synced RC input, attitude, battery, altitude, and signal charts with timeline scrubbing.</li></ul><p>It's a focused review tool, not a full PID-tuning suite, so reach for it when you want to quickly read a flight or a crash rather than run spectral analysis.</p>
+<h2>Reviewing a crash</h2>
+<p>For a suspected crash or desync, work backwards from the end of the log. Scrub to the last moments and read the channels together: did <strong>battery</strong> voltage sag hard right before things went wrong? Did <strong>RC input</strong> show a command the quad didn't follow (a sign of failsafe or a motor giving up)? Did <strong>attitude</strong> diverge from your stick input? Because the charts and telemetry bar are synced to one timeline, you can pin the exact instant and see every channel at once. There's a full method on <a href="https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/">analyzing a drone crash log</a>.</p>
+  <h2>Frequently asked questions</h2>
+<dl class="faq">
+<dt>Does the Betaflight blackbox viewer need GPS in the log?</dt>
+<dd>No. GPS is only needed for the optional 3D globe replay. Most racing and freestyle Betaflight logs have no GPS, and the telemetry bar plus every synced chart (RC inputs, attitude, battery, altitude, signal) still work fully.</dd>
+<dt>What file formats does it accept?</dt>
+<dd>Betaflight blackbox as .bbl, .bfl, or .txt. iNAV blackbox and EdgeTX/OpenTX CSV telemetry logs are also supported by the same viewer.</dd>
+<dt>Which Betaflight versions are supported?</dt>
+<dd>Betaflight blackbox up to 4.5.x. Logs are decoded in your browser with WebAssembly.</dd>
+<dt>Is my log uploaded anywhere?</dt>
+<dd>No. Parsing is 100% client-side, so the log never leaves your machine. That matters because your blackbox can embed the GPS coordinates of your flying field when a GPS module is fitted.</dd>
+<dt>How is this different from Betaflight Blackbox Explorer?</dt>
+<dd>Blackbox Explorer is a desktop app you install. RC Log Viewer runs in the browser (with an optional offline PWA and free desktop builds), uploads nothing, and gives you the core review charts for crash and tune analysis.</dd>
+<dt>My .bbl seems to hold several flights — can it read that?</dt>
+<dd>Yes. A single .bbl often concatenates multiple arm/disarm sessions into one file. The viewer decodes the file so you can review the logged flight data and scrub the timeline through it.</dd>
+</dl>
+  <h2>Related</h2>
+<ul class="related">
+<li><a href="https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/">How to enable blackbox logging in Betaflight</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/open-bbl-file/">How to open a .bbl file</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/">Analyze a drone crash log</a></li>
+<li><a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV blackbox viewer</a></li>
+</ul>
+</main>
+<footer>
+  <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> ·
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> ·
+  <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
+  Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
+  alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
+</footer>
+</body>
+</html>

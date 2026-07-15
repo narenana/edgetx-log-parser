@@ -1,0 +1,72 @@
+{
+  "slug": "edgetx-sd-card-logging",
+  "title": "How to Enable SD Card Logging on EdgeTX",
+  "metaDescription": "Enable SD-card telemetry logging on EdgeTX/OpenTX: add an \"SD Logs\" Special Function on a switch, set a log rate, then copy the CSV from /LOGS.",
+  "h1": "How to enable SD card logging on EdgeTX (and OpenTX)",
+  "ogTitle": "Enable EdgeTX SD Card Logging in 5 Minutes",
+  "ogDescription": "Add an \"SD Logs\" Special Function to a switch, pick a log rate, fly, then copy the CSV from your radio's /LOGS folder and open it in a free browser viewer.",
+  "introHtml": "<p>To enable SD-card logging on EdgeTX or OpenTX, add a <strong>Special Function</strong> to your model, set its action to <strong>SD Logs</strong>, bind it to a switch, and give it a log rate (1.0s is a good default). Flip that switch and your radio writes a timestamped CSV to the <code>/LOGS</code> folder on its SD card. Every telemetry sensor your model receives becomes a column in that file.</p><p>One thing to know up front: the log only contains what your telemetry actually sends. If you want GPS position (and a 3D map afterward), your model needs a GPS sensor reporting to the radio. No GPS sensor means no coordinates in the CSV.</p>",
+  "sections": [
+    {
+      "heading": "Step-by-step: add the SD Logs Special Function",
+      "html": "<p>This lives per-model, so set it on the model you actually fly. On the radio:</p><ol><li>Long-press <strong>MENU</strong> (or the model icon) to open the model setup pages, then page across to <strong>SPECIAL FUNCTIONS</strong> (older OpenTX calls it <em>Special Functions</em> too).</li><li>Pick an empty <code>SF</code> slot. For the trigger, choose a switch — a spare 2- or 3-position toggle is ideal (e.g. <code>SA</code>). You can also use <code>ON</code> if you want it always logging while the model is on.</li><li>Set the action to <strong>SD Logs</strong>.</li><li>Set the <strong>log rate</strong> (the value next to the action). This is the sample interval in seconds — <code>1.0</code> is a sensible default; <code>0.5</code> or <code>0.2</code> gives finer resolution at the cost of larger files.</li><li>Make sure the function is enabled (the checkbox/tick at the end of the row).</li></ol><p>When the switch is active, the radio logs. When it's off, it stops and closes the file.</p>"
+    },
+    {
+      "heading": "What actually ends up in the CSV",
+      "html": "<p>EdgeTX logs whatever telemetry sensors are currently discovered for that model. So the columns you get depend entirely on your hardware and link:</p><ul><li><strong>Always present:</strong> a date and time column, plus timestamp.</li><li><strong>Link stats</strong> (RSSI/LQ, RxBt, etc.) if you run a telemetry-capable link like ELRS or Crossfire.</li><li><strong>Flight-controller data</strong> (attitude, altitude, current, cell voltages) if your FC passes telemetry back over MSP/CRSF.</li><li><strong>GPS latitude/longitude, altitude, speed and heading</strong> only if a GPS sensor is reporting — either a standalone GPS telemetry sensor or an FC feeding GPS up the link.</li></ul><p>If a sensor isn't in your telemetry screen, it won't be in the log. A quick tip: before flying, go to the telemetry page and <strong>Discover new sensors</strong> so everything is registered first. If GPS never shows up there, the CSV won't have position and the 3D globe in the viewer will be unavailable — but every other chart still works.</p>"
+    },
+    {
+      "heading": "Copy the CSV off the SD card",
+      "html": "<p>Logs are written to the <code>/LOGS</code> folder at the root of the radio's SD card, named per model with the date, for example <code>MyWing-2026-07-15.csv</code>. To get the file:</p><ul><li><strong>USB mass storage:</strong> plug the radio into your computer with a USB-C/USB cable and, on the radio, choose the <em>USB Storage (SD)</em> option when prompted. The SD card mounts as a drive — open <code>/LOGS</code> and copy the CSV.</li><li><strong>Card reader:</strong> or just pop the microSD out and read it directly.</li></ul><p>Each flight session appends to that model's daily file, so one CSV can hold several flights. That's normal — the viewer's timeline lets you scrub between them.</p>"
+    },
+    {
+      "heading": "After the flight: open your CSV",
+      "html": "<p>Once you have the CSV, open it in the <a href=\"https://www.narenana.com/log-viewer/\">RC Log Viewer</a>. Parsing happens entirely in your browser, so the file — including the GPS coordinates of your flying field — never leaves your machine. You get synced charts and a scrubbable timeline; if the log has GPS columns, you also get a 3D flight replay on a satellite globe.</p><p>For the full tour of what the viewer does with an EdgeTX CSV, see the <a href=\"https://www.narenana.com/log-viewer/edgetx-log-viewer/\">EdgeTX log viewer</a> page, or open the <a href=\"https://www.narenana.com/log-viewer/?sample=fixed-wing&autoplay=1\">fixed-wing demo</a> to see it in motion.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "Why is my EdgeTX log empty or missing columns?",
+      "a": "A CSV only records the telemetry sensors your radio has discovered. If a value (voltage, GPS, altitude) isn't on your telemetry screen, it won't be logged. Go to the telemetry page and run Discover new sensors before flying, and make sure your link actually sends that data back."
+    },
+    {
+      "q": "Do I need GPS for SD-card logging to work?",
+      "a": "No. Logging works with whatever telemetry you have. GPS only matters if you want map position and 3D replay afterward — that requires a GPS sensor reporting to the radio. Without it you still get every non-position chart (attitude, altitude, battery, signal, RC inputs)."
+    },
+    {
+      "q": "What log rate should I use?",
+      "a": "1.0 second is a solid default and keeps files small. Drop to 0.5s or 0.2s if you want finer detail for tuning or crash analysis; the tradeoff is larger CSV files. The rate is the number next to the SD Logs action in the Special Function."
+    },
+    {
+      "q": "Where does EdgeTX save the log files?",
+      "a": "In the /LOGS folder at the root of the radio's SD card. Files are named per model with the date, and multiple flights on the same day append to the same file. Copy them off via USB storage mode or a microSD card reader."
+    },
+    {
+      "q": "Does this work on OpenTX too?",
+      "a": "Yes. The workflow is the same on OpenTX: add a Special Function with the SD Logs action, bind it to a switch, set a rate. Menu labels differ slightly between versions but the concept is identical, and the CSV format opens in the same viewer."
+    },
+    {
+      "q": "Can I log automatically without flipping a switch?",
+      "a": "Yes — set the Special Function trigger to ON instead of a switch, and it logs whenever the model is powered. Binding it to a switch just gives you manual control over when logging starts and stops, which keeps files tidy."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "RC Log Viewer — open your EdgeTX CSV",
+      "href": "https://www.narenana.com/log-viewer/"
+    },
+    {
+      "text": "EdgeTX log viewer",
+      "href": "https://www.narenana.com/log-viewer/edgetx-log-viewer/"
+    },
+    {
+      "text": "How to read a blackbox log",
+      "href": "https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/"
+    },
+    {
+      "text": "Free browser tools for RC pilots",
+      "href": "https://www.narenana.com/"
+    }
+  ],
+  "kind": "guide"
+}

@@ -1,0 +1,72 @@
+{
+  "slug": "how-to-read-a-blackbox-log",
+  "title": "How to Read a Blackbox Log: Beginner Guide",
+  "metaDescription": "How to read a blackbox log: what it records (gyro, PID, RC, motors, battery, GPS), how sample rate works, and how to read one on synced charts.",
+  "h1": "How to read a blackbox log: a beginner's guide",
+  "ogTitle": "How to Read a Blackbox Log (Beginner Guide)",
+  "ogDescription": "A blackbox log is a high-rate flight recorder. Learn what each field means and how to read one — start with battery, RC inputs, altitude, then attitude.",
+  "introHtml": "<p>To read a blackbox log, open it in a viewer and work from the simplest channels outward: battery, RC inputs, and altitude first, then attitude and the tuning-specific traces. A blackbox log is a high-rate flight recorder your flight controller writes during a flight — on every logged loop iteration it saves a timestamped snapshot of raw gyro, RC stick commands, PID terms, motor outputs, battery voltage and current, and, if a GPS module is fitted, position and speed.</p><p>You don't need to decode the raw numbers by hand. Load the log into a viewer that plots every field on a shared, scrubbable timeline. Drop your <code>.bbl</code>, <code>.bfl</code>, or <code>.txt</code> log into the free, in-browser <a href=\"https://www.narenana.com/log-viewer/\">RC Log Viewer</a> — it parses locally (nothing is uploaded) and lays the data out as synced charts.</p>",
+  "sections": [
+    {
+      "heading": "What a blackbox log actually records",
+      "html": "<p>A blackbox log is a table: one row per logged loop iteration, with a fixed set of columns. Field names differ slightly between Betaflight and iNAV, but the categories are the same:</p><ul><li><strong>Loop iteration &amp; time</strong> — a counter and a microsecond timestamp so every row can be placed precisely on the timeline.</li><li><strong>Gyro</strong> — raw angular rate on roll, pitch, and yaw. This is the highest-frequency signal in the log and the basis of most tuning work.</li><li><strong>RC commands</strong> — what your sticks asked for on each axis, plus throttle. Compare these against gyro to see how well the craft followed you.</li><li><strong>PID terms</strong> — the P, I, and D contributions the controller computed, and the resulting setpoint. Useful for diagnosing oscillation or sluggish response.</li><li><strong>Motor outputs</strong> — the commanded value sent to each motor/ESC. Clipping (motors pinned at max) shows up here.</li><li><strong>Battery</strong> — pack voltage and current draw, sagging under throttle.</li><li><strong>GPS (only if a module is fitted)</strong> — latitude, longitude, altitude, ground speed, and satellite count.</li></ul><p>iNAV logs usually carry GPS when a GPS module is fitted, so fixed-wing logs tend to include position. Racing and freestyle quads on Betaflight usually fly without GPS, so those logs typically have no coordinates — the flight data is all still there, just no map.</p>"
+    },
+    {
+      "heading": "Sample rate, looptime, and why logs get big",
+      "html": "<p>A blackbox log is so detailed — and sometimes so large — because it can record on <em>every</em> control loop. A flight controller running an 8&nbsp;kHz loop executes 8,000 iterations per second; logging all of them means 8,000 rows per second per field.</p><p>That's where the logging <strong>denominator</strong> (sometimes shown as a rate fraction) comes in: it tells the FC to record one row out of every N loop iterations. A denominator of 1 logs every loop (maximum detail, biggest files); a denominator of 8 on an 8&nbsp;kHz loop logs at roughly 1&nbsp;kHz (smaller files, still plenty for most analysis). If your card fills up or your logs stutter, raising the denominator is the usual fix. Firmware-specific steps live in our <a href=\"https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/\">enable blackbox on Betaflight</a> and <a href=\"https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/\">enable blackbox on iNAV</a> guides.</p><p>Practical consequence: the effective sample rate is <code>loop frequency ÷ denominator</code>. Higher rates capture fast events (prop wash, a D-term spike) but cost SD-card space and write bandwidth. For reading altitude, battery, and general flight behavior, ~1&nbsp;kHz is more than enough; for fine PID tuning you want a higher rate.</p>"
+    },
+    {
+      "heading": "How to actually read one: start simple, then go deep",
+      "html": "<p>Don't start by staring at gyro noise. Read a log in layers, easiest signals first:</p><ol><li><strong>Battery</strong> — scrub the whole flight and watch pack voltage. Where does it sag hardest? Is per-cell voltage staying above your comfortable floor? A voltage collapse often explains a brownout or a late-flight power problem.</li><li><strong>RC inputs</strong> — look at throttle and stick channels to reconstruct what you were commanding. This gives every other trace context: a pitch spike means nothing until you know whether you asked for it.</li><li><strong>Altitude &amp; vertical speed</strong> — this is the shape of the flight. Climbs, descents, and the exact moment of a hard descent are obvious here.</li><li><strong>Attitude (roll/pitch/yaw)</strong> — now overlay orientation. Compare attitude against RC command: a divergence between what you asked for and what the craft did is the signature of a tuning problem, a mechanical failure, or a crash.</li></ol><p>Only after those do the tuning-specific traces (PID terms, motor outputs) become worth reading — by then you know <em>where</em> in the flight to look. In the RC Log Viewer every chart is time-synced, so a bookmark or a click on the altitude trace moves the battery, RC, and attitude charts to the same instant, and jump-to-event buttons take you straight to takeoff, RTH, or landing.</p>"
+    },
+    {
+      "heading": "Firmware-specific fields and where to go next",
+      "html": "<p>The categories above are universal, but the exact column names and available fields depend on which firmware wrote the log. Betaflight and iNAV both emit blackbox in the same file types (<code>.bbl</code>, <code>.bfl</code>, <code>.txt</code>), but iNAV exposes more navigation and GPS-related fields when a GPS module is present, while a GPS-less Betaflight quad log is all gyro/RC/PID/motor/battery.</p><p>For a field-by-field walkthrough tuned to your firmware, the dedicated <a href=\"https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/\">Betaflight blackbox viewer</a> and <a href=\"https://www.narenana.com/log-viewer/inav-blackbox-viewer/\">iNAV blackbox viewer</a> pages go deeper than this general guide. If you're reading a log specifically to work out why a craft went down, follow the <a href=\"https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/\">analyze a crash log</a> workflow instead — it reorders these same charts around the moment of failure.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "Do I need to understand every field to read a blackbox log?",
+      "a": "No. Start with battery, RC inputs, and altitude — those three tell you most of a flight's story. Attitude, then PID and motor traces, only matter once you know where in the flight to look. A viewer that plots everything on a shared timeline lets you ignore fields you don't need yet."
+    },
+    {
+      "q": "What's the difference between looptime and logging rate?",
+      "a": "Looptime is how often the flight controller runs its control loop (e.g. 8 kHz). The logging denominator records one row out of every N loops, so the log's sample rate is loop frequency ÷ denominator. A higher denominator means smaller files at a lower effective rate."
+    },
+    {
+      "q": "Why is my blackbox log file so large?",
+      "a": "Because it can log on every control loop — thousands of rows per second across many fields. Lowering the logging rate by raising the denominator shrinks the file. Fewer fields and a lower loop frequency also help. For most reading tasks, roughly 1 kHz is plenty."
+    },
+    {
+      "q": "Does a blackbox log always contain GPS position?",
+      "a": "No. GPS only appears if a GPS module is fitted and configured. iNAV logs usually have it when a module is present; Betaflight racing and freestyle quad logs usually don't. Without GPS you lose the map, but every telemetry and tuning chart still works."
+    },
+    {
+      "q": "Which files count as blackbox logs?",
+      "a": "Betaflight and iNAV write blackbox logs as .bbl, .bfl, or .txt files, either to onboard flash or an SD card. Both load directly into the RC Log Viewer without any conversion step."
+    },
+    {
+      "q": "Is it safe to open a blackbox log online?",
+      "a": "Yes, if the tool parses locally. The RC Log Viewer runs entirely in your browser via WebAssembly — your log is never uploaded, so the GPS coordinates of your flying field embedded in the file stay on your machine."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "Open your log in the RC Log Viewer",
+      "href": "https://www.narenana.com/log-viewer/"
+    },
+    {
+      "text": "Betaflight blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
+    },
+    {
+      "text": "iNAV blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/inav-blackbox-viewer/"
+    },
+    {
+      "text": "How to analyze a drone crash log",
+      "href": "https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/"
+    }
+  ],
+  "kind": "guide"
+}

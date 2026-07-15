@@ -1,0 +1,72 @@
+{
+  "slug": "edgetx-log-viewer",
+  "title": "EdgeTX Log Viewer — Open Radio CSV Logs",
+  "metaDescription": "Open EdgeTX and OpenTX SD-card telemetry CSV logs in your browser. Charts for every flight, plus a 3D globe when your log has a GPS sensor. Free, private.",
+  "h1": "EdgeTX Log Viewer for Radio Telemetry CSV Files",
+  "introHtml": "<p>RC Log Viewer opens EdgeTX and OpenTX telemetry logs — the CSV files your radio writes to its SD card — directly in the browser, with no upload and no account. Drop a <code>.csv</code> from the radio's <code>/LOGS</code> folder onto <a href=\"https://www.narenana.com/log-viewer/\">the viewer</a> and it charts every telemetry sensor the radio recorded: attitude, altitude and vertical speed, speed and heading, battery per-cell voltage, signal (RSSI/LQ), and RC stick inputs.</p><p>If the log includes a GPS telemetry sensor, you also get a 3D flight replay on a satellite globe. If it doesn't — common on a pure quad with no GPS — the globe is unavailable but every synced chart and the live telemetry bar still work.</p>",
+  "sections": [
+    {
+      "heading": "How EdgeTX and OpenTX write CSV logs to the SD card",
+      "html": "<p>When telemetry logging is enabled, EdgeTX and OpenTX write a plain CSV file to the <code>/LOGS</code> folder on the radio's SD card. Each row is a timestamped snapshot, and the columns are the telemetry sensors your model has discovered — so the exact columns differ from model to model. Typical columns include a date/time, <code>RxBt</code> or <code>VFAS</code> for pack voltage, cell data, <code>RSSI</code>/<code>RQly</code>/<code>TQly</code> for link quality, plus whatever your flight controller or vario feeds back.</p><ul><li>File names look like <code>ModelName-YYYY-MM-DD.csv</code>, one file per model per day, with sessions appended.</li><li>The header row names every sensor; the viewer reads those names to decide which charts to build.</li><li>Logging can be started by a switch or logical function, so a single file can hold several flights — scrub the timeline to move between them.</li></ul><p>Copy the file off the card over USB mass storage or with a card reader, then drop it on the viewer — there's nothing to configure and no import step.</p>"
+    },
+    {
+      "heading": "When you get the 3D globe (GPS) and when you don't",
+      "html": "<p>The 3D replay needs latitude and longitude in the log. In EdgeTX/OpenTX, that position comes from a <strong>GPS telemetry sensor</strong> — most often a flight controller passing GPS over CRSF/MSP, or a standalone GPS module on the model. If a <code>GPS</code> sensor (with its coordinate pair) is present in the CSV columns, the viewer places your flight on a satellite globe with chase, tail, orbit, and top-down cameras.</p><ul><li><strong>Fixed-wing and GPS-equipped setups:</strong> usually have a GPS sensor, so you get the full 3D flight replay.</li><li><strong>Pure quad telemetry with no GPS:</strong> the globe is unavailable, but attitude, altitude, speed, battery, signal, and RC-input charts all still render from the other sensors.</li></ul><p>You can preview the globe experience with a sample: <a href=\"https://www.narenana.com/log-viewer/?sample=fixed-wing&autoplay=1\">fixed-wing demo</a>.</p>"
+    },
+    {
+      "heading": "What the viewer shows from a radio log",
+      "html": "<p>Everything is driven by the sensors present in your CSV, synced to one scrubbable timeline:</p><ul><li><strong>Live telemetry bar</strong> — battery per-cell voltage, altitude, speed, heading, attitude, and stick inputs at the current playhead.</li><li><strong>Synced charts</strong> — attitude; altitude and vertical speed; speed and heading; battery; signal (RSSI/LQ); RC inputs.</li><li><strong>Event jumps</strong> — skip between takeoff, RTH, and landing points, plus your own bookmarks.</li><li><strong>3D replay</strong> — on the satellite globe when GPS is present, with four camera modes.</li></ul><p>If a chart looks empty, it usually means the radio never logged that sensor — for example, no vario means no independent vertical-speed source, and no current sensor means no battery-current trace.</p>"
+    },
+    {
+      "heading": "Private by design, and works offline",
+      "html": "<p>Parsing happens entirely in your browser using WebAssembly. Your CSV is never uploaded to a server, and there's no account to create. That matters for radio logs specifically: a GPS-tagged CSV embeds the coordinates of your flying field, and because the file is read locally, those coordinates never leave your machine.</p><p>The viewer is a free, open-source (GPL-3.0) installable PWA that runs offline once loaded, and there are free desktop builds for Windows, macOS, and Linux on the project's GitHub releases if you prefer a standalone app.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "Does the EdgeTX log viewer work with OpenTX logs too?",
+      "a": "Yes. OpenTX and EdgeTX write telemetry CSV in the same way, and the viewer reads both. If your radio runs either firmware, drop the CSV from its /LOGS folder and it opens."
+    },
+    {
+      "q": "Where do I find the CSV log on my radio?",
+      "a": "On the SD card in the /LOGS folder. Files are named per model and date, like ModelName-2026-07-15.csv. Copy them off via USB mass storage or a card reader, then open them in the viewer."
+    },
+    {
+      "q": "Why is the 3D globe missing for my log?",
+      "a": "The globe needs GPS coordinates, which come from a GPS telemetry sensor. If your model has no GPS (common on racing/freestyle quads), the log has no position data, so the globe is unavailable — but all the telemetry charts still render."
+    },
+    {
+      "q": "Are my logs or my flying-field location uploaded anywhere?",
+      "a": "No. All parsing is done locally in your browser with WebAssembly. The CSV — including any GPS coordinates of your field — never leaves your computer."
+    },
+    {
+      "q": "Which EdgeTX and OpenTX versions are supported?",
+      "a": "The viewer reads the standard EdgeTX and OpenTX telemetry CSV format written to the SD card, so it isn't tied to a specific firmware version. It reads whichever sensor columns your radio recorded."
+    },
+    {
+      "q": "Can I view blackbox logs from a flight controller here too?",
+      "a": "Yes, but those are a different format. For Betaflight or iNAV blackbox files see the <a href=\"https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/\">Betaflight blackbox viewer</a> and <a href=\"https://www.narenana.com/log-viewer/inav-blackbox-viewer/\">iNAV blackbox viewer</a> pages."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "Open the RC Log Viewer",
+      "href": "https://www.narenana.com/log-viewer/"
+    },
+    {
+      "text": "Betaflight blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
+    },
+    {
+      "text": "iNAV blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/inav-blackbox-viewer/"
+    },
+    {
+      "text": "Free browser tools for RC pilots",
+      "href": "https://www.narenana.com/"
+    }
+  ],
+  "ogTitle": "EdgeTX / OpenTX Log Viewer — Open Radio CSV Logs",
+  "ogDescription": "Open EdgeTX and OpenTX SD-card telemetry CSV logs in your browser. Every sensor charted, plus a 3D globe when your log has GPS. Free, open-source, nothing uploaded.",
+  "kind": "usecase"
+}

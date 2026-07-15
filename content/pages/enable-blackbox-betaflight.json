@@ -1,0 +1,72 @@
+{
+  "slug": "enable-blackbox-betaflight",
+  "title": "How to Enable Blackbox in Betaflight",
+  "metaDescription": "Enable Betaflight Blackbox in the Configurator: pick a logging device (flash/SD), set a rate, arm and fly, then download the .bbl and read the charts.",
+  "h1": "How to enable Blackbox in Betaflight and download your log",
+  "ogTitle": "Enable Blackbox in Betaflight (step by step)",
+  "ogDescription": "Turn on Blackbox logging in Betaflight Configurator, choose onboard flash or SD, fly, then download the .bbl and open it in a free browser viewer.",
+  "introHtml": "<p>To enable Blackbox in Betaflight: open <strong>Betaflight Configurator</strong>, go to the <strong>Blackbox</strong> tab, set the <strong>Blackbox logging device</strong> to your onboard flash chip or SD card, choose a logging rate, and click <strong>Save</strong>. Then arm and fly. Afterward, come back to the Blackbox tab, hit <strong>Download</strong>, and save the <code>.bbl</code> file.</p><p>That log holds gyro, PID, RC command, motor and battery data at a high sample rate. Most racing and freestyle quads log with <strong>no GPS</strong>, so a 3D map usually is not available — but every telemetry channel and synced chart still works in the <a href=\"https://www.narenana.com/log-viewer/\">RC Log Viewer</a>.</p>",
+  "sections": [
+    {
+      "heading": "Turn on logging in the Blackbox tab",
+      "html": "<p>Connect your flight controller to Betaflight Configurator over USB, then open the <strong>Blackbox</strong> tab in the left menu. There are three things to set:</p><ol><li><strong>Blackbox logging device</strong> — choose where the log is written. If your FC has an onboard flash chip, pick <code>Onboard flash</code>. If it has an SD card slot, pick <code>SD card</code>. If you only stream Blackbox to an external device over serial, choose <code>Serial</code>, but flash/SD is by far the most common.</li><li><strong>Blackbox logging rate</strong> — this is the fraction of the PID loop that gets logged, shown as a ratio like <code>1/1</code>, <code>1/2</code>, or <code>1/4</code>. <code>1/2</code> is a sensible default that captures clean gyro/PID traces without filling flash too fast. Drop to <code>1/4</code> if you have a small flash chip or want longer flights per log.</li><li><strong>Debug mode</strong> — leave it at <code>NONE</code> for normal PID/filter review. Set a specific debug mode (for example a gyro or RPM filter debug) only when you are chasing one particular issue, because it repurposes the debug channels for that data.</li></ol><p>Click <strong>Save</strong> when done. Nothing is logged until this is set and the quad is armed.</p>"
+    },
+    {
+      "heading": "Make sure there is room to log",
+      "html": "<p>Onboard flash is small — often just a few megabytes — so it fills fast, especially at <code>1/1</code> or <code>1/2</code>. Before a session:</p><ul><li>Check the <strong>Used space</strong> readout on the Blackbox tab. If it is near full, download anything you want to keep, then click <strong>Erase Flash</strong> to clear it.</li><li>An SD card gives you far more room and longer continuous logs than a flash chip, if your board has a slot.</li><li>Higher logging rate = more detail but shorter recording time per megabyte. Pick the rate that fits how long your flights are.</li></ul><p>Betaflight logs continuously while armed and stops on disarm, so each arm/disarm cycle is one log segment.</p>"
+    },
+    {
+      "heading": "Arm, fly, then download the .bbl",
+      "html": "<p>Once logging is configured, just fly normally — logging starts automatically on arm. After you land and disarm:</p><ol><li>Plug the FC back into USB and open Betaflight Configurator (do not erase yet).</li><li>Go to the <strong>Blackbox</strong> tab and click <strong>Download</strong>. On SD-card boards you can also pull the card and copy the file directly.</li><li>Save the file — Betaflight writes it as a <code>.bbl</code>. A single file can hold several arm/disarm segments concatenated from one session. Some tools also produce <code>.bfl</code> or <code>.txt</code> variants; all three are the same blackbox format.</li></ol><p>Keep the file somewhere you can find it — that is the file you will open to review the flight.</p>"
+    },
+    {
+      "heading": "Open the .bbl to check it recorded",
+      "html": "<p>To confirm the log came out clean, drop the <code>.bbl</code> straight into the <a href=\"https://www.narenana.com/log-viewer/\">RC Log Viewer</a>. It parses the file locally in your browser with WebAssembly — the log is never uploaded, which matters because a blackbox file embeds the GPS coordinates of your flying field whenever GPS is present. No account, nothing to install.</p><p>The viewer reads Betaflight <strong>blackbox up to 4.5.x</strong>. If your quad has <strong>no GPS</strong> — typical for racing and freestyle builds — the 3D globe is unavailable, but the telemetry bar and every synced chart still work. For what each trace actually means once the log is open, see <a href=\"https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/\">how to read a blackbox log</a>, or open the <a href=\"https://www.narenana.com/log-viewer/?sample=quad\">quad sample log</a> to poke around first.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "Where is the Blackbox setting in Betaflight?",
+      "a": "In Betaflight Configurator, click the Blackbox tab in the left-hand menu. That is where you set the logging device, logging rate, and debug mode, and where you later download or erase logs."
+    },
+    {
+      "q": "What logging rate should I use?",
+      "a": "1/2 is a good default — it captures clean gyro and PID traces without filling flash too quickly. Use 1/4 for a small flash chip or longer flights, or 1/1 for maximum detail if you have SD-card space."
+    },
+    {
+      "q": "Why is there no map when I open my Betaflight log?",
+      "a": "Most racing and freestyle quads have no GPS module, so the log contains no coordinates and the 3D globe can't be drawn. The telemetry bar and every synced chart still work. If you fly a build with GPS, position data will be present."
+    },
+    {
+      "q": "What file does Betaflight save, and what extension?",
+      "a": "Betaflight writes a blackbox log with the .bbl extension. You may also see .bfl or .txt variants from some tools — they are the same blackbox format and all open in the viewer."
+    },
+    {
+      "q": "Do I need to set a debug mode?",
+      "a": "No. Leave debug mode at NONE for normal PID and filter review. Only select a specific debug mode when you are troubleshooting one particular thing, since it repurposes the debug channels for that data."
+    },
+    {
+      "q": "Is my flying-field location safe when I open the log?",
+      "a": "Yes. RC Log Viewer parses the file entirely in your browser — nothing is uploaded. If GPS coordinates are in the log, they never leave your machine."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "Betaflight blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
+    },
+    {
+      "text": "Open a .bbl file",
+      "href": "https://www.narenana.com/log-viewer/open-bbl-file/"
+    },
+    {
+      "text": "How to read a blackbox log",
+      "href": "https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/"
+    },
+    {
+      "text": "Analyze a drone crash log",
+      "href": "https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/"
+    }
+  ],
+  "kind": "guide"
+}

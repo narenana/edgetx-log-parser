@@ -1,0 +1,72 @@
+{
+  "slug": "analyze-a-crash-log",
+  "title": "Analyze a Drone Crash Log: Step-by-Step",
+  "metaDescription": "Analyze a drone crash log in your browser: scrub to impact, compare RC inputs vs attitude, check battery sag, RSSI loss and failsafe. Free, private.",
+  "h1": "How to analyze a drone crash log",
+  "ogTitle": "Analyze a Drone Crash Log the Right Way",
+  "ogDescription": "A calm, ordered crash-analysis workflow using RC Log Viewer: scrub to the last moment, read inputs vs attitude, and rule out battery, link loss, and failsafe.",
+  "introHtml": "<p>To analyze a drone crash log, open the blackbox or CSV file in <a href=\"https://www.narenana.com/log-viewer/\">RC Log Viewer</a>, scrub the timeline to the last valid sample before impact, then work backwards through four questions: did the pilot command it, did the battery collapse, did the radio link drop, or did a mechanical or control failure take the aircraft away from the sticks? Reading those in order separates pilot error from a real hardware or link failure.</p><p>Everything runs in your browser. The log is parsed locally with WebAssembly and never uploaded, so the GPS coordinates of your field stay on your machine while you work.</p>",
+  "sections": [
+    {
+      "heading": "Start at the end: scrub to the last valid sample",
+      "html": "<p>Load the file, then drag the timeline to the very end of the log and step backward frame by frame. The crash is almost never the last recorded row — logging usually stops a fraction of a second <strong>after</strong> control was already lost, so the useful evidence is in the seconds leading up to that point.</p><ol><li>Find where the data goes flat or garbage: altitude pinned, attitude frozen, or values dropping to zero. That is roughly the impact or the moment logging died.</li><li>Back up 3–5 seconds from there. This is your window of interest.</li><li>Use the event jumps (takeoff / RTH / landing) to sanity-check the overall flight shape before you zoom in — it tells you whether the craft was in normal flight, a return-to-home, or already descending.</li></ol><p>Keep the live telemetry bar visible while you scrub. Watching per-cell voltage, altitude, speed, heading, and the attitude/stick indicators move together is what turns a wall of numbers into a story.</p>"
+    },
+    {
+      "heading": "Did the pilot command it? RC inputs vs attitude",
+      "html": "<p>This is the single most important comparison in a crash log, and it answers the question everyone actually wants answered: did the aircraft do what the pilot told it to, or did it stop responding?</p><p>Open the <strong>RC inputs</strong> chart and the <strong>attitude</strong> chart and read them side by side across your window of interest:</p><ul><li><strong>Inputs match attitude:</strong> stick goes hard over, the craft rolls/pitches to follow, and it flies into the ground. That points to pilot error, disorientation, or simply running out of altitude — not a failure.</li><li><strong>Inputs neutral, attitude diverging:</strong> sticks centered but the craft rolls or pitches away on its own. That is the fingerprint of a mechanical or control problem — a desync, a broken prop, a failing motor, or a tune that let go.</li><li><strong>Inputs frozen or snapping to a fixed position:</strong> the RC trace flat-lining or jumping to a held value usually means the link dropped and failsafe took over. Confirm that against the signal view (next section).</li></ul><p>On EdgeTX/OpenTX CSV the stick channels are logged as the radio saw them; on iNAV and Betaflight blackbox you are reading <code>rcCommand</code>, i.e. what the flight controller received. If the radio shows input but the FC never received it, the break is in the link.</p>"
+    },
+    {
+      "heading": "Rule out battery sag, link loss, and failsafe",
+      "html": "<p>With the pilot-input question settled, rule out the two failures that masquerade as bad flying: a battery that collapsed under load, and a radio link that dropped.</p><p><strong>Battery.</strong> Open the battery chart and watch voltage across your window, especially under throttle. Healthy sag recovers when you unload. A hard punch-out that drops a cell far below its resting voltage and does not recover — or voltage falling off a cliff — means the pack (or a bad connection) gave up. On multi-cell logs, read per-cell voltage: one cell diving while the others hold is a dying or damaged cell.</p><p><strong>Signal and failsafe.</strong> Open the signal view and look at RSSI / link quality (RSSI dBm, LQ, or an RxLoss/rc-link flag depending on firmware). A cliff in link quality that lines up with your input-vs-attitude break is your answer: the craft stopped receiving, went to failsafe, and dropped or flew off. Cross-check the timing precisely — the link cliff should come <strong>before</strong> the attitude diverges, not after.</p><p>Do these in order. A voltage collapse and a link drop can look similar in the final second, but the chart that moves <em>first</em> is the cause.</p>"
+    },
+    {
+      "heading": "Mechanical or control failure, and where it came down",
+      "html": "<p>If the sticks, battery, and link all read clean but attitude still departed from what the pilot commanded, you are left with a mechanical or control failure: a broken or thrown prop, a motor that lost thrust, a desync, or a tune that let go. The signature is the one you already found in the inputs-vs-attitude comparison — the craft rolling or pitching away while the RC inputs stayed neutral or actively fought it. Watch the <strong>altitude &amp; vertical speed</strong> chart alongside attitude to read how fast it came down and whether the descent was a controlled mush or a dead drop.</p><p><strong>Where it came down.</strong> If the log has GPS, the 3D replay on the satellite globe shows the flight path and where the trace ends — useful both for recovering a lost aircraft and for studying the geometry of the final moments from a chase or orbit camera. GPS availability depends on the log:</p><ul><li><strong>iNAV</strong> logs usually have GPS when a module is fitted, so the globe typically works.</li><li><strong>Betaflight</strong> racing and freestyle logs usually have <strong>no</strong> GPS — the globe is unavailable, but every chart above (RC inputs, attitude, altitude &amp; vertical speed, battery, signal) still works and is where the crash analysis actually happens.</li><li><strong>EdgeTX/OpenTX CSV</strong> shows position when a GPS telemetry sensor was logging.</li></ul><p>No GPS does not stop a crash investigation. The globe tells you <em>where</em>; the charts tell you <em>why</em>.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "What's the first thing to check in a crash log?",
+      "a": "Scrub to the last valid sample before the data goes flat, back up a few seconds, then compare RC inputs against attitude. That single comparison tells you whether the craft was following commands or had stopped responding, which decides everything you check next."
+    },
+    {
+      "q": "How do I tell pilot error from an equipment failure?",
+      "a": "Put the RC inputs chart next to the attitude chart. If the aircraft's attitude follows the sticks into the ground, that's control error. If attitude diverges while inputs are neutral or frozen, it's a mechanical, link, or control failure — not the pilot."
+    },
+    {
+      "q": "Can I analyze a crash from a Betaflight log with no GPS?",
+      "a": "Yes. Most Betaflight racing and freestyle logs have no GPS, so the 3D globe is unavailable, but the telemetry bar and every synced chart — RC inputs, attitude, altitude & vertical speed, battery, and signal — still work, and that's where crash analysis happens."
+    },
+    {
+      "q": "How do I know if the battery caused the crash?",
+      "a": "Open the battery chart and watch voltage under load, and per-cell voltage on multi-cell logs. Sag that recovers when you unload throttle is normal; a hard drop that doesn't recover, or one cell diving while others hold, points at the pack or a bad connection."
+    },
+    {
+      "q": "How can I spot a failsafe or link loss in the log?",
+      "a": "Open the signal view and look for a cliff in RSSI or link quality (dBm, LQ, or an rc-link/RxLoss flag depending on firmware). If that cliff comes right before the attitude diverges and the RC trace freezes or snaps to a held value, the link dropped and failsafe took over."
+    },
+    {
+      "q": "Are my logs uploaded when I analyze them?",
+      "a": "No. RC Log Viewer parses everything in your browser with WebAssembly and never uploads the file. The GPS coordinates of your flying field, which are embedded in the log, stay entirely on your machine."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "How to read a blackbox log (field-by-field)",
+      "href": "https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/"
+    },
+    {
+      "text": "Betaflight blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
+    },
+    {
+      "text": "iNAV blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/inav-blackbox-viewer/"
+    },
+    {
+      "text": "Open RC Log Viewer",
+      "href": "https://www.narenana.com/log-viewer/"
+    }
+  ],
+  "kind": "guide"
+}

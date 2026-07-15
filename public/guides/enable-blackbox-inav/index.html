@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to Enable Blackbox in iNAV (Step-by-Step)</title>
+<meta name="description" content="Enable Blackbox in iNAV Configurator: open the Blackbox tab, set the device to onboard flash or SD, pick a rate, fly and export the log to view in 3D." />
+<meta name="author" content="narenana" />
+<meta name="robots" content="index, follow, max-image-preview:large" />
+<link rel="canonical" href="https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/" />
+<link rel="icon" type="image/jpeg" href="https://www.narenana.com/log-viewer/narenana.jpg" sizes="200x200" />
+<link rel="icon" type="image/svg+xml" href="https://www.narenana.com/log-viewer/favicon.svg" />
+<link rel="apple-touch-icon" href="https://www.narenana.com/log-viewer/narenana.jpg" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="narenana" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:url" content="https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/" />
+<meta property="og:title" content="How to Enable Blackbox in iNAV, Step by Step" />
+<meta property="og:description" content="Turn on Blackbox in iNAV Configurator, log to onboard flash or SD, keep GPS configured, then replay your flight in 3D — logs stay on your machine." />
+<meta property="og:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<meta property="og:image:type" content="image/jpeg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="How to Enable Blackbox in iNAV, Step by Step" />
+<meta name="twitter:description" content="Turn on Blackbox in iNAV Configurator, log to onboard flash or SD, keep GPS configured, then replay your flight in 3D — logs stay on your machine." />
+<meta name="twitter:image" content="https://www.narenana.com/log-viewer/og-card.jpg" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "@id": "https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/#page",
+      "name": "How to Enable Blackbox in iNAV (Step-by-Step)",
+      "headline": "How to Enable Blackbox in iNAV Configurator",
+      "description": "Enable Blackbox in iNAV Configurator: open the Blackbox tab, set the device to onboard flash or SD, pick a rate, fly and export the log to view in 3D.",
+      "url": "https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/",
+      "inLanguage": "en",
+      "image": "https://www.narenana.com/log-viewer/og-card.jpg",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      },
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "RC Log Viewer",
+        "url": "https://www.narenana.com/log-viewer/"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "narenana",
+        "url": "https://www.narenana.com/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "narenana",
+          "item": "https://www.narenana.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "RC Log Viewer",
+          "item": "https://www.narenana.com/log-viewer/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 3,
+          "name": "Guides",
+          "item": "https://www.narenana.com/log-viewer/guides/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "How to Enable Blackbox in iNAV Configurator",
+          "item": "https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root{color-scheme:light dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f5f7fb;color:#2c3e5c;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+  a{color:#2272d8}
+  .topbar{border-bottom:1px solid #e2e7f0;background:#fff}
+  .topbar .in{max-width:820px;margin:0 auto;padding:12px 24px;display:flex;
+    gap:16px;align-items:center;font-size:14px}
+  .topbar .brand{font-weight:700;color:#0f1a2c;text-decoration:none}
+  .topbar .sp{flex:1}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px}
+  .crumbs{font-size:13px;color:#5a6b8c;margin:0 0 18px}
+  h1{font-size:30px;line-height:1.2;color:#0f1a2c;margin:0 0 10px}
+  .lede{font-size:16px;color:#3a4c70;margin:0 0 22px}
+  h2{font-size:19px;color:#0f1a2c;margin:30px 0 8px}
+  p,li{font-size:15px;margin:0 0 10px}
+  ol,ul{padding-left:22px;margin:0 0 10px}
+  table{border-collapse:collapse;font-size:14px;margin:8px 0 12px;width:100%}
+  th,td{border:1px solid #d7dde8;padding:7px 12px;text-align:left;vertical-align:top}
+  th{background:#eef2f9;color:#0f1a2c}
+  code{background:#eef2f9;border-radius:4px;padding:1px 5px;font-size:13.5px}
+  .cta{display:inline-block;margin:8px 0 4px;padding:11px 20px;border-radius:8px;
+    background:#2272d8;color:#fff;font-weight:600;text-decoration:none}
+  .faq dt{font-weight:600;color:#0f1a2c;margin-top:14px}
+  .faq dd{margin:2px 0 0}
+  .related{margin-top:8px}
+  .related li{margin-bottom:4px}
+  footer{max-width:820px;margin:0 auto;padding:24px;border-top:1px solid #e2e7f0;
+    font-size:13px;color:#5a6b8c}
+  @media(prefers-color-scheme:dark){
+    body{background:#0e1117;color:#c4cfe0}
+    .topbar{background:#11151c;border-color:#232a36}
+    .topbar .brand,h1,h2,th,.faq dt{color:#e8eef8}
+    .lede{color:#a9b6cd}.crumbs{color:#8394b0}
+    a{color:#5aa2f0}
+    th{background:#1a2029}td,th{border-color:#2a323f}
+    code{background:#1a2029}
+    footer{border-color:#232a36;color:#8394b0}
+  }</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <a class="brand" href="https://www.narenana.com/log-viewer/">RC Log Viewer</a>
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a>
+  <span class="sp"></span>
+  <a href="https://www.narenana.com/log-viewer/">Open the viewer →</a>
+</div></div>
+<main class="wrap">
+  <p class="crumbs"><a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> › <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> › How to Enable Blackbox in iNAV Configurator</p>
+  <h1>How to Enable Blackbox in iNAV Configurator</h1>
+  <div class="lede"><p>To enable Blackbox in iNAV, connect your flight controller to iNAV Configurator, make sure the Blackbox feature is on in the Configuration tab, then open the <strong>Blackbox tab</strong>, set the logging device to <strong>onboard flash</strong> or an <strong>SD card</strong>, and choose a logging rate. Save and reboot, then arm and fly — the log records to the device you picked.</p><p>iNAV logs have one advantage over most Betaflight logs: with a GPS module fitted and configured, iNAV records position, so the flight can replay as a real path over a 3D satellite globe. The setup for that is covered below.</p></div>
+  <p><a class="cta" href="https://www.narenana.com/log-viewer/">Open a log in the browser →</a></p>
+  <h2>Enable Blackbox in iNAV Configurator, step by step</h2>
+<p>Plug the flight controller into your computer over USB and connect in iNAV Configurator, then:</p><ol><li>Open the <strong>Configuration</strong> tab and confirm the <strong>Blackbox</strong> feature is enabled. If you just turned it on, <strong>Save and Reboot</strong>.</li><li>Open the <strong>Blackbox</strong> tab.</li><li>Set the <strong>logging device</strong> to <strong>Onboard flash</strong> (the dataflash chip on the board) or <strong>SD card</strong> if your FC has a card slot.</li><li>Set the <strong>logging rate</strong> — higher rate captures more detail but fills storage faster (more on that below).</li><li>Click <strong>Save</strong> in the Blackbox tab.</li></ol><p>That's the whole enable step. Nothing logs until the craft is armed, so you can arm on the bench for a quick test or wait until you're at the field.</p>
+<h2>Onboard flash vs SD card, and picking a rate</h2>
+<p><strong>Onboard flash</strong> is a small chip soldered to the FC. It's convenient (nothing to insert) but limited — often just a few minutes of high-rate logging — so you download it over USB and erase it between sessions. <strong>SD card</strong> holds far more, records as separate files per flight, and you just pull the card to grab them.</p><p>On the logging rate: a higher rate gives smoother traces and better resolution on fast events like a bounce or a desync, but it eats storage quickly on onboard flash. For general flight review and GPS replay a moderate rate is plenty; bump it up only when you're chasing something that happens in a fraction of a second. If you're logging to flash, check the free-space readout in the Blackbox tab before you go fly.</p>
+<h2>Configure GPS so the 3D globe works</h2>
+<p>The 3D satellite globe needs GPS coordinates in the log, and iNAV only writes them if a GPS module is fitted and configured. To get position into your log:</p><ul><li>Assign the GPS to a UART in the <strong>Ports</strong> tab.</li><li>Enable the <strong>GPS</strong> feature and set the correct protocol in the <strong>Configuration</strong> tab.</li><li>Before you fly, wait outside until you have a solid <strong>3D fix</strong> (enough satellites). If iNAV never gets a fix, there are no coordinates to log and the globe can't be drawn.</li></ul><p>With a fix, an iNAV log replays as a real flight path over satellite imagery, with chase, tail, orbit, and top-down cameras following the aircraft. Even without GPS, the telemetry bar and every synced chart (attitude, altitude and vertical speed, speed and heading, battery, signal, RC inputs) still work — you just lose the map. Betaflight quads are usually the no-GPS case; see the <a href="https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/">Betaflight blackbox guide</a> for that path.</p>
+<h2>Fly, then export and open the log</h2>
+<p>After the flight, get the log off the craft:</p><ul><li><strong>SD card:</strong> power down, pull the card, and copy the log files — iNAV writes a numbered log file per flight with a <code>.txt</code> extension (the contents are binary, not plain text).</li><li><strong>Onboard flash:</strong> reconnect in Configurator, open the Blackbox tab, and use <strong>Save flash to file</strong> to download the dataflash. Erase it afterward to free space for next time.</li></ul><p>Then open <a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">RC Log Viewer</a> and drag the file in. It accepts iNAV blackbox logs (<code>.bbl</code>, <code>.bfl</code>, or <code>.txt</code>) and parses them in your browser with WebAssembly — nothing is uploaded, so the GPS coordinates of your flying field never leave your machine. Want to see the result before you fly? Open a <a href="https://www.narenana.com/log-viewer/?sample=fixed-wing&autoplay=1">GPS-equipped sample flight in 3D</a>.</p>
+  <h2>Frequently asked questions</h2>
+<dl class="faq">
+<dt>Do I need an SD card, or can iNAV log to the board itself?</dt>
+<dd>Either. If your flight controller has an onboard dataflash chip you can log to it with no card, then download over USB and erase between sessions. If the FC has an SD slot, an SD card holds much more and stores one file per flight. Pick whichever your board supports in the Blackbox tab's logging device dropdown.</dd>
+<dt>Why doesn't my iNAV log show the 3D globe or map?</dt>
+<dd>The globe needs GPS coordinates in the log. If your craft had no GPS module, or GPS never reached a 3D fix before you flew, there are no coordinates to plot. Assign GPS to a UART in Ports, enable the GPS feature in Configuration, and wait for a fix outside before flying. The telemetry bar and charts still work without GPS — only the map is unavailable.</dd>
+<dt>What file does iNAV produce, and can I open it directly?</dt>
+<dd>On an SD card, iNAV writes one numbered log file per flight with a .txt extension. From onboard flash, you save the dataflash to a file from the Blackbox tab. RC Log Viewer opens iNAV blackbox logs directly as .bbl, .bfl, or .txt — just drag the file in, no conversion or decode step needed.</dd>
+<dt>What logging rate should I set?</dt>
+<dd>A higher rate records more detail but fills storage faster, which matters most on small onboard flash. For normal flight review and GPS replay a moderate rate is plenty. Raise it only when you're investigating something very fast, like a desync or a hard bounce, where extra resolution helps.</dd>
+<dt>Does enabling Blackbox affect flight performance?</dt>
+<dd>Logging to onboard flash or an SD card runs in the background and has negligible effect on flight behavior. It's a good idea to leave Blackbox on so you always have a log to review after a rough flight or a crash.</dd>
+<dt>Are my logs uploaded anywhere when I view them?</dt>
+<dd>No. RC Log Viewer is 100% client-side — logs are parsed in your browser with WebAssembly and never leave your machine. Since blackbox logs embed the GPS location of your flying field, keeping parsing local means those coordinates stay private. No account is required.</dd>
+</dl>
+  <h2>Related</h2>
+<ul class="related">
+<li><a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">Open your iNAV log in the browser viewer</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">How to read a blackbox log</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/enable-blackbox-betaflight/">How to enable Blackbox in Betaflight</a></li>
+</ul>
+</main>
+<footer>
+  <a href="https://www.narenana.com/log-viewer/">RC Log Viewer</a> ·
+  <a href="https://www.narenana.com/log-viewer/guides/">Guides</a> ·
+  <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
+  Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
+  alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
+</footer>
+</body>
+</html>

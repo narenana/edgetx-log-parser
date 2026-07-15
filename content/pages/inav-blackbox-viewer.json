@@ -1,0 +1,76 @@
+{
+  "slug": "inav-blackbox-viewer",
+  "title": "iNAV Blackbox Viewer (Free, In-Browser)",
+  "metaDescription": "Open iNAV blackbox logs (.bbl/.bfl/.txt) in your browser. GPS 3D flight replay, synced charts, no upload. Free and open-source. Supports iNAV up to 8.x.",
+  "h1": "iNAV Blackbox Viewer: replay logs with GPS in your browser",
+  "ogTitle": "iNAV Blackbox Viewer with 3D GPS Replay",
+  "ogDescription": "Drop an iNAV .bbl or .txt blackbox log in and get a 3D flight replay on a satellite globe plus synced telemetry charts. Parsed locally, never uploaded.",
+  "introHtml": "<p><strong>RC Log Viewer is a free, browser-based iNAV blackbox viewer: drop an iNAV log (<code>.bbl</code>, <code>.bfl</code>, or <code>.txt</code>) onto <a href=\"https://www.narenana.com/log-viewer/\">the viewer</a> and it decodes the log in your browser and plays it back.</strong> Because iNAV logs usually carry GPS when a GPS module is fitted, you get a full 3D flight replay on a satellite globe alongside synced telemetry charts — no desktop install, no account, and nothing uploaded.</p><p>iNAV is GPS-navigation firmware, so its logs usually carry real coordinates — planes and long-range wings especially — which is exactly what the 3D replay needs. Parsing runs on WebAssembly entirely on your machine, so the coordinates of your flying field stay on it.</p>",
+  "sections": [
+    {
+      "heading": "What it opens and where iNAV logs live",
+      "html": "<p>The viewer reads iNAV blackbox logs in the formats iNAV writes: <code>.bbl</code>, <code>.bfl</code>, and plain <code>.txt</code> exports. Coverage runs through <strong>iNAV blackbox up to 8.x</strong>. There are two common places your log ends up:</p><ul><li><strong>SD card / dataflash on the flight controller.</strong> If your FC logs to an onboard SD card or dataflash chip, the raw log file is written there during the flight.</li><li><strong>Pulled via iNAV Configurator.</strong> Open the <strong>Blackbox</strong> tab in iNAV Configurator, connect the FC, and use the option to save the flash log — that writes the log out to a file on your computer.</li></ul><p>Either way, once you have the file you drag it straight onto the viewer. A single blackbox file can contain several arming sessions; each logged flight is decoded from the same file.</p>"
+    },
+    {
+      "heading": "3D GPS replay — the part iNAV pilots actually want",
+      "html": "<p>The 3D flight replay needs GPS coordinates in the log, and iNAV logs usually have them when a GPS module is fitted — which on iNAV planes and wings is almost always the case. When coordinates are present you get:</p><ul><li>A <strong>satellite-globe replay</strong> of the exact track, with <strong>chase, tail, orbit, and top-down cameras</strong>.</li><li>A <strong>live telemetry bar</strong> — battery per-cell voltage, altitude, speed, heading, attitude, and stick inputs — that updates as the replay plays.</li><li><strong>Synced charts</strong> for attitude, altitude &amp; vertical speed, speed &amp; heading, battery, signal, and RC inputs. Scrub the timeline and every chart and the globe move together.</li><li>One-tap jumps between <strong>takeoff, RTH, and landing</strong> events, plus bookmarks you set yourself.</li></ul><p>You can see it live without your own log: <a href=\"https://www.narenana.com/log-viewer/?sample=fixed-wing&autoplay=1\">open the fixed-wing sample replay</a>, or add <code>&camera=orbit</code> to start on the orbit camera.</p>"
+    },
+    {
+      "heading": "If a log has no GPS",
+      "html": "<p>Not every iNAV setup logs position — a bench log, a GPS-less quad build, or a flight before GPS lock will have no usable coordinates. In that case the 3D globe is simply unavailable, but <strong>every synced chart and the telemetry bar still work</strong>: attitude, altitude and vertical speed, battery, signal, and RC inputs all replay against the timeline exactly the same way. You lose the map, not the analysis.</p>"
+    },
+    {
+      "heading": "Reading iNAV fields",
+      "html": "<p>iNAV blackbox packs a lot of navigation state most Betaflight racing logs don't. The charts surface the fields that matter for tuning and diagnosis:</p><ul><li><strong>Attitude</strong> (roll/pitch/heading) to check how the plane tracked through turns and RTH.</li><li><strong>Altitude &amp; vertical speed</strong> to see climb/descent, altitude-hold behavior, and the descent into landing.</li><li><strong>Speed &amp; heading</strong> from GPS to review ground track and navigation legs.</li><li><strong>Battery</strong> down to per-cell voltage, to catch sag under load on long-range legs.</li><li><strong>Signal</strong> to line up RC link quality against where in the flight things went wrong.</li></ul><p>For a walkthrough of what each trace means, see <a href=\"https://www.narenana.com/log-viewer/how-to-read-a-blackbox-log/\">how to read a blackbox log</a>; if you're diagnosing a specific incident, <a href=\"https://www.narenana.com/log-viewer/analyze-a-crash-log/\">analyze a crash log</a> walks the timeline backwards from the failure.</p>"
+    },
+    {
+      "heading": "Private by design, works offline",
+      "html": "<p>Blackbox logs embed the GPS coordinates of your flying field. Because RC Log Viewer parses everything locally in the browser, those coordinates <strong>never leave your machine</strong> — there is no upload step and no server that sees your log. It's <a href=\"https://www.narenana.com/log-viewer/\">open-source (GPL-3.0)</a>, installs as a PWA that works offline, and there are free desktop builds for Windows, macOS, and Linux on the GitHub releases page if you prefer a standalone app.</p>"
+    }
+  ],
+  "faqs": [
+    {
+      "q": "What file formats does the iNAV blackbox viewer accept?",
+      "a": "iNAV blackbox logs as .bbl, .bfl, or plain .txt. These are the formats iNAV writes to onboard SD card / dataflash or that you save out through iNAV Configurator's Blackbox tab."
+    },
+    {
+      "q": "Which iNAV versions are supported?",
+      "a": "iNAV blackbox up to 8.x. Logs from those firmware versions decode and replay in the browser."
+    },
+    {
+      "q": "Will the 3D flight replay work with my iNAV log?",
+      "a": "Usually yes, if a GPS module was fitted and had a fix — iNAV logs typically carry GPS coordinates, which is what the satellite-globe replay needs. Without GPS the globe is unavailable but all telemetry charts still work."
+    },
+    {
+      "q": "How do I get the log off my flight controller?",
+      "a": "If your FC logs to SD card, copy the file off the card. Otherwise open the Blackbox tab in iNAV Configurator, connect the FC, and save the flash log to your computer, then drag that file onto the viewer."
+    },
+    {
+      "q": "Are my logs uploaded anywhere?",
+      "a": "No. Parsing runs entirely in your browser via WebAssembly. The log — including the GPS coordinates of your flying field — never leaves your machine, and no account is needed."
+    },
+    {
+      "q": "Can I open Betaflight logs here too?",
+      "a": "Yes, the same viewer reads Betaflight blackbox — see the Betaflight blackbox viewer page. Note most racing/freestyle quads log no GPS, so on those the globe is unavailable while the charts still work."
+    }
+  ],
+  "relatedLinks": [
+    {
+      "text": "Open the RC Log Viewer",
+      "href": "https://www.narenana.com/log-viewer/"
+    },
+    {
+      "text": "How to enable blackbox logging in iNAV",
+      "href": "https://www.narenana.com/log-viewer/enable-blackbox-inav/"
+    },
+    {
+      "text": "Betaflight blackbox viewer",
+      "href": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
+    },
+    {
+      "text": "How to read a blackbox log",
+      "href": "https://www.narenana.com/log-viewer/how-to-read-a-blackbox-log/"
+    }
+  ],
+  "kind": "usecase"
+}

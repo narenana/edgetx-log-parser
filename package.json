@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
     "dev:web": "vite",
+    "prebuild": "node scripts/gen-content.mjs",
+    "gen:content": "node scripts/gen-content.mjs",
     "build": "cross-env VITE_BUILD_TARGET=web vite build",
     "build:desktop": "cross-env VITE_BUILD_TARGET=desktop vite build",
     "preview": "vite preview",
