@@ -446,6 +446,19 @@ export default function GlobeView({
       viewer.scene.postProcessStages.fxaa.enabled = true
     }
 
+    // ── Render fidelity ───────────────────────────────────────────────────────
+    // Draw at the display's NATIVE pixel resolution. Cesium's default
+    // (`useBrowserRecommendedResolution = true`) renders at CSS pixels and
+    // ignores devicePixelRatio, so on a HiDPI / Retina screen the globe is
+    // drawn at 1x and upscaled — the single biggest source of "soft" globe.
+    // false = honour devicePixelRatio = crisp. Affordable because
+    // requestRenderMode means we only paint on demand, not every frame.
+    viewer.useBrowserRecommendedResolution = false
+    // Pull in higher-detail imagery/terrain tiles (default screen-space error
+    // is 2). 1.5 noticeably sharpens the satellite backdrop at chase altitude
+    // for a modest extra tile fetch.
+    viewer.scene.globe.maximumScreenSpaceError = 1.5
+
     const cc = viewer.cesiumWidget?.creditContainer
     if (cc) cc.style.display = 'none'
 
@@ -827,17 +840,20 @@ export default function GlobeView({
         }, false),
         model: {
           uri: url,
-          // minimumPixelSize disabled (was 48). Cesium scales the model
-          // up to enforce a minimum on-screen size, but that scale is a
-          // continuous function of camera distance — even sub-pixel
-          // smooth.dist jitter produced sub-frame scale changes that
-          // showed up as the model "breathing" between frames during
-          // the camera-director investigation. Removing the scaling
-          // eliminates the artefact. Trade-off: the model can become
-          // small at far chase distance — at 700 m chase distance /
-          // ~10 m wingspan it's ~15 px wide, still visible.
-          minimumPixelSize: 0,
+          // Keep the wing readable at far chase distance. minimumPixelSize
+          // was previously disabled because sub-pixel smooth.dist jitter made
+          // the distance-driven scale "breathe"; the camera-distance smoothing
+          // is monotonic now (and we no longer use trackedEntity, so the old
+          // bounding-sphere fly-away is moot), and a modest on-screen floor is
+          // worth far more than a ~15px speck at 700m chase.
+          minimumPixelSize: 44,
           maximumScale: 8000,
+          // Brighten the model (default lighting leaves it a dark blob over
+          // bright satellite imagery) and outline it so the eye locks onto the
+          // aircraft even against busy terrain.
+          lightColor: new Cesium.Cartesian3(1.5, 1.5, 1.5),
+          silhouetteColor: Cesium.Color.WHITE.withAlpha(0.85),
+          silhouetteSize: 1.5,
         },
       })
 
