@@ -383,40 +383,35 @@ body {
 }
 
 /* ── View mode toggle ── */
-.view-toggle-bar {
+/* View-mode segmented control — lives in the header (the redesign folds
+   the old 44px view-toggle band into the top bar, giving the globe that
+   vertical space). Pill container + two segments; active one raised. */
+.view-seg {
   flex: none;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
-  background: var(--bg2);
-  border-bottom: 1px solid var(--border);
-}
-.view-toggle-label {
-  font-size: 11px;
-  color: var(--text2);
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  font-weight: 600;
-  margin-right: 6px;
-}
-.view-toggle-btn {
-  padding: 7px 16px;
+  gap: 2px;
+  padding: 2px;
   background: var(--bg3);
   border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.view-seg-btn {
+  padding: 5px 12px;
+  background: transparent;
+  border: none;
   border-radius: 6px;
   color: var(--text2);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  white-space: nowrap;
+  transition: color 0.12s, background 0.12s, box-shadow 0.12s;
 }
-.view-toggle-btn:hover { color: var(--text); border-color: var(--border-bright); }
-.view-toggle-btn.active {
+.view-seg-btn:hover { color: var(--text); }
+.view-seg-btn.active {
   background: var(--bg);
-  border-color: var(--blue);
   color: var(--blue);
-  box-shadow: 0 0 0 1px var(--blue), 0 2px 8px var(--shadow-card);
+  box-shadow: 0 1px 3px var(--shadow-card);
 }
 
 /* ── Dashboard layout ── */
@@ -1348,10 +1343,8 @@ body {
   .open-btn { padding: 6px 10px; font-size: 11px; }
   .tab { padding: 4px 10px; font-size: 11px; }
 
-  /* View toggle: smaller buttons, label hidden. */
-  .view-toggle-bar { padding: 4px 8px; gap: 3px; }
-  .view-toggle-label { display: none; }
-  .view-toggle-btn { padding: 4px 10px; font-size: 11px; min-height: 28px; }
+  /* View segmented control: tighter on phones. */
+  .view-seg-btn { padding: 4px 9px; font-size: 11px; }
 
   /* Larger touch targets for playback — Apple HIG recommends 44 px
      minimum on iOS. Going slightly bigger on phones because thumb

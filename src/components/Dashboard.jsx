@@ -42,8 +42,8 @@ function ds(label, data, color, extra = {}) {
   }
 }
 
-export default function Dashboard({ log, theme = 'light', autoPlay = false, onAutoPlayConsumed }) {
-  const [viewMode, setViewMode] = useState(2) // 1 = classic, 2 = 3D globe
+export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay = false, onAutoPlayConsumed }) {
+  // viewMode is owned by App (the header hosts the Classic / 3D-Globe toggle).
   const [cursorIndex, setCursorIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
@@ -376,41 +376,12 @@ export default function Dashboard({ log, theme = 'light', autoPlay = false, onAu
   cursorRowRef.current = cursorRow ?? null
   const fmtClock = s => `${Math.floor(s / 60)}:${(Math.round(s) % 60).toString().padStart(2, '0')}`
   const totalSec = rows.length ? rows[rows.length - 1]._tSec : 0
-  const tStr = cursorRow
-    ? `T+${fmtClock(cursorRow._tSec)} / ${fmtClock(totalSec)}  ${cursorRow['FM'] || ''}  Alt ${cursorRow['Alt(m)']}m  ${cursorRow['GSpd(kmh)']} km/h`
-    : ''
+  // Dock cursor string is just position-in-flight now; the telemetry bar
+  // owns the live values (mode / altitude / speed), so we don't duplicate them.
+  const tStr = cursorRow ? `T+${fmtClock(cursorRow._tSec)} / ${fmtClock(totalSec)}` : ''
 
   return (
     <div className="dashboard">
-      {/* View mode toggle */}
-      <div className="view-toggle-bar">
-        <span className="view-toggle-label">View</span>
-        <button
-          className={`view-toggle-btn${viewMode === 1 ? ' active' : ''}`}
-          onClick={() => {
-            if (viewMode !== 1) {
-              setViewMode(1)
-              track('view_changed', { mode: 'classic' })
-            }
-          }}
-          title="2D map + attitude panel"
-        >
-          ① Classic
-        </button>
-        <button
-          className={`view-toggle-btn${viewMode === 2 ? ' active' : ''}`}
-          onClick={() => {
-            if (viewMode !== 2) {
-              setViewMode(2)
-              track('view_changed', { mode: 'globe' })
-            }
-          }}
-          title="3D globe with satellite imagery"
-        >
-          ② 3D Globe
-        </button>
-      </div>
-
       <div className="dashboard-main">
         <div className="dashboard-left">
           {viewMode === 2 ? (

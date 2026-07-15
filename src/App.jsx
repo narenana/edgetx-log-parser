@@ -94,6 +94,10 @@ export default function App() {
   // Set by an &autoplay=1 deep link: the next Dashboard mount starts
   // playback immediately (consumed once via onAutoPlayConsumed).
   const [autoPlayArmed, setAutoPlayArmed] = useState(false)
+  // View mode lives here (lifted from Dashboard) so the header can host the
+  // Classic / 3D-Globe segmented control — the redesign folds the old 44px
+  // view-toggle band into the top bar to give the globe that vertical space.
+  const [viewMode, setViewMode] = useState(2) // 1 = classic, 2 = 3D globe
   const fileInputRef = useRef(null)
 
   // Apply the theme to <html data-theme="..."> + persist. CSS variables
@@ -330,6 +334,29 @@ export default function App() {
           </div>
         )}
 
+        {activeLog && (
+          <div className="view-seg" role="group" aria-label="View mode">
+            <button
+              type="button"
+              className={`view-seg-btn${viewMode === 1 ? ' active' : ''}`}
+              onClick={() => { if (viewMode !== 1) { setViewMode(1); track('view_changed', { mode: 'classic' }) } }}
+              aria-pressed={viewMode === 1}
+              title="2D map + attitude panel"
+            >
+              Classic
+            </button>
+            <button
+              type="button"
+              className={`view-seg-btn${viewMode === 2 ? ' active' : ''}`}
+              onClick={() => { if (viewMode !== 2) { setViewMode(2); track('view_changed', { mode: 'globe' }) } }}
+              aria-pressed={viewMode === 2}
+              title="3D globe with satellite imagery"
+            >
+              3D&nbsp;Globe
+            </button>
+          </div>
+        )}
+
         <ThemeToggle theme={theme} onToggle={toggleTheme} />
 
         <button className="open-btn" onClick={() => fileInputRef.current.click()}>
@@ -365,6 +392,7 @@ export default function App() {
             key={activeLog.filename}
             log={activeLog}
             theme={theme}
+            viewMode={viewMode}
             autoPlay={autoPlayArmed}
             onAutoPlayConsumed={() => setAutoPlayArmed(false)}
           />
