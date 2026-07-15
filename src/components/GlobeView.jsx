@@ -530,7 +530,11 @@ export default function GlobeView({
     // Absolute ellipsoid altitude for a row = launch-terrain elevation +
     // the row's AGL / home-relative altitude. baseElevRef is 0 until terrain
     // sampling resolves, then pathPositions is recomputed in place.
-    const absAlt = (row) => baseElevRef.current + Math.max(0, row['Alt(m)'] || 0)
+    // Altitude is honoured signed (NOT clamped to ≥0): with 3D terrain a
+    // flight can legitimately drop BELOW its launch elevation — e.g. diving
+    // off a rim into a canyon — and the aircraft should follow it down.
+    const absAlt = (row) =>
+      baseElevRef.current + (Number.isFinite(row['Alt(m)']) ? row['Alt(m)'] : 0)
     const computePathPositions = () =>
       catmullRomSmooth(
         pathRows.map(r => Cesium.Cartesian3.fromDegrees(r._lon, r._lat, absAlt(r))),
@@ -976,7 +980,7 @@ export default function GlobeView({
           const base = baseElevRef.current
           return [
             Cesium.Cartesian3.fromDegrees(r._lon, r._lat, base),
-            Cesium.Cartesian3.fromDegrees(r._lon, r._lat, base + Math.max(0, r['Alt(m)'] || 0)),
+            Cesium.Cartesian3.fromDegrees(r._lon, r._lat, base + (Number.isFinite(r['Alt(m)']) ? r['Alt(m)'] : 0)),
           ]
         }, false),
         width: 1.5,

@@ -111,188 +111,64 @@ function arcPoint(centerE, centerN, R, startPhi, endPhi, u, leftTurn = true) {
 // downwind line for a single descending circuit + final approach.
 
 function buildFixedWingFlight() {
-  const TOTAL = 468 // s
-  const start = new Date('2024-09-15T14:23:00Z').getTime()
+  const start = new Date('2024-09-15T21:23:00Z').getTime()
   const out = []
 
-  const TURN_R = 50  // field-circuit corner radius
-  const DIV_R = 280  // diversion U-turn radius (gentler — wider sweep)
+  // Canyon-dive demo over the Grand Canyon South Rim. The canyon opens to the
+  // NORTH of the launch point; `alt` is AGL / relative-to-launch and goes
+  // NEGATIVE as the aircraft noses off the rim and drops into the canyon, then
+  // climbs back out to land. Waypoints -> straight legs; GlobeView's Catmull-Rom
+  // smoothing rounds the corners and derives the model's dive/bank pose from the
+  // resulting 3D path.
+  const WP = [
+    { E:     0, N:    0, alt:    0, spd:   0, mode: 'MANU' }, // pad
+    { E:     0, N:  190, alt:   35, spd:  70, mode: 'ANGL' }, // hand-launch north
+    { E:     0, N:  680, alt:  135, spd: 100, mode: 'ANGL' }, // climb over the plateau
+    { E:    80, N: 1280, alt:  155, spd: 112, mode: 'CRUZ' }, // cruise out to the rim
+    { E:   270, N: 1980, alt:   15, spd: 124, mode: 'CRUZ' }, // nose over the rim
+    { E:   480, N: 2560, alt: -235, spd: 134, mode: 'CRUZ' }, // dive into the canyon
+    { E:   360, N: 3090, alt: -375, spd: 133, mode: 'CRUZ' }, // pulling level, deep
+    { E:  -260, N: 3170, alt: -395, spd: 123, mode: 'CRUZ' }, // bottom of the dive, banking back
+    { E:  -890, N: 2820, alt: -330, spd: 119, mode: 'CRUZ' }, // tracking the gorge SW
+    { E: -1190, N: 2090, alt: -140, spd: 113, mode: 'CRUZ' }, // climbing out, heading S
+    { E:  -960, N: 1290, alt:   75, spd: 107, mode: 'CRUZ' }, // back up over the rim
+    { E:  -540, N:  690, alt:  125, spd: 100, mode: 'CRUZ' }, // downwind over the plateau
+    { E:  -100, N:  270, alt:   72, spd:  86, mode: 'CRUZ' }, // base leg
+    { E:   250, N:   70, alt:   32, spd:  64, mode: 'ANGL' }, // turn to final
+    { E:    60, N:    6, alt:    4, spd:  42, mode: 'ANGL' }, // short final
+    { E:     0, N:    0, alt:    0, spd:  20, mode: 'LAND' }, // touchdown at home
+    { E:   -30, N:    0, alt:    0, spd:   0, mode: 'LAND' }, // rollout
+  ]
+  // Seconds to fly each leg i (WP[i-1] -> WP[i]); a hold precedes the roll.
+  const LEG = [0, 9, 17, 19, 20, 20, 18, 18, 18, 20, 20, 16, 14, 12, 14, 8, 10]
+  const HOLD = 8
+
+  const bearing = (a, b) => ((Math.atan2(b.E - a.E, b.N - a.N) * 180) / Math.PI + 360) % 360
+  const angDiff = (a, b) => ((b - a + 540) % 360) - 180
+  const horiz = (a, b) => Math.hypot(b.E - a.E, b.N - a.N)
+  const legHdg = (i) => (i >= 1 && i < WP.length && horiz(WP[i - 1], WP[i]) > 1 ? bearing(WP[i - 1], WP[i]) : 0)
 
   const phases = [
-    // ── Pre-flight & takeoff ──
-    // 0–8  pre-takeoff hold
-    { dur: 8, mode: 'MANU', kind: 'static', E: 0, N: 0, alt: 0, gspd: 0, hdg: 90, pitch: 0, roll: 0 },
-
-    // 8–13  takeoff roll
-    { dur: 5, mode: 'ANGL', kind: 'line',
-      fromE: 0, fromN: 0, toE: 50, toN: 0,
-      fromAlt: 0, toAlt: 0, fromGspd: 0, toGspd: 65, hdg: 90, pitch: 0.05, roll: 0 },
-
-    // 13–28  initial climb-out east, alt 0→50, spd 65→90
-    { dur: 15, mode: 'ANGL', kind: 'line',
-      fromE: 50, fromN: 0, toE: 380, toN: 0,
-      fromAlt: 0, toAlt: 50, fromGspd: 65, toGspd: 90, hdg: 90, pitch: 0.18, roll: 0 },
-
-    // ══ Climbing left circuit #1 (alt 50 → 115 m) ══
-
-    // 28–36  crosswind turn (E → N)
-    { dur: 8, mode: 'ANGL', kind: 'arc',
-      centerE: 380, centerN: 50, R: TURN_R, startPhi: 180, endPhi: 90,
-      fromAlt: 50, toAlt: 60, gspd: 90, pitch: 0.06, roll: -0.42 },
-
-    // 36–42  x-wind leg N
-    { dur: 6, mode: 'ANGL', kind: 'line',
-      fromE: 430, fromN: 50, toE: 430, toN: 200,
-      fromAlt: 60, toAlt: 70, gspd: 90, hdg: 0, pitch: 0.05, roll: 0 },
-
-    // 42–50  downwind turn (N → W)
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: 380, centerN: 200, R: TURN_R, startPhi: 90, endPhi: 0,
-      fromAlt: 70, toAlt: 80, gspd: 90, pitch: 0.04, roll: -0.42 },
-
-    // 50–80  downwind leg W
-    { dur: 30, mode: 'CRUZ', kind: 'line',
-      fromE: 380, fromN: 250, toE: -380, toN: 250,
-      fromAlt: 80, toAlt: 95, fromGspd: 90, toGspd: 95, hdg: 270, pitch: 0.04, roll: 0 },
-
-    // 80–88  base turn (W → S) — true 90° left turn (lerp 360→270)
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: -380, centerN: 200, R: TURN_R, startPhi: 360, endPhi: 270,
-      fromAlt: 95, toAlt: 100, gspd: 95, pitch: 0.04, roll: -0.42 },
-
-    // 88–94  base leg S
-    { dur: 6, mode: 'CRUZ', kind: 'line',
-      fromE: -430, fromN: 200, toE: -430, toN: 50,
-      fromAlt: 100, toAlt: 110, gspd: 95, hdg: 180, pitch: 0.04, roll: 0 },
-
-    // 94–102  final turn (S → E)
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: -380, centerN: 50, R: TURN_R, startPhi: 270, endPhi: 180,
-      fromAlt: 110, toAlt: 115, gspd: 95, pitch: 0.04, roll: -0.42 },
-
-    // 102–132  straight east through field, climb 115→130
-    { dur: 30, mode: 'CRUZ', kind: 'line',
-      fromE: -380, fromN: 0, toE: 380, toN: 0,
-      fromAlt: 115, toAlt: 130, gspd: 95, hdg: 90, pitch: 0.04, roll: 0 },
-
-    // ══ Climbing left circuit #2 (alt 130 → 170 m) ══
-
-    // 132–140  crosswind turn
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: 380, centerN: 50, R: TURN_R, startPhi: 180, endPhi: 90,
-      fromAlt: 130, toAlt: 135, gspd: 95, pitch: 0.04, roll: -0.42 },
-
-    // 140–146  x-wind leg N
-    { dur: 6, mode: 'CRUZ', kind: 'line',
-      fromE: 430, fromN: 50, toE: 430, toN: 200,
-      fromAlt: 135, toAlt: 140, gspd: 95, hdg: 0, pitch: 0.04, roll: 0 },
-
-    // 146–154  downwind turn
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: 380, centerN: 200, R: TURN_R, startPhi: 90, endPhi: 0,
-      fromAlt: 140, toAlt: 145, gspd: 95, pitch: 0.02, roll: -0.42 },
-
-    // 154–184  downwind leg W
-    { dur: 30, mode: 'CRUZ', kind: 'line',
-      fromE: 380, fromN: 250, toE: -380, toN: 250,
-      fromAlt: 145, toAlt: 155, gspd: 95, hdg: 270, pitch: 0.02, roll: 0 },
-
-    // 184–192  base turn
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: -380, centerN: 200, R: TURN_R, startPhi: 360, endPhi: 270,
-      fromAlt: 155, toAlt: 160, gspd: 95, pitch: 0.02, roll: -0.42 },
-
-    // 192–198  base leg S
-    { dur: 6, mode: 'CRUZ', kind: 'line',
-      fromE: -430, fromN: 200, toE: -430, toN: 50,
-      fromAlt: 160, toAlt: 165, gspd: 95, hdg: 180, pitch: 0.02, roll: 0 },
-
-    // 198–206  final turn
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: -380, centerN: 50, R: TURN_R, startPhi: 270, endPhi: 180,
-      fromAlt: 165, toAlt: 170, gspd: 95, pitch: 0.02, roll: -0.42 },
-
-    // ══ Diversion: SE outbound → 200 m climb → hard-left U-turn → NW inbound ══
-
-    // 206–220  climb-out east, alt 170→185, spd 95→105
-    { dur: 14, mode: 'CRUZ', kind: 'line',
-      fromE: -380, fromN: 0, toE: 40, toN: 0,
-      fromAlt: 170, toAlt: 185, fromGspd: 95, toGspd: 105, hdg: 90, pitch: 0.05, roll: 0 },
-
-    // 220–227  right turn 45° to SE (R=80), alt 185→190
-    { dur: 7, mode: 'CRUZ', kind: 'arc', leftTurn: false,
-      centerE: 40, centerN: -80, R: 80, startPhi: 0, endPhi: 45,
-      fromAlt: 185, toAlt: 190, gspd: 105, pitch: 0.04, roll: 0.42 },
-
-    // 227–262  SE outbound, climb 190→200, spd 105→115
-    //   (97, -23) → (854, -780)  [≈1.07 km at hdg 135]
-    { dur: 35, mode: 'CRUZ', kind: 'line',
-      fromE: 97, fromN: -23, toE: 854, toN: -780,
-      fromAlt: 190, toAlt: 200, fromGspd: 105, toGspd: 115, hdg: 135, pitch: 0.05, roll: 0 },
-
-    // 262–272  SE cruise — hold 200 m, 115 km/h
-    //   (854, -780) → (1080, -1006)
-    { dur: 10, mode: 'CRUZ', kind: 'line',
-      fromE: 854, fromN: -780, toE: 1080, toN: -1006,
-      alt: 200, gspd: 115, hdg: 135, pitch: 0, roll: 0 },
-
-    // 272–301  hard-left U-turn 180° (R=DIV_R), hdg 135 → 315
-    //   centre (1278, -808). lerp 225→45 (CCW). end at (1476, -610).
-    { dur: 29, mode: 'CRUZ', kind: 'arc',
-      centerE: 1278, centerN: -808, R: DIV_R, startPhi: 225, endPhi: 45,
-      alt: 200, fromGspd: 115, toGspd: 105, pitch: 0, roll: -0.50 },
-
-    // 301–344  NW inbound, descend 200→125, spd 105→90
-    //   (1476, -610) → (631, 235)  [≈1.20 km at hdg 315]
-    { dur: 43, mode: 'CRUZ', kind: 'line',
-      fromE: 1476, fromN: -610, toE: 631, toN: 235,
-      fromAlt: 200, toAlt: 125, fromGspd: 105, toGspd: 90, hdg: 315, pitch: -0.10, roll: 0 },
-
-    // ══ Standard descending left-traffic pattern ══
-
-    // 344–352  left turn 45° NW → W (R=50)
-    //   centre (596, 200). lerp 45→0. end at (596, 250) hdg 270.
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: 596, centerN: 200, R: TURN_R, startPhi: 45, endPhi: 0,
-      fromAlt: 125, toAlt: 120, gspd: 90, pitch: -0.04, roll: -0.42 },
-
-    // 352–393  downwind W (descending), (596, 250) → (-380, 250), alt 120→80
-    { dur: 41, mode: 'CRUZ', kind: 'line',
-      fromE: 596, fromN: 250, toE: -380, toN: 250,
-      fromAlt: 120, toAlt: 80, fromGspd: 90, toGspd: 80, hdg: 270, pitch: -0.04, roll: 0 },
-
-    // 393–401  base turn (W → S), alt 80→65
-    { dur: 8, mode: 'CRUZ', kind: 'arc',
-      centerE: -380, centerN: 200, R: TURN_R, startPhi: 360, endPhi: 270,
-      fromAlt: 80, toAlt: 65, gspd: 80, pitch: -0.04, roll: -0.42 },
-
-    // 401–407  base leg S, alt 65→50, decel 80→75
-    { dur: 6, mode: 'CRUZ', kind: 'line',
-      fromE: -430, fromN: 200, toE: -430, toN: 50,
-      fromAlt: 65, toAlt: 50, fromGspd: 80, toGspd: 75, hdg: 180, pitch: -0.04, roll: 0 },
-
-    // 407–415  final turn (S → E), alt 50→35, spd 75→65
-    { dur: 8, mode: 'ANGL', kind: 'arc',
-      centerE: -380, centerN: 50, R: TURN_R, startPhi: 270, endPhi: 180,
-      fromAlt: 50, toAlt: 35, fromGspd: 75, toGspd: 65, pitch: -0.05, roll: -0.40 },
-
-    // ── Final approach + landing ──
-
-    // 415–443  final approach east, (-380, 0) → (-25, 2), alt 35→3
-    { dur: 28, mode: 'ANGL', kind: 'line',
-      fromE: -380, fromN: 0, toE: -25, toN: 2,
-      fromAlt: 35, toAlt: 3, fromGspd: 65, toGspd: 42, hdg: 90, pitch: -0.07, roll: 0 },
-
-    // 443–453  flare + touchdown
-    { dur: 10, mode: 'LAND', kind: 'line',
-      fromE: -25, fromN: 2, toE: 12, toN: 3,
-      fromAlt: 3, toAlt: 0, fromGspd: 42, toGspd: 22, hdg: 90, pitch: 0.04, roll: 0 },
-
-    // 453–468  ground roll, decel to stop
-    { dur: 15, mode: 'LAND', kind: 'line',
-      fromE: 12, fromN: 3, toE: 35, toN: 3,
-      alt: 0, fromGspd: 22, toGspd: 0, hdg: 90, pitch: 0, roll: 0 },
+    { kind: 'static', dur: HOLD, E: 0, N: 0, alt: 0, gspd: 0, hdg: legHdg(1), pitch: 0, roll: 0, mode: 'MANU' },
   ]
+  for (let i = 1; i < WP.length; i++) {
+    const A = WP[i - 1], B = WP[i]
+    const dh = horiz(A, B)
+    const hdg = dh > 1 ? bearing(A, B) : legHdg(i)
+    const pitch = dh > 1 ? Math.atan2(B.alt - A.alt, dh) : 0
+    let roll = 0
+    if (i < WP.length - 1) {
+      const turn = angDiff(hdg, legHdg(i + 1))
+      roll = Math.max(-0.6, Math.min(0.6, turn * 0.010))
+    }
+    phases.push({
+      kind: 'line', dur: LEG[i],
+      fromE: A.E, toE: B.E, fromN: A.N, toN: B.N,
+      fromAlt: A.alt, toAlt: B.alt, fromGspd: A.spd, toGspd: B.spd,
+      hdg, pitch, roll, mode: B.mode,
+    })
+  }
+  const TOTAL = phases.reduce((a, p) => a + p.dur, 0)
 
   // Sanity check: durations sum to TOTAL
   const sumDur = phases.reduce((a, p) => a + p.dur, 0)
@@ -313,7 +189,7 @@ function buildFixedWingFlight() {
     // 12.6V → 11.0V over flight, ripple under load
     const battF = t / TOTAL
     const rxBt = 12.6 - battF * 1.5 + Math.sin(t * 0.6) * 0.05
-    const curr = 7 + (gspd / 60) * 12 + (alt > 5 ? Math.sin(t * 0.4) * 1.5 : 0)
+    const curr = 7 + (gspd / 60) * 12 + (Math.abs(alt) > 5 ? Math.sin(t * 0.4) * 1.5 : 0)
     cap += (curr * 1000) / 3600
 
     const distM = Math.sqrt(E * E + N * N)
