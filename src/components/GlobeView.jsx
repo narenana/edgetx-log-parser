@@ -377,6 +377,11 @@ export default function GlobeView({
   const aircraftHdgRef = useRef(0)    // compass degrees
   const aircraftPitchRef = useRef(0)  // degrees, +up
   const aircraftRollRef = useRef(0)   // degrees, +right wing down
+  // Terrain elevation (m, ellipsoid) sampled at the launch point. Log
+  // altitudes are AGL / relative-to-launch, so we add this so the flight
+  // sits on top of the 3D terrain instead of at sea level (underground).
+  // Starts 0 (flat-ellipsoid equivalent); set once terrain sampling resolves.
+  const baseElevRef = useRef(0)
   const autoRef       = useRef(true)
   const glbUrlRef     = useRef(null)
   const [autoMode, setAutoMode] = useState(true)
@@ -485,6 +490,14 @@ export default function GlobeView({
     viewer.scene.skyAtmosphere.show = true
     viewer.scene.globe.showGroundAtmosphere = true
 
+    // Sun-based terrain shading — gives the 3D terrain real relief instead
+    // of a flat-lit drape. Pin the clock to a fixed mid-afternoon instant so
+    // the light stays warm and consistent (default would track real "now").
+    // The aircraft/path use time-independent CallbackProperties, so freezing
+    // the clock here only fixes the sun angle — it doesn't touch playback.
+    viewer.scene.globe.enableLighting = true
+    viewer.clock.currentTime = Cesium.JulianDate.fromIso8601('2024-09-15T21:30:00Z')
+
     // Disable inertia — zoom/pan/orbit should stop the instant the user releases input
     const ssc = viewer.scene.screenSpaceCameraController
     ssc.inertiaSpin = 0
@@ -514,14 +527,23 @@ export default function GlobeView({
     // primitive is reconstructed only ~4×/sec at 1× playback (one
     // rebuild per pathRow boundary cross), not 30×/sec.
     const SMOOTH_STEPS = 8
-    const pathPositions = (() => {
-      const pts = pathRows.map(r =>
-        Cesium.Cartesian3.fromDegrees(
-          r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
-        ),
+    // Absolute ellipsoid altitude for a row = launch-terrain elevation +
+    // the row's AGL / home-relative altitude. baseElevRef is 0 until terrain
+    // sampling resolves, then pathPositions is recomputed in place.
+    const absAlt = (row) => baseElevRef.current + Math.max(0, row['Alt(m)'] || 0)
+    const computePathPositions = () =>
+      catmullRomSmooth(
+        pathRows.map(r => Cesium.Cartesian3.fromDegrees(r._lon, r._lat, absAlt(r))),
+        SMOOTH_STEPS,
       )
-      return catmullRomSmooth(pts, SMOOTH_STEPS)
-    })()
+    const pathPositions = computePathPositions()
+    // Recompute pathPositions IN PLACE (same length) so every downstream
+    // reference — aircraft-pose interpolation, camera follow, path primitive
+    // — picks up the new heights without rebinding the array.
+    const rebuildPathPositions = () => {
+      const fresh = computePathPositions()
+      for (let i = 0; i < pathPositions.length; i++) pathPositions[i] = fresh[i]
+    }
     const FM_LINE_WIDTH = 1
     const FUTURE_COLOR = Cesium.Color.fromCssColorString('#bdbdbd')
 
@@ -771,8 +793,10 @@ export default function GlobeView({
     pathPrimIdx = 0
 
     const addDot = (r, color) => viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0)),
-      point: { pixelSize: 9, color: Cesium.Color.fromCssColorString(color), outlineColor: Cesium.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Infinity },
+      // Ground markers clamp to the terrain surface (height ignored) so
+      // they sit on the 3D terrain at the launch / landing point.
+      position: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, 0),
+      point: { pixelSize: 9, color: Cesium.Color.fromCssColorString(color), outlineColor: Cesium.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Infinity, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
     })
     addDot(gpsRows[0], '#9ece6a')
     addDot(gpsRows[gpsRows.length - 1], '#f7768e')
@@ -788,6 +812,44 @@ export default function GlobeView({
     const EXTERNAL_MODEL_URL = './models/wing.glb'
     let cancelled = false
     let aircraftEntity = null
+
+    // ── 3D terrain ────────────────────────────────────────────────────────────
+    // ArcGIS world elevation — matches the ArcGIS World Imagery above and
+    // needs no Cesium-ion token. Log altitudes are AGL / relative-to-launch,
+    // so once the provider loads we sample the launch-point ground elevation
+    // and lift the entire flight onto the terrain (baseElevRef). If anything
+    // fails we fall back to the flat ellipsoid so the flight never ends up
+    // buried under the ground.
+    const applyBaseElevation = (elev) => {
+      if (!Number.isFinite(elev) || elev === baseElevRef.current) return
+      baseElevRef.current = elev
+      rebuildPathPositions()
+      // Swap in a path primitive built from the lifted positions.
+      const fresh = buildPathPrimitive(pathPrimIdx < 0 ? 0 : pathPrimIdx)
+      viewer.scene.primitives.add(fresh)
+      const old = pathPrimitive
+      pathPrimitive = fresh
+      if (old) { try { viewer.scene.primitives.remove(old) } catch (_) {} }
+      updateAircraftPose()
+      viewer.scene.requestRender()
+    }
+    Cesium.ArcGISTiledElevationTerrainProvider
+      .fromUrl('https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer')
+      .then(async (tp) => {
+        if (cancelled) return
+        viewer.scene.terrainProvider = tp
+        try {
+          const launch = Cesium.Cartographic.fromDegrees(gpsRows[0]._lon, gpsRows[0]._lat)
+          const [s] = await Cesium.sampleTerrainMostDetailed(tp, [launch])
+          if (cancelled) return
+          if (s && Number.isFinite(s.height)) applyBaseElevation(s.height)
+          else viewer.scene.terrainProvider = new Cesium.EllipsoidTerrainProvider()
+        } catch (_) {
+          if (!cancelled) viewer.scene.terrainProvider = new Cesium.EllipsoidTerrainProvider()
+        }
+      })
+      .catch(() => { /* provider failed to load — stays on the flat ellipsoid */ })
+
     fetch(EXTERNAL_MODEL_URL, { method: 'HEAD' })
       .then(res => (res.ok ? EXTERNAL_MODEL_URL : buildAircraftGLB()))
       .catch(() => buildAircraftGLB())
@@ -846,7 +908,7 @@ export default function GlobeView({
           // is monotonic now (and we no longer use trackedEntity, so the old
           // bounding-sphere fly-away is moot), and a modest on-screen floor is
           // worth far more than a ~15px speck at 700m chase.
-          minimumPixelSize: 44,
+          minimumPixelSize: 64,
           maximumScale: 8000,
           // Brighten the model (default lighting leaves it a dark blob over
           // bright satellite imagery) and outline it so the eye locks onto the
@@ -911,10 +973,10 @@ export default function GlobeView({
         positions: new Cesium.CallbackProperty(() => {
           const r = curRowRef.current
           if (!r || r._lat == null) return []
-          const alt = Math.max(0, r['Alt(m)'] || 0)
+          const base = baseElevRef.current
           return [
-            Cesium.Cartesian3.fromDegrees(r._lon, r._lat, 0),
-            Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt),
+            Cesium.Cartesian3.fromDegrees(r._lon, r._lat, base),
+            Cesium.Cartesian3.fromDegrees(r._lon, r._lat, base + Math.max(0, r['Alt(m)'] || 0)),
           ]
         }, false),
         width: 1.5,
@@ -1179,7 +1241,7 @@ export default function GlobeView({
         const tgtManual = aircraftPosRef.current
           ? Cesium.Cartesian3.clone(aircraftPosRef.current, manualTargetScratch)
           : Cesium.Cartesian3.fromDegrees(
-              r._lon, r._lat, Math.max(0, r['Alt(m)'] || 0),
+              r._lon, r._lat, absAlt(r),
               manualTargetScratch,
             )
         const localOffset = Cesium.Cartesian3.clone(viewer.camera.position, manualOffsetScratch)
@@ -1216,7 +1278,7 @@ export default function GlobeView({
         return
       }
 
-      const alt    = Math.max(0, r['Alt(m)'] || 0)
+      const alt    = absAlt(r)
       const spdMs  = (r['GSpd(kmh)'] || 0) / 3.6
       // Camera tracks the path-following aircraft position, NOT the raw
       // telemetry-derived position. This locks the camera to the model
@@ -1554,7 +1616,7 @@ export default function GlobeView({
           if (broken) {
             const r = curRowRef.current
             if (r && r._lat != null) {
-              const alt = Math.max(0, r['Alt(m)'] || 0)
+              const alt = absAlt(r)
               s.viewer.camera.setView({
                 destination: Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt + 500),
                 orientation: { heading: 0, pitch: -Math.PI / 4, roll: 0 },
@@ -1677,7 +1739,7 @@ export default function GlobeView({
       // releaseAuto comment for why).
       const r = curRowRef.current
       if (r && r._lat != null) {
-        const alt = Math.max(0, r['Alt(m)'] || 0)
+        const alt = absAlt(r)
         const tgt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
         const tform = Cesium.Transforms.eastNorthUpToFixedFrame(tgt)
         s.viewer.camera.lookAtTransform(
@@ -1712,7 +1774,7 @@ export default function GlobeView({
       // comment on releaseAuto above for why we avoid viewer.trackedEntity.
       const r = curRowRef.current
       if (r && r._lat != null) {
-        const alt = Math.max(0, r['Alt(m)'] || 0)
+        const alt = absAlt(r)
         const tgt = Cesium.Cartesian3.fromDegrees(r._lon, r._lat, alt)
         const tform = Cesium.Transforms.eastNorthUpToFixedFrame(tgt)
         s.viewer.camera.lookAtTransform(

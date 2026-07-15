@@ -27,8 +27,15 @@ const HEADER = [
   'Rud', 'Ele', 'Thr', 'Ail',
 ]
 
-const HOME_LAT = 42.067
-const HOME_LON = -94.85
+// Grand Canyon South Rim (near Mather Point). Launch sits on the flat
+// forested plateau at the rim (~2100 m MSL); the pattern's north legs
+// carry the aircraft out over the rim where the canyon drops ~1300 m
+// below — real 3D terrain the viewer now renders. Altitudes below stay
+// AGL / relative-to-launch (the blackbox convention); GlobeView adds the
+// sampled launch-terrain elevation so the flight sits correctly above
+// the ground.
+const HOME_LAT = 36.06
+const HOME_LON = -112.1083
 const HOME_ALT = 0
 
 const D = (n, p = 1) => Number(n).toFixed(p)
