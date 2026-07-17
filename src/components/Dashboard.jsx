@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef, lazy, Suspense } from 'react'
+import { createPortal } from 'react-dom'
 import FlightMap from './FlightMap'
 import SyncedChart from './SyncedChart'
 import FlightModeBar from './FlightModeBar'
@@ -48,6 +49,16 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [speedExpanded, setSpeedExpanded] = useState(false)
+  // Fullscreen element (globe/map wrap) when active, else null. The playback
+  // dock is a DOM *sibling* of the fullscreened wrap, so it is not rendered
+  // while fullscreen — we portal a compact control bar INTO the fullscreen
+  // element instead (document.fullscreenElement is the wrap itself).
+  const [fsEl, setFsEl] = useState(null)
+  useEffect(() => {
+    const onFs = () => setFsEl(document.fullscreenElement || null)
+    document.addEventListener('fullscreenchange', onFs)
+    return () => document.removeEventListener('fullscreenchange', onFs)
+  }, [])
   const [bookmarks, setBookmarks] = useState([]) // sorted ascending row indices
   const speedRef = useRef(speed)
   const virtualTimeRef = useRef(0)
@@ -567,6 +578,56 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
             </div>
           )}
         </div>
+
+        {/* Fullscreen playback bar — portaled into the fullscreened wrap
+            (the dock above is a sibling of it and thus invisible while
+            fullscreen). Solid dark surface deliberately outside the theme
+            token system (terrain is its backdrop), and NO backdrop-filter
+            (the no-blur-over-WebGL rule). */}
+        {fsEl && createPortal(
+          <div className="fs-dock" role="group" aria-label="Playback controls">
+            <button
+              className={`fs-play${playing ? ' active' : ''}`}
+              onClick={() => {
+                setPlaying(p => {
+                  const next = !p
+                  if (next) track('playback_started', { speed })
+                  return next
+                })
+              }}
+              title="Play / Pause (Space)"
+            >
+              {playing ? '⏸' : '▶'}
+            </button>
+            <div className="fs-speeds">
+              {SPEEDS.map(s => (
+                <button
+                  key={s}
+                  className={`fs-speed${speed === s ? ' active' : ''}`}
+                  onClick={() => { if (s !== speed) { setSpeed(s); track('playback_speed_changed', { speed: s }) } }}
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
+            <input
+              type="range"
+              className="fs-scrub"
+              min={0}
+              max={rows.length - 1}
+              value={cursorIndex}
+              aria-label="Timeline"
+              onChange={e => {
+                const idx = Number(e.target.value)
+                setCursorIndex(idx)
+                virtualTimeRef.current = rows[idx]._tSec
+                setPlaying(false)
+              }}
+            />
+            <span className="fs-time">{tStr}</span>
+          </div>,
+          fsEl,
+        )}
       </div>
     </div>
   )

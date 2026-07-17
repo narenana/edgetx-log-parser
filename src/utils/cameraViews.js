@@ -33,12 +33,12 @@ const D2R = Math.PI / 180
 // `smooth.dist`. Other views scale relative to this.
 //
 // History: was 400 m through April 2026 — felt cramped on long fixed-
-// wing flights; user reported "want more context." Bumped to 700 m in
-// PR #26, which the user then said was too far at first paint. 500 m
-// is the compromise — visibly wider than the original 400 but close
-// enough that the aircraft is still the obvious subject after the
-// initial fly-to-bounding-box transitions to chase.
-export const DEFAULT_CHASE_M = 500
+// wing flights ("want more context"); 700 m in PR #26 was too far at
+// first paint; 500 m was the compromise. 2026-07: with the 3D-terrain
+// upgrade the owner reported the aircraft reads too small at default
+// zoom — 300 m makes the model the clear subject while the terrain
+// still gives context (wheel zoom carries the user's intent anyway).
+export const DEFAULT_CHASE_M = 300
 
 // Per-view base ranges at zoom-factor = 1 (i.e. when smoothDistM ===
 // DEFAULT_CHASE_M). When the user wheels, each view's actual rangeM is

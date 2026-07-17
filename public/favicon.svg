@@ -1,8 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0e1117"/>
-  <!-- Stylised paper plane -->
-  <path d="M10 32 L54 14 L40 50 L33 38 Z"
-        fill="#7aa2f7" stroke="#bb9af7" stroke-width="1.5" stroke-linejoin="round"/>
-  <path d="M33 38 L54 14"
-        stroke="#1a1d29" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- RC Log Viewer app mark: delta wing riding a cyan flight path.
+       Dark rounded tile so it reads on any browser chrome / home screen. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141a26"/>
+      <stop offset="1" stop-color="#0b0e14"/>
+    </linearGradient>
+    <linearGradient id="trail" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#e864b0"/>
+      <stop offset="0.45" stop-color="#4ddcff"/>
+      <stop offset="1" stop-color="#4ddcff"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5f8fd"/>
+      <stop offset="1" stop-color="#c9d4e6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#sky)"/>
+  <!-- flight path: climbs from bottom-left, loops under the wing -->
+  <path d="M 74 428 C 170 420 208 366 236 312 C 258 270 250 236 224 232 C 200 228 190 252 206 268 C 226 288 280 268 322 224"
+        fill="none" stroke="url(#trail)" stroke-width="26" stroke-linecap="round" opacity="0.95"/>
+  <!-- delta wing, nose to the upper right -->
+  <g transform="translate(322 176) rotate(-12)">
+    <path d="M 96 -12 L -88 66 C -74 44 -74 -44 -88 -66 Z" fill="url(#wing)"/>
+    <path d="M 96 -12 L -88 66 C -80 52 -78 20 -79 -2 Z" fill="#8fa3c4" opacity="0.55"/>
+    <circle cx="-70" cy="52" r="9" fill="#57e07a"/>
+    <circle cx="-70" cy="-52" r="9" fill="#ff5c7a"/>
+  </g>
 </svg>

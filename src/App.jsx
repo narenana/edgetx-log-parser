@@ -52,15 +52,15 @@ const SAMPLES = {
     url: './sample-fixed-wing.csv',
     displayName: 'sample-fixed-wing.csv',
     icon: '✈',
-    title: 'Fixed-wing flight',
-    sub: 'iNAV · cross-country',
+    title: 'Grand Canyon dive',
+    sub: 'Fixed wing · drops below the rim · 4:21',
   },
   'quad': {
     url: './sample-quad.csv',
     displayName: 'sample-quad.csv',
     icon: '⌖',
-    title: '5″ quad flight',
-    sub: 'Betaflight · freestyle',
+    title: '5″ quad freestyle',
+    sub: 'Betaflight · loops & rolls · 2:10',
   },
 }
 
@@ -399,57 +399,86 @@ export default function App() {
         </Suspense>
       ) : (
         <div className={`drop-overlay${isDragOver ? ' drag-over' : ''}`}>
-          <div className="drop-icon">✈</div>
-          {/* h1 (not div) so the pre-JS static shell in index.html and the
-              mounted app agree on the page's single H1. */}
-          <h1 className="drop-title">RC Log Viewer</h1>
-          <div className="drop-sub">
-            Drop a flight log here, or click below to open one
-          </div>
-
-          {/* Single primary CTA — clear hierarchy: this is what users
-              should reach for. Samples are presented separately below. */}
-          <button
-            className="drop-btn drop-btn-primary"
-            onClick={() => fileInputRef.current.click()}
-          >
-            Open log files
-          </button>
-
-          <div className="drop-formats">
-            Supports EdgeTX CSV · iNAV / Betaflight blackbox (.bbl, .bfl, .txt)
-          </div>
-
-          {/* Separator labels the next section so users don't read the
-              sample cards as if they were primary features. */}
-          <div className="drop-divider">
-            <span>Or try a sample flight</span>
-          </div>
-
-          <div className="drop-samples">
-            {Object.entries(SAMPLES).map(([kind, s]) => (
-              <button
-                key={kind}
-                className="sample-card"
-                onClick={() => loadSample(kind)}
-                disabled={!!loadingSample}
-                aria-label={`Load sample: ${s.title}`}
-              >
-                <span className="sample-card-icon" aria-hidden="true">
-                  {s.icon}
-                </span>
-                <span className="sample-card-text">
-                  <span className="sample-card-title">
-                    {loadingSample === kind ? 'Loading…' : s.title}
+          <div className="landing">
+            <div className="landing-hero">
+              <div className="landing-copy">
+                <div className="landing-brand">
+                  <img src="./favicon.svg" alt="" width="30" height="30" />
+                  <span>
+                    <strong>narenana</strong> · free browser tools for RC pilots
                   </span>
-                  <span className="sample-card-sub">{s.sub}</span>
-                </span>
-              </button>
-            ))}
-          </div>
+                </div>
+                {/* h1 (not div) so the pre-JS static shell in index.html and
+                    the mounted app agree on the page's single H1. */}
+                <h1 className="drop-title">RC Log Viewer</h1>
+                <p className="landing-tag">
+                  Replay any flight on a 3D globe with live telemetry and
+                  synced charts. EdgeTX, iNAV &amp; Betaflight logs — parsed
+                  right here in your browser, <strong>nothing uploaded</strong>.
+                </p>
 
-          <div className="drop-privacy">
-            Logs are parsed in your browser — nothing is uploaded.
+                <button
+                  className="drop-btn drop-btn-primary"
+                  onClick={() => fileInputRef.current.click()}
+                >
+                  Open log files
+                </button>
+                <div className="drop-formats">
+                  or drop them anywhere — EdgeTX CSV · blackbox .bbl / .bfl / .txt
+                </div>
+              </div>
+
+              <div className="landing-shot" aria-hidden="true">
+                <img
+                  src="./hero-shot.jpg"
+                  alt=""
+                  loading="lazy"
+                  onError={e => { e.currentTarget.parentElement.style.display = 'none' }}
+                />
+              </div>
+            </div>
+
+            <div className="drop-divider">
+              <span>Or try a sample flight</span>
+            </div>
+
+            <div className="drop-samples">
+              {Object.entries(SAMPLES).map(([kind, s]) => (
+                <button
+                  key={kind}
+                  className="sample-card"
+                  onClick={() => loadSample(kind)}
+                  disabled={!!loadingSample}
+                  aria-label={`Load sample: ${s.title}`}
+                >
+                  <span className="sample-card-icon" aria-hidden="true">
+                    {s.icon}
+                  </span>
+                  <span className="sample-card-text">
+                    <span className="sample-card-title">
+                      {loadingSample === kind ? 'Loading…' : s.title}
+                    </span>
+                    <span className="sample-card-sub">{s.sub}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Firmware-specific guides — internal links into the SEO
+                cluster (real static pages served under /log-viewer/). */}
+            <div className="landing-links">
+              <span className="landing-links-label">Guides for your firmware:</span>
+              <a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV</a>
+              <a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight</a>
+              <a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX</a>
+              <a href="https://www.narenana.com/log-viewer/open-bbl-file/">.bbl files</a>
+              <a href="https://www.narenana.com/log-viewer/guides/">all guides</a>
+            </div>
+
+            <div className="drop-privacy">
+              Free &amp; open-source (GPL-3.0) · works offline as an installed
+              app · your logs and GPS traces never leave this device.
+            </div>
           </div>
         </div>
       )}

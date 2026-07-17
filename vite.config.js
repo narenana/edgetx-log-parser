@@ -77,22 +77,28 @@ export default defineConfig(() => {
       start_url: '.',
       scope: '.',
       orientation: 'any',
-      // Primary icon is the narenana brand mark (200x200 JPEG from the YouTube
-      // channel). The SVG paper-plane stays as a secondary entry for renderers
-      // that prefer vector or maskable. iOS install also picks up the
+      // App mark: delta wing + cyan flight path on a dark tile (favicon.svg
+      // is the source of truth; the PNGs are rendered from it at build-asset
+      // time via scripts in scratchpad). iOS install picks up the
       // apple-touch-icon <link> in index.html.
       icons: [
         {
-          src: 'narenana.jpg',
-          sizes: '200x200',
-          type: 'image/jpeg',
+          src: 'icon-192.png',
+          sizes: '192x192',
+          type: 'image/png',
           purpose: 'any',
+        },
+        {
+          src: 'icon-512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any maskable',
         },
         {
           src: 'favicon.svg',
           sizes: 'any',
           type: 'image/svg+xml',
-          purpose: 'maskable',
+          purpose: 'any',
         },
       ],
     },

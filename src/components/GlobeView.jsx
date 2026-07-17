@@ -917,7 +917,7 @@ export default function GlobeView({
           // Brighten the model (default lighting leaves it a dark blob over
           // bright satellite imagery) and outline it so the eye locks onto the
           // aircraft even against busy terrain.
-          lightColor: new Cesium.Cartesian3(1.5, 1.5, 1.5),
+          lightColor: new Cesium.Cartesian3(2.1, 2.1, 2.1),
           silhouetteColor: Cesium.Color.WHITE.withAlpha(0.85),
           silhouetteSize: 1.5,
         },
