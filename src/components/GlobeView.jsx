@@ -459,10 +459,19 @@ export default function GlobeView({
     // false = honour devicePixelRatio = crisp. Affordable because
     // requestRenderMode means we only paint on demand, not every frame.
     viewer.useBrowserRecommendedResolution = false
-    // Pull in higher-detail imagery/terrain tiles (default screen-space error
-    // is 2). 1.5 noticeably sharpens the satellite backdrop at chase altitude
-    // for a modest extra tile fetch.
-    viewer.scene.globe.maximumScreenSpaceError = 1.5
+    // Screen-space error stays at the Cesium default (2). We briefly ran 1.5
+    // for extra tile detail, but that costs ~1.8x the tiles per view — with 3D
+    // terrain it produced visible tile-loading churn when orbiting the canyon.
+    // Native-DPR rendering above is where the sharpness actually comes from.
+    viewer.scene.globe.maximumScreenSpaceError = 2
+    // Tile residency: the default in-memory cache (100 tiles) is far too small
+    // for a terrain scene — orbiting the camera evicted the tiles behind you,
+    // so every turn re-fetched and re-decoded them ("tiles always loading").
+    // 600 keeps the whole neighbourhood resident (~tens of MB, fine on
+    // anything that runs WebGL2). preloadSiblings fetches the tiles just
+    // outside the view cone so a camera turn lands on warm tiles.
+    viewer.scene.globe.tileCacheSize = 600
+    viewer.scene.globe.preloadSiblings = true
 
     const cc = viewer.cesiumWidget?.creditContainer
     if (cc) cc.style.display = 'none'

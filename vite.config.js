@@ -128,6 +128,28 @@ export default defineConfig(() => {
             },
           },
         },
+        // Satellite imagery + 3D-terrain tiles (ArcGIS). Tile URLs are
+        // immutable per z/x/y, so CacheFirst is safe and makes repeat visits
+        // to the same flying spot (which is most sessions — pilots replay
+        // their home field) render from disk instead of the network. ArcGIS
+        // serves CORS responses, so cached entries carry real sizes (no
+        // opaque-response quota padding); statuses [0, 200] kept as a
+        // belt-and-braces for any redirect edge.
+        {
+          urlPattern: ({ url }) =>
+            url.hostname === 'services.arcgisonline.com' ||
+            url.hostname === 'elevation3d.arcgis.com',
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'map-tiles',
+            expiration: {
+              maxEntries: 1600,
+              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+              purgeOnQuotaError: true,
+            },
+            cacheableResponse: { statuses: [0, 200] },
+          },
+        },
       ],
     },
   })
