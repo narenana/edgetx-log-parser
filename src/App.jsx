@@ -399,85 +399,123 @@ export default function App() {
         </Suspense>
       ) : (
         <div className={`drop-overlay${isDragOver ? ' drag-over' : ''}`}>
+          {/* Cinematic landing. Same design language as sim.narenana.com:
+              the product itself is the full-bleed backdrop (a real frame of
+              the Grand Canyon dive rendered by this app), scrimmed for
+              legibility, with HUD chrome and a proof strip. */}
           <div className="landing">
-            <div className="landing-hero">
-              <div className="landing-copy">
-                <div className="landing-brand">
-                  <img src="./favicon.svg" alt="" width="30" height="30" />
-                  <span>
-                    <strong>narenana</strong> · free browser tools for RC pilots
-                  </span>
-                </div>
-                {/* h1 (not div) so the pre-JS static shell in index.html and
-                    the mounted app agree on the page's single H1. */}
-                <h1 className="drop-title">RC Log Viewer</h1>
-                <p className="landing-tag">
-                  Replay any flight on a 3D globe with live telemetry and
-                  synced charts. EdgeTX, iNAV &amp; Betaflight logs — parsed
-                  right here in your browser, <strong>nothing uploaded</strong>.
-                </p>
+            {/* Backdrop as an <img>, not a CSS background: bundled CSS lives
+                under /assets/, so a relative url() there resolves to
+                /assets/hero-canyon.jpg (404). An img src resolves against the
+                document (/log-viewer/) instead. onError degrades to the plain
+                dark scrim rather than a broken frame. */}
+            <img
+              className="landing-bg"
+              src="./hero-canyon.jpg"
+              alt=""
+              aria-hidden="true"
+              onError={e => { e.currentTarget.style.display = 'none' }}
+            />
+            <div className="landing-scrim" aria-hidden="true" />
 
+            {/* HUD frame — corner brackets + technical labels */}
+            <span className="landing-corner tl" aria-hidden="true" />
+            <span className="landing-corner tr" aria-hidden="true" />
+            <span className="landing-corner bl" aria-hidden="true" />
+            <span className="landing-corner br" aria-hidden="true" />
+            <div className="landing-tag-tl" aria-hidden="true">
+              <span className="dot" /> NARENANA · RC LOG VIEWER
+            </div>
+            <div className="landing-tag-tr" aria-hidden="true">
+              EDGETX · INAV · BETAFLIGHT
+            </div>
+
+            <div className="landing-inner">
+              <div className="landing-brand">
+                <img src="./favicon.svg" alt="" width="34" height="34" />
+                <span>
+                  <strong>narenana</strong> · free browser tools for RC pilots
+                </span>
+              </div>
+
+              {/* h1 (not div) so the pre-JS static shell in index.html and
+                  the mounted app agree on the page's single H1. */}
+              <h1 className="drop-title">
+                Replay any flight,<br />
+                <span className="accent">right in your browser.</span>
+              </h1>
+
+              <p className="landing-tag">
+                Drop an EdgeTX CSV or iNAV / Betaflight blackbox log and watch
+                the whole flight on a 3D globe — live telemetry, synced charts,
+                real terrain. Parsed on your machine; <strong>nothing uploaded</strong>.
+              </p>
+
+              <div className="landing-cta">
                 <button
                   className="drop-btn drop-btn-primary"
                   onClick={() => fileInputRef.current.click()}
                 >
-                  Open log files
+                  Open log files <span aria-hidden="true">→</span>
                 </button>
-                <div className="drop-formats">
-                  or drop them anywhere — EdgeTX CSV · blackbox .bbl / .bfl / .txt
-                </div>
+                <span className="landing-cta-note">
+                  No upload · No signup · Free
+                </span>
               </div>
 
-              <div className="landing-shot" aria-hidden="true">
-                <img
-                  src="./hero-shot.jpg"
-                  alt=""
-                  loading="lazy"
-                  onError={e => { e.currentTarget.parentElement.style.display = 'none' }}
-                />
+              <div className="drop-formats">
+                or drop a file anywhere on this page — .csv · .bbl · .bfl · .txt
               </div>
-            </div>
 
-            <div className="drop-divider">
-              <span>Or try a sample flight</span>
-            </div>
-
-            <div className="drop-samples">
-              {Object.entries(SAMPLES).map(([kind, s]) => (
-                <button
-                  key={kind}
-                  className="sample-card"
-                  onClick={() => loadSample(kind)}
-                  disabled={!!loadingSample}
-                  aria-label={`Load sample: ${s.title}`}
-                >
-                  <span className="sample-card-icon" aria-hidden="true">
-                    {s.icon}
-                  </span>
-                  <span className="sample-card-text">
-                    <span className="sample-card-title">
-                      {loadingSample === kind ? 'Loading…' : s.title}
+              <div className="landing-samples-label">Or replay a sample flight</div>
+              <div className="drop-samples">
+                {Object.entries(SAMPLES).map(([kind, s]) => (
+                  <button
+                    key={kind}
+                    className="sample-card"
+                    onClick={() => loadSample(kind)}
+                    disabled={!!loadingSample}
+                    aria-label={`Load sample: ${s.title}`}
+                  >
+                    <span className="sample-card-icon" aria-hidden="true">
+                      {s.icon}
                     </span>
-                    <span className="sample-card-sub">{s.sub}</span>
-                  </span>
-                </button>
-              ))}
+                    <span className="sample-card-text">
+                      <span className="sample-card-title">
+                        {loadingSample === kind ? 'Loading…' : s.title}
+                      </span>
+                      <span className="sample-card-sub">{s.sub}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Proof strip — mono numbers, mirrors the sim's stat bar */}
+            <div className="landing-stats">
+              <div className="landing-stat">
+                <b>0</b> <span>uploads</span>
+              </div>
+              <div className="landing-stat">
+                <b>3</b> <span>log formats</span>
+              </div>
+              <div className="landing-stat">
+                <b>100%</b> <span>in-browser</span>
+              </div>
+              <div className="landing-stat">
+                <b>GPL-3.0</b> <span>open source</span>
+              </div>
             </div>
 
             {/* Firmware-specific guides — internal links into the SEO
                 cluster (real static pages served under /log-viewer/). */}
             <div className="landing-links">
-              <span className="landing-links-label">Guides for your firmware:</span>
+              <span className="landing-links-label">Guides:</span>
               <a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV</a>
               <a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight</a>
               <a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX</a>
               <a href="https://www.narenana.com/log-viewer/open-bbl-file/">.bbl files</a>
               <a href="https://www.narenana.com/log-viewer/guides/">all guides</a>
-            </div>
-
-            <div className="drop-privacy">
-              Free &amp; open-source (GPL-3.0) · works offline as an installed
-              app · your logs and GPS traces never leave this device.
             </div>
           </div>
         </div>

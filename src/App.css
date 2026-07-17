@@ -248,219 +248,223 @@ body {
 .theme-toggle:hover { color: var(--text); border-color: var(--border-bright); background: var(--hover-bg); }
 
 /* ── Drop overlay ── */
+/* ── Cinematic landing (empty state) ────────────────────────────────────────
+ * Design language deliberately mirrors sim.narenana.com: the product itself is
+ * the full-bleed backdrop (a real frame of the Grand Canyon dive rendered by
+ * this app), scrimmed for legibility, with HUD corner chrome and a proof strip.
+ * Always dark regardless of theme — terrain is the background, so this is a
+ * deliberate exception to the token system (same call the fullscreen OSD makes).
+ * Scrolls on short viewports rather than clipping. */
 .drop-overlay {
   position: fixed;
   inset: 0;
-  background: var(--overlay-bg);
+  z-index: 100;
+  overflow-y: auto;
+  background: #0b0e14;
+}
+.landing {
+  position: relative;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  z-index: 100;
-  border: 2px dashed var(--border);
-  padding: 0 24px;
+  padding: 72px 24px 96px;
+  isolation: isolate;
 }
-.drop-overlay.drag-over {
-  border-color: var(--blue);
-  background: var(--bg2);
-  box-shadow: inset 0 0 80px var(--shadow-card);
+/* Full-bleed product frame (an <img> — see App.jsx for why not a CSS bg). */
+.landing-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 42%;
 }
-.drop-title { font-size: 30px; font-weight: 800; color: var(--text); letter-spacing: -0.4px; margin: 0; line-height: 1.15; }
+/* Scrim: strong on the left/bottom where the copy sits, clearer on the right
+   so the canyon reads. Two stacked gradients, no backdrop-filter. */
+.landing-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, rgba(8,11,16,0.94) 0%, rgba(8,11,16,0.82) 42%, rgba(8,11,16,0.42) 78%, rgba(8,11,16,0.30) 100%),
+    linear-gradient(180deg, rgba(8,11,16,0.72) 0%, rgba(8,11,16,0.30) 34%, rgba(8,11,16,0.86) 100%);
+}
+.drop-overlay.drag-over .landing-scrim {
+  background:
+    linear-gradient(180deg, rgba(9,58,110,0.72) 0%, rgba(8,11,16,0.62) 100%);
+}
+.drop-overlay.drag-over { outline: 2px dashed var(--blue); outline-offset: -14px; }
 
-/* ── Landing layout (empty state) ───────────────────────────────────────────
- * Two-column hero: brand + pitch + CTA on the left, a real product
- * screenshot on the right. Stacks on narrow viewports. */
-.landing {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  max-width: 920px;
-  max-height: 100%;
-  overflow-y: auto;
-  padding: 24px 0;
-  scrollbar-width: thin;
+/* HUD corner brackets */
+.landing-corner {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255,255,255,0.30);
+  pointer-events: none;
 }
-.landing-hero {
-  display: flex;
-  align-items: center;
-  gap: 34px;
-  width: 100%;
+.landing-corner.tl { top: 16px; left: 16px; border-right: 0; border-bottom: 0; }
+.landing-corner.tr { top: 16px; right: 16px; border-left: 0; border-bottom: 0; }
+.landing-corner.bl { bottom: 16px; left: 16px; border-right: 0; border-top: 0; }
+.landing-corner.br { bottom: 16px; right: 16px; border-left: 0; border-top: 0; }
+.landing-tag-tl, .landing-tag-tr {
+  position: absolute;
+  top: 22px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  letter-spacing: 1.1px;
+  color: rgba(255,255,255,0.62);
+  pointer-events: none;
 }
-.landing-copy {
-  flex: 1 1 46%;
-  min-width: 0;
+.landing-tag-tl { left: 54px; display: flex; align-items: center; gap: 7px; }
+.landing-tag-tr { right: 54px; }
+.landing-tag-tl .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ff5c7a; box-shadow: 0 0 8px #ff5c7a;
+}
+
+/* Content column */
+.landing-inner {
+  width: 100%;
+  max-width: 1080px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: 0;
 }
 .landing-brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 12.5px;
-  color: var(--text2);
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.66);
+  margin-bottom: 20px;
 }
-.landing-brand img { border-radius: 7px; display: block; }
-.landing-brand strong { color: var(--text); font-weight: 700; }
+.landing-brand img { border-radius: 8px; display: block; }
+.landing-brand strong { color: #fff; font-weight: 700; }
+
+.drop-title {
+  font-size: clamp(38px, 5.6vw, 68px);
+  font-weight: 800;
+  letter-spacing: -1.4px;
+  line-height: 1.04;
+  color: #fff;
+  margin: 0 0 18px;
+  text-shadow: 0 2px 30px rgba(0,0,0,0.55);
+}
+.drop-title .accent { color: #4ddcff; }
+
 .landing-tag {
-  font-size: 14.5px;
+  font-size: 16.5px;
   line-height: 1.55;
-  color: var(--text2);
-  margin: 0;
-  max-width: 40em;
+  color: rgba(255,255,255,0.80);
+  margin: 0 0 26px;
+  max-width: 30em;
+  text-shadow: 0 1px 16px rgba(0,0,0,0.5);
 }
-.landing-tag strong { color: var(--text); }
-.landing-shot {
-  flex: 1 1 54%;
-  min-width: 0;
-}
-.landing-shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  box-shadow: 0 14px 40px var(--shadow-overlay, rgba(0, 0, 0, 0.18));
-}
-.landing-links {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px 14px;
-  font-size: 12px;
-  color: var(--text3);
-}
-.landing-links-label { color: var(--text3); }
-.landing-links a { color: var(--blue); text-decoration: none; font-weight: 600; }
-.landing-links a:hover { text-decoration: underline; }
+.landing-tag strong { color: #fff; font-weight: 600; }
 
-/* Stack the hero on narrow viewports; screenshot goes below the copy. */
-@media (max-width: 860px) {
-  .landing-hero { flex-direction: column; gap: 18px; }
-  .landing-copy { align-items: center; text-align: center; }
-  .drop-title { font-size: 25px; }
-  .landing-shot { width: 100%; max-width: 480px; }
-}
-@media (max-height: 700px) {
-  .landing { gap: 10px; padding: 14px 0; }
-  .landing-shot { display: none; }  /* short viewports: keep CTA + samples above the fold */
-}
-
-/* Primary CTA — single button, deliberately not in a row of equal-weight
-   peers. The earlier layout had three buttons side-by-side which made
-   "Open log files" / "Try fixed wing" / "Try 5″ quad" all read as
-   features. Now there's one obvious primary action and the sample
-   section sits clearly below, separated. */
+.landing-cta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .drop-btn-primary {
-  margin-top: 8px;
-  padding: 14px 32px;
+  padding: 15px 26px;
   background: var(--blue);
-  color: var(--on-blue-text);
   border: none;
-  border-radius: 8px;
-  font-size: 15px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 15.5px;
   font-weight: 700;
-  letter-spacing: 0.2px;
   cursor: pointer;
-  box-shadow: 0 4px 12px var(--shadow-card);
-  transition: all 0.18s;
+  box-shadow: 0 6px 26px rgba(34,114,216,0.45);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
 }
-.drop-btn-primary:hover {
-  filter: brightness(1.1);
-  box-shadow: 0 6px 18px var(--shadow-overlay);
-  transform: translateY(-1px);
-}
+.drop-btn-primary:hover { background: #3b8ae8; transform: translateY(-1px); box-shadow: 0 8px 30px rgba(34,114,216,0.55); }
+.drop-btn-primary:active { transform: translateY(0); }
 .drop-btn-primary:disabled { opacity: 0.55; cursor: wait; transform: none; }
-
+.landing-cta-note {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: rgba(255,255,255,0.55);
+  letter-spacing: 0.4px;
+}
 .drop-formats {
-  font-size: 11px;
-  color: var(--text3);
-  text-align: center;
-  max-width: 480px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.45);
 }
 
-/* "Or try a sample flight" divider — text in the middle of a thin rule
-   so users register the section change before glancing at the cards. */
-.drop-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 460px;
-  margin-top: 6px;
-  color: var(--text3);
-  font-size: 11px;
-  text-transform: uppercase;
+.landing-samples-label {
+  margin: 30px 0 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
   letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
 }
-.drop-divider::before,
-.drop-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.drop-samples {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: center;
-  width: 100%;
-  max-width: 460px;
-}
+.drop-samples { display: flex; gap: 12px; flex-wrap: wrap; }
 .sample-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex: 1 1 200px;
-  min-width: 200px;
-  padding: 12px 16px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
+  padding: 12px 18px 12px 14px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.16);
   border-radius: 10px;
-  text-align: left;
-  color: var(--text);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.05s;
-  font: inherit;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
 }
-.sample-card:hover {
-  border-color: var(--border-bright);
-  background: var(--bg3);
-}
-.sample-card:active { transform: translateY(1px); }
+.sample-card:hover { background: rgba(255,255,255,0.13); border-color: #4ddcff; transform: translateY(-1px); }
+.sample-card:active { transform: translateY(0); }
 .sample-card:disabled { opacity: 0.55; cursor: wait; }
-.sample-card-icon {
-  font-size: 24px;
-  color: var(--blue);
-  flex-shrink: 0;
-}
-.sample-card-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.sample-card-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-.sample-card-sub {
-  font-size: 11px;
-  color: var(--text3);
-}
+.sample-card-icon { font-size: 20px; color: #4ddcff; line-height: 1; }
+.sample-card-text { display: flex; flex-direction: column; gap: 2px; }
+.sample-card-title { font-size: 13.5px; font-weight: 700; color: #fff; }
+.sample-card-sub { font-size: 11.5px; color: rgba(255,255,255,0.58); }
 
-.drop-privacy {
-  margin-top: 4px;
-  color: var(--text3);
-  font-size: 11px;
+/* Proof strip — mono numbers, mirrors the sim's stat bar */
+.landing-stats {
+  width: 100%;
+  max-width: 1080px;
+  margin-top: 44px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid rgba(255,255,255,0.14);
+}
+.landing-stat {
+  padding: 16px 8px 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border-right: 1px solid rgba(255,255,255,0.09);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.landing-stat:last-child { border-right: 0; }
+.landing-stat b { font-size: 21px; color: #57e07a; font-weight: 700; }
+.landing-stat span { font-size: 11.5px; color: rgba(255,255,255,0.55); }
+
+.landing-links {
+  width: 100%;
+  max-width: 1080px;
+  margin-top: 18px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+}
+.landing-links-label { color: rgba(255,255,255,0.42); }
+.landing-links a { color: rgba(255,255,255,0.72); text-decoration: none; font-weight: 600; }
+.landing-links a:hover { color: #4ddcff; text-decoration: underline; }
+
+@media (max-width: 720px) {
+  .landing { padding: 60px 18px 72px; }
+  .landing-tag-tl, .landing-tag-tr { display: none; }
+  .landing-stats { grid-template-columns: repeat(2, 1fr); }
+  .landing-stat { border-right: 0; }
+  .landing-bg { object-position: 62% 42%; }
 }
 
 /* ── View mode toggle ── */
