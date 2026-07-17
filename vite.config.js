@@ -143,7 +143,11 @@ export default defineConfig(() => {
           options: {
             cacheName: 'map-tiles',
             expiration: {
-              maxEntries: 1600,
+              // Sized for SSE 1.5 (high-detail) terrain scenes: ~2x the tiles
+              // of a default-detail view, plus preloadSiblings. Roughly
+              // 100-250MB of disk at typical tile sizes; purgeOnQuotaError
+              // keeps us polite on small disks.
+              maxEntries: 3200,
               maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
               purgeOnQuotaError: true,
             },

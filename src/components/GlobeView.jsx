@@ -459,19 +459,22 @@ export default function GlobeView({
     // false = honour devicePixelRatio = crisp. Affordable because
     // requestRenderMode means we only paint on demand, not every frame.
     viewer.useBrowserRecommendedResolution = false
-    // Screen-space error stays at the Cesium default (2). We briefly ran 1.5
-    // for extra tile detail, but that costs ~1.8x the tiles per view — with 3D
-    // terrain it produced visible tile-loading churn when orbiting the canyon.
-    // Native-DPR rendering above is where the sharpness actually comes from.
-    viewer.scene.globe.maximumScreenSpaceError = 2
+    // High-detail tiles (SSE 1.5 ≈ 1.8x the tiles of the default 2) — owner's
+    // call: keep fidelity high and let the cache layers absorb the cost.
+    viewer.scene.globe.maximumScreenSpaceError = 1.5
     // Tile residency: the default in-memory cache (100 tiles) is far too small
     // for a terrain scene — orbiting the camera evicted the tiles behind you,
     // so every turn re-fetched and re-decoded them ("tiles always loading").
-    // 600 keeps the whole neighbourhood resident (~tens of MB, fine on
-    // anything that runs WebGL2). preloadSiblings fetches the tiles just
-    // outside the view cone so a camera turn lands on warm tiles.
-    viewer.scene.globe.tileCacheSize = 600
+    // 900 keeps the whole neighbourhood resident at SSE 1.5 (~a few hundred MB
+    // GPU worst-case, fine on WebGL2-class hardware). preloadSiblings fetches
+    // the tiles just outside the view cone so a camera turn lands on warm
+    // tiles.
+    viewer.scene.globe.tileCacheSize = 900
     viewer.scene.globe.preloadSiblings = true
+    // Both tile hosts are HTTP/2 — lift Cesium's conservative 6-per-server
+    // request cap so initial fills and turn-arounds complete faster.
+    Cesium.RequestScheduler.requestsByServer['services.arcgisonline.com:443'] = 18
+    Cesium.RequestScheduler.requestsByServer['elevation3d.arcgis.com:443'] = 18
 
     const cc = viewer.cesiumWidget?.creditContainer
     if (cc) cc.style.display = 'none'
