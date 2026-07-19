@@ -16,9 +16,10 @@ import { useState } from 'react'
  * animation + reveal, but the right-side panel is the persistent
  * reference once the dashboard is open.
  *
- * Live cursor row pinned at the bottom shows the current playback
- * position (T+, lat/lon, alt, FM) — the only field that changes per
- * cursor move; the rest are computed once at log load.
+ * Redesign (dock/stats slim): the old live cursor row is gone — the
+ * READOUT/72 telemetry bar is the single "now" surface; this panel is
+ * whole-flight aggregates only, so it renders once per log and never
+ * re-renders during playback.
  */
 
 function fmt(val, decimals = 0, unit = '') {
@@ -38,7 +39,7 @@ function fmtDistance(km) {
   return `${km.toFixed(2)} km`
 }
 
-export default function StatsPanel({ log, cursorRow }) {
+export default function StatsPanel({ log }) {
   // Mobile-only: collapsed by default to save vertical space. Desktop
   // CSS overrides the toggle to always-show.
   const [expanded, setExpanded] = useState(false)
@@ -105,26 +106,6 @@ export default function StatsPanel({ log, cursorRow }) {
           </div>
         ))}
       </div>
-      {cursorRow && (
-        <div className="stats-cursor-row" aria-label="Current cursor position">
-          <span className="stats-cursor-pill">
-            <span className="stats-cursor-label">T+</span>
-            {fmtDuration(cursorRow._tSec)}
-          </span>
-          {cursorRow._lat != null && (
-            <span className="stats-cursor-pill">
-              {cursorRow._lat.toFixed(5)}, {cursorRow._lon.toFixed(5)}
-            </span>
-          )}
-          <span className="stats-cursor-pill">
-            <span className="stats-cursor-label">Alt</span>
-            {fmt(cursorRow['Alt(m)'], 0, ' m')}
-          </span>
-          {cursorRow['FM'] && (
-            <span className="stats-cursor-pill">{cursorRow['FM']}</span>
-          )}
-        </div>
-      )}
     </div>
   )
 }

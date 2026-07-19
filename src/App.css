@@ -781,8 +781,6 @@ body {
   letter-spacing: 0.5px;
   cursor: pointer;
   box-shadow: 0 1px 4px var(--shadow-overlay);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   transition: all 0.15s;
 }
 .globe-auto-btn:hover { color: var(--text); border-color: var(--border-bright); background: var(--bg2); }
@@ -833,8 +831,6 @@ body {
   letter-spacing: 0.4px;
   cursor: pointer;
   box-shadow: 0 1px 4px var(--shadow-overlay);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   transition: all 0.15s;
 }
 .globe-camera-views .cam-btn:hover {
@@ -864,8 +860,6 @@ body {
   border-radius: 8px;
   padding: 8px 10px;
   box-shadow: 0 2px 6px var(--shadow-overlay);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   user-select: none;
 }
 .globe-nav .nav-compass,
@@ -948,9 +942,7 @@ body {
   z-index: 50;
   background: var(--dock-bg, var(--bg2));
   border-top: 1px solid var(--border);
-  padding: 6px 12px 8px;
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  padding: 5px 10px 6px;
   box-shadow: 0 -4px 14px var(--shadow-overlay, rgba(0,0,0,0.06));
 }
 
@@ -966,7 +958,7 @@ body {
   flex: none;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 6px;
+  gap: 5px;
   background: transparent;
   /* No border-top — this sits flush with the dashboard-right padding;
    * the panel-wrap below provides its own framing. */
@@ -976,7 +968,7 @@ body {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 5px 9px;
   text-align: left;
   /* Override legacy properties from the old horizontal-flex layout. */
   min-width: 0;
@@ -1007,29 +999,7 @@ body {
 
 /* Live cursor info row pinned at the bottom of the panel. Pills lay out
  * horizontally and wrap as needed. */
-.stats-cursor-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  font-size: 10px;
-  color: var(--text3);
-  font-family: 'Consolas', 'Courier New', monospace;
-}
-.stats-cursor-pill {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  white-space: nowrap;
-}
-.stats-cursor-label {
-  color: var(--text2);
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-}
+/* (stats-cursor-* removed — the telemetry bar is the "now" surface.) */
 
 /* ── Chart panels ── */
 .chart-panel {
@@ -1053,11 +1023,30 @@ body {
 }
 .fm-segments {
   display: flex;
-  height: 14px;
+  height: 18px; /* tall enough to host the on-bar event markers */
   border-radius: 3px;
   overflow: hidden;
   position: relative;
 }
+/* Event markers ON the mode bar (replaces the old 30px labels row above
+   it — dock-slim). Icon-only chips; the label lives in title/aria. */
+.fm-event-on-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.6);
+  z-index: 2;
+}
+.fm-event-on-bar:hover { transform: translateX(-50%) scale(1.25); }
 .fm-segment {
   height: 100%;
   cursor: pointer;
@@ -1070,7 +1059,7 @@ body {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 .fm-legend-item {
   display: flex;
@@ -1112,13 +1101,13 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .play-btn,
 .bookmark-btn {
-  width: 48px;
-  height: 42px;
+  width: 42px;
+  height: 34px;
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1195,7 +1184,7 @@ body {
   gap: 4px;
 }
 .speed-btn {
-  padding: 5px 11px;
+  padding: 4px 9px;
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -1322,42 +1311,9 @@ body {
 }
 
 /* ── Flight event markers ── */
-.fm-events-row {
-  position: relative;
-  height: 30px;
-  margin-bottom: 1px;
-}
-
-.fm-event {
-  position: absolute;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: pointer;
-  height: 100%;
-}
-.fm-event:hover { opacity: 0.8; }
-
-.fm-event-label {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  line-height: 1.1;
-  white-space: nowrap;
-}
-
-.fm-event-icon {
-  font-size: 9px;
-  line-height: 1;
-}
-
-.fm-event-stem {
-  flex: 1;
-  width: 1px;
-  background: currentColor;
-  opacity: 0.5;
-}
+/* (fm-events-row / fm-event / fm-event-label / fm-event-icon / fm-event-stem
+   removed — event markers now render on the mode bar itself, see
+   .fm-event-on-bar above.) */
 
 /* ── Responsive breakpoints ──────────────────────────────────────────────────
  * Two transitions:
@@ -1507,9 +1463,8 @@ body {
   .fm-legend { gap: 6px; }
   .fm-legend-item { font-size: 9px; }
 
-  /* Bigger touch targets on event markers — invisible padding. */
-  .fm-event { padding: 6px 8px; margin-left: -8px; }
-  .fm-events-row { height: 38px; }
+  /* Bigger touch targets on the on-bar event markers. */
+  .fm-event-on-bar { padding: 0 8px; font-size: 13px; }
 }
 
 /* ── Speed picker (mobile-collapsible) ──────────────────────────────────────
@@ -1557,7 +1512,7 @@ body {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 10px 8px;
+  padding: 7px 8px 6px;
   margin-bottom: 10px;
 }
 .stats-panel-wrap .stats-toggle {
@@ -1610,8 +1565,6 @@ body {
   /* Subtle shadow so the button reads against any satellite imagery —
      a dark map tile won't swallow it, a bright tile won't bleach it. */
   box-shadow: 0 1px 4px var(--shadow-overlay);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   transition: all 0.15s;
 }
 .fullscreen-btn:hover {

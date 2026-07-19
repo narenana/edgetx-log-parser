@@ -48,34 +48,9 @@ export default function FlightModeBar({
 
   return (
     <div className="fm-bar-wrap">
-      {/* Event markers row */}
-      {events.length > 0 && (
-        <div className="fm-events-row">
-          {events.map((ev, i) => {
-            const style = EVENT_STYLES[ev.type]
-            if (!style) return null
-            const leftPct = (ev.index / total) * 100
-            return (
-              <div
-                key={i}
-                className="fm-event"
-                style={{ left: `${leftPct}%`, color: style.color }}
-                title={`${style.label} at T+${Math.floor(rows[ev.index]?._tSec / 60)}:${String(Math.round(rows[ev.index]?._tSec) % 60).padStart(2, '0')}`}
-                onClick={() => {
-                  onCursorChange(ev.index)
-                  if (onEventClick) onEventClick(ev.type)
-                }}
-              >
-                <span className="fm-event-label">{style.label}</span>
-                <span className="fm-event-icon">{style.icon}</span>
-                <span className="fm-event-stem" />
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Mode colour bar */}
+      {/* Mode colour bar — event markers sit ON the bar (dock-slim redesign:
+          the old 30px labels row above is gone; each marker keeps its label
+          in the tooltip and its aria-label). */}
       <div
         className="fm-segments"
         onClick={e => handleBarClick(e, e.currentTarget)}
@@ -92,6 +67,29 @@ export default function FlightModeBar({
             title={`${seg.mode} — ${seg.end - seg.start + 1}s`}
           />
         ))}
+        {events.map((ev, i) => {
+          const style = EVENT_STYLES[ev.type]
+          if (!style) return null
+          const t = rows[ev.index]?._tSec ?? 0
+          const label = `${style.label} at T+${Math.floor(t / 60)}:${String(Math.round(t) % 60).padStart(2, '0')}`
+          return (
+            <button
+              key={`ev-${i}`}
+              type="button"
+              className="fm-event-on-bar"
+              style={{ left: `${(ev.index / total) * 100}%`, color: style.color }}
+              title={label}
+              aria-label={label}
+              onClick={e => {
+                e.stopPropagation()
+                onCursorChange(ev.index)
+                if (onEventClick) onEventClick(ev.type)
+              }}
+            >
+              {style.icon}
+            </button>
+          )
+        })}
         {/* cursor tick — bright + slight glow so it's easy to spot on a busy bar */}
         <div
           style={{

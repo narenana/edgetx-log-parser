@@ -1,4 +1,5 @@
 import { useRef, useEffect, useMemo } from 'react'
+import { sharedLttbIndices, nearestPos } from '../utils/lttb'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -82,16 +83,42 @@ export default function SyncedChart({
   const onCursorRef = useRef(onCursorChange)
   onCursorRef.current = onCursorChange
 
+  // ── LTTB downsampling for long logs ─────────────────────────────────────
+  // Above this row count, Chart.js redraw cost makes crosshair moves janky
+  // (P0 in the UX review for 20-minute blackbox logs). We pick a shared
+  // kept-index set (union of per-series LTTB picks, so every series keeps
+  // its own peaks/sags) and render only those rows. indexMap translates
+  // between row space (the app-wide cursorIndex) and sampled space.
+  const DOWNSAMPLE_AT = 3000
+  const PER_SERIES = 900
+  const sampled = useMemo(() => {
+    if (!labels || labels.length <= DOWNSAMPLE_AT) {
+      return { labels, datasets, indexMap: null }
+    }
+    const indexMap = sharedLttbIndices(datasets.map(d => d.data), PER_SERIES)
+    return {
+      labels: indexMap.map(i => labels[i]),
+      datasets: datasets.map(d => ({ ...d, data: indexMap.map(i => d.data[i]) })),
+      indexMap,
+    }
+  }, [labels, datasets])
+  const indexMapRef = useRef(null)
+  indexMapRef.current = sampled.indexMap
+
   // Update cursor line imperatively — no React re-render needed
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
-    chart._cursorIdx = cursorIndex
+    const map = indexMapRef.current
+    chart._cursorIdx = map ? nearestPos(map, cursorIndex) : cursorIndex
     chart._cursorColor = theme === 'dark' ? '#e6ebf5' : '#1a2740'
     chart.draw()
-  }, [cursorIndex, theme])
+  }, [cursorIndex, theme, sampled])
 
-  const data = useMemo(() => ({ labels, datasets }), [labels, datasets])
+  const data = useMemo(
+    () => ({ labels: sampled.labels, datasets: sampled.datasets }),
+    [sampled],
+  )
 
   const hasDualAxis = datasets.some(d => d.yAxisID === 'y1')
 
@@ -137,7 +164,13 @@ export default function SyncedChart({
       // inspecting a chart no longer scrubs the whole 3D scene + gauges.
       onClick: (event, _elements, chart) => {
         const pts = chart.getElementsAtEventForMode(event, 'index', { intersect: false }, false)
-        if (pts.length > 0) onCursorRef.current?.(pts[0].index)
+        if (pts.length > 0) {
+          // Map the clicked sampled position back to the real row index so
+          // the app-wide cursor (globe, telemetry bar, dock) stays exact.
+          const map = indexMapRef.current
+          const raw = pts[0].index
+          onCursorRef.current?.(map ? map[raw] : raw)
+        }
       },
       scales: {
         x: {
