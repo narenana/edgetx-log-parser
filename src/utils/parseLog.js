@@ -37,9 +37,9 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 
 function parseTime(date, time) {
   if (date) {
-    return new Date(`${r['Date']}T${r['Time']}`).getTime()
+    return new Date(`${date}T${time}`).getTime()
   } else {
-    return new Date(`1970-01-01T${r['Time']}`).getTime()
+    return new Date(`1970-01-01T${time}`).getTime()
   }
 }
 
