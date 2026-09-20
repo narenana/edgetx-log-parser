@@ -35,6 +35,14 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+function parseTime(date, time) {
+  if (date) {
+    return new Date(`${r['Date']}T${r['Time']}`).getTime()
+  } else {
+    return new Date(`1970-01-01T${r['Time']}`).getTime()
+  }
+}
+
 export function parseEdgeTXLog(text, filename) {
   const parsed = Papa.parse(text.trim(), {
     header: true,
@@ -47,14 +55,14 @@ export function parseEdgeTXLog(text, filename) {
   }
 
   const raw = parsed.data
-  const t0 = new Date(`${raw[0]['Date']}T${raw[0]['Time']}`).getTime()
+  const t0 = parseTime(r['Date'], r['Time'])
 
   let totalDistKm = 0
   let prevLat = null
   let prevLon = null
 
   const rows = raw.map((r, i) => {
-    const ts = new Date(`${r['Date']}T${r['Time']}`).getTime()
+    const ts = parseTime(r['Date'], r['Time'])
     const [lat, lon] = parseGPS(r['GPS'])
 
     if (lat !== null && prevLat !== null) {
