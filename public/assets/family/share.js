@@ -9,7 +9,7 @@ export function shareData(doc = document) {
 export function installShare() {
   if (!shareData() || document.getElementById('nn-share-launcher')) return;
   const css = document.createElement('link');
-  css.rel = 'stylesheet'; css.href = new URL('./share.css', import.meta.url).href;
+  css.rel = 'stylesheet'; css.href = new URL('./share.css?v=release2', import.meta.url).href;
   document.head.append(css);
   const button = document.createElement('button');
   button.id = 'nn-share-launcher'; button.type = 'button';
@@ -18,6 +18,15 @@ export function installShare() {
   const dialog = document.createElement('dialog'); dialog.id = 'nn-share-dialog';
   dialog.setAttribute('aria-labelledby', 'nn-share-heading');
   dialog.innerHTML = `<div class="nn-share-top"><h2 id="nn-share-heading">Share with a flying friend</h2><button type="button" data-close aria-label="Close share dialog">×</button></div><p class="nn-share-title"></p><div class="nn-share-options"><button type="button" data-copy>Copy link</button><button type="button" data-native>More apps…</button><a data-service="whatsapp" target="_blank" rel="noopener noreferrer">WhatsApp ↗</a><a data-service="facebook" target="_blank" rel="noopener noreferrer">Facebook ↗</a><a data-service="linkedin" target="_blank" rel="noopener noreferrer">LinkedIn ↗</a><a data-service="x" target="_blank" rel="noopener noreferrer">X ↗</a><a data-service="email">Email</a></div><label class="nn-share-label" for="nn-share-url">Page link</label><input id="nn-share-url" readonly><p class="nn-share-status" role="status" aria-live="polite"></p>`;
+  // Populate links before inserting the dialog: crawlers and assistive tools
+  // must see usable destinations even before the first click.
+  const populate = () => {
+    const data = shareData(); if (!data) return;
+    const u = encodeURIComponent(data.url), t = encodeURIComponent(data.title);
+    const urls = {whatsapp:`https://wa.me/?text=${encodeURIComponent(data.title+' '+data.url)}`,facebook:`https://www.facebook.com/sharer/sharer.php?u=${u}`,linkedin:`https://www.linkedin.com/sharing/share-offsite/?url=${u}`,x:`https://twitter.com/intent/tweet?text=${t}&url=${u}`,email:`mailto:?subject=${t}&body=${encodeURIComponent(data.text+'\n\n'+data.url)}`};
+    dialog.querySelectorAll('[data-service]').forEach(a => a.href = urls[a.dataset.service]);
+  };
+  populate();
   document.body.append(button, dialog);
   const status = dialog.querySelector('.nn-share-status');
   const input = dialog.querySelector('input');
@@ -35,7 +44,7 @@ export function installShare() {
     if (!dialog.open) dialog.showModal();
   };
   button.addEventListener('click', open);
-  document.querySelectorAll('[data-share-page]').forEach(el => el.addEventListener('click', open));
+  document.addEventListener('click', event => { const el=event.target.closest('[data-share-page]'); if(el) open({currentTarget:el}); });
   dialog.querySelector('[data-close]').addEventListener('click', close);
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   dialog.addEventListener('click', event => { if (event.target === dialog) { const r=dialog.getBoundingClientRect(); if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) close(); } });

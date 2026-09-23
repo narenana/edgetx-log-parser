@@ -359,6 +359,7 @@ export default function App() {
           </div>
         )}
 
+        {activeLog && <button type="button" className="open-btn" data-share-page data-share-inline aria-haspopup="dialog">Share</button>}
         <ThemeToggle theme={theme} onToggle={toggleTheme} />
 
         <button className="open-btn" onClick={() => fileInputRef.current.click()}>

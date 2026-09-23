@@ -135,7 +135,7 @@
 <h2>If a log has no GPS</h2>
 <p>Not every iNAV setup logs position — a bench log, a GPS-less quad build, or a flight before GPS lock will have no usable coordinates. In that case the 3D globe is simply unavailable, but <strong>every synced chart and the telemetry bar still work</strong>: attitude, altitude and vertical speed, battery, signal, and RC inputs all replay against the timeline exactly the same way. You lose the map, not the analysis.</p>
 <h2>Reading iNAV fields</h2>
-<p>iNAV blackbox packs a lot of navigation state most Betaflight racing logs don't. The charts surface the fields that matter for tuning and diagnosis:</p><ul><li><strong>Attitude</strong> (roll/pitch/heading) to check how the plane tracked through turns and RTH.</li><li><strong>Altitude &amp; vertical speed</strong> to see climb/descent, altitude-hold behavior, and the descent into landing.</li><li><strong>Speed &amp; heading</strong> from GPS to review ground track and navigation legs.</li><li><strong>Battery</strong> down to per-cell voltage, to catch sag under load on long-range legs.</li><li><strong>Signal</strong> to line up RC link quality against where in the flight things went wrong.</li></ul><p>For a walkthrough of what each trace means, see <a href="https://www.narenana.com/log-viewer/how-to-read-a-blackbox-log/">how to read a blackbox log</a>; if you're diagnosing a specific incident, <a href="https://www.narenana.com/log-viewer/analyze-a-crash-log/">analyze a crash log</a> walks the timeline backwards from the failure.</p>
+<p>iNAV blackbox packs a lot of navigation state most Betaflight racing logs don't. The charts surface the fields that matter for tuning and diagnosis:</p><ul><li><strong>Attitude</strong> (roll/pitch/heading) to check how the plane tracked through turns and RTH.</li><li><strong>Altitude &amp; vertical speed</strong> to see climb/descent, altitude-hold behavior, and the descent into landing.</li><li><strong>Speed &amp; heading</strong> from GPS to review ground track and navigation legs.</li><li><strong>Battery</strong> down to per-cell voltage, to catch sag under load on long-range legs.</li><li><strong>Signal</strong> to line up RC link quality against where in the flight things went wrong.</li></ul><p>For a walkthrough of what each trace means, see <a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">how to read a blackbox log</a>; if you're diagnosing a specific incident, <a href="https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/">analyze a crash log</a> walks the timeline backwards from the failure.</p>
 <h2>Private by design, works offline</h2>
 <p>Blackbox logs embed the GPS coordinates of your flying field. Because RC Log Viewer parses everything locally in the browser, those coordinates <strong>never leave your machine</strong> — there is no upload step and no server that sees your log. It's <a href="https://www.narenana.com/log-viewer/">open-source (GPL-3.0)</a>, installs as a PWA that works offline, and there are free desktop builds for Windows, macOS, and Linux on the GitHub releases page if you prefer a standalone app.</p>
   <h2>Frequently asked questions</h2>
@@ -156,9 +156,9 @@
   <h2>Related</h2>
 <ul class="related">
 <li><a href="https://www.narenana.com/log-viewer/">Open the RC Log Viewer</a></li>
-<li><a href="https://www.narenana.com/log-viewer/enable-blackbox-inav/">How to enable blackbox logging in iNAV</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/">How to enable blackbox logging in iNAV</a></li>
 <li><a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a></li>
-<li><a href="https://www.narenana.com/log-viewer/how-to-read-a-blackbox-log/">How to read a blackbox log</a></li>
+<li><a href="https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/">How to read a blackbox log</a></li>
 </ul>
 </main>
 <footer>
@@ -168,5 +168,5 @@
   Part of <a href="https://www.narenana.com/">narenana — free browser tools for RC pilots</a>,
   alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
 </footer>
-<footer class="nn-footer"><div><a class="nn-wordmark" href="https://www.narenana.com/">narenana<span>.</span></a><p>Made for the joy of flying.</p></div><nav aria-label="More from narenana"><a href="https://sim.narenana.com/guides/">FPV flying guides</a><a href="https://www.narenana.com/wings/browse/">Find your next wing</a><a href="https://www.narenana.com/log-viewer/guides/">Flight-log guides</a><a href="https://www.youtube.com/@narenana">YouTube ↗</a><a href="https://www.narenana.com/#contact">Get in touch ↗</a></nav></footer><script type="module" src="../assets/family/preview-links.js?v=share1"></script></body>
+<footer class="nn-footer"><div><a class="nn-wordmark" href="https://www.narenana.com/">narenana<span>.</span></a><p>Made for the joy of flying.</p></div><nav aria-label="More from narenana"><a href="https://sim.narenana.com/guides/">FPV flying guides</a><a href="https://www.narenana.com/wings/browse/">Find your next wing</a><a href="https://www.narenana.com/log-viewer/guides/">Flight-log guides</a><a href="https://www.youtube.com/@narenana">YouTube ↗</a><a href="https://www.narenana.com/#contact">Get in touch ↗</a></nav></footer><script type="module" src="../assets/family/preview-links.js?v=release2"></script></body>
 </html>

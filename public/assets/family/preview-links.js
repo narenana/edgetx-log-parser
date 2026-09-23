@@ -1,5 +1,14 @@
-import { installShare } from './share.js';
+import { installShare } from './share.js?v=release2';
 installShare();
+document.addEventListener('keydown',event=>{
+ if(event.key!=='Escape')return;
+ const menu=document.querySelector('.nn-mobile[open]');
+ if(menu){menu.open=false;menu.querySelector('summary')?.focus();}
+});
+document.addEventListener('click',event=>{
+ const menu=document.querySelector('.nn-mobile[open]');
+ if(menu && (!menu.contains(event.target)||event.target.closest('a')))menu.open=false;
+});
 // Local review only: production and installed/offline builds keep canonical links.
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
   const previews = { 'sim.narenana.com': 'http://localhost:8788', 'nanawing2.narenana.com': 'http://localhost:8789', 'www.narenana.com': 'http://localhost:8787' };

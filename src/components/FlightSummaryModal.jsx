@@ -154,6 +154,7 @@ export default function FlightSummaryModal({ log, parsing, onProceed, onCloseLog
   useEffect(() => {
     if (phase !== 'summary') return
     const onKey = e => {
+      if (document.querySelector('#nn-share-dialog[open]')) return
       if (e.key === 'Escape' || e.key === 'Enter') {
         e.preventDefault()
         if (hasRealData) onProceed()

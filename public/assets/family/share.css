@@ -3,3 +3,14 @@
 #nn-share-dialog::backdrop{background:#101d2ab3}#nn-share-dialog .nn-share-top{display:flex;gap:16px;align-items:center;justify-content:space-between}#nn-share-heading{font:700 32px/1.05 'Barlow Condensed',sans-serif;letter-spacing:0;margin:0;color:#15191c}#nn-share-dialog button,#nn-share-dialog a{box-sizing:border-box;font:600 14px/1.4 'DM Sans',sans-serif;color:#15191c;cursor:pointer}#nn-share-dialog [data-close]{width:44px;height:44px;flex-shrink:0;border:1px solid #d3e0eb;background:#fff;border-radius:4px;font-size:26px}#nn-share-dialog .nn-share-title{color:#586a79;margin:18px 0}#nn-share-dialog .nn-share-options{display:grid;grid-template-columns:1fr 1fr;gap:10px}#nn-share-dialog .nn-share-options>*{min-height:48px;display:flex;align-items:center;justify-content:center;text-decoration:none;padding:12px;border:1px solid #c4d4e2;border-radius:4px;background:white}#nn-share-dialog .nn-share-options>[hidden]{display:none}#nn-share-dialog [data-copy]{background:#ff8500;border-color:#ff8500}#nn-share-dialog .nn-share-label{display:block;margin-top:22px;font-weight:600}#nn-share-url{box-sizing:border-box;width:100%;padding:12px;border:1px solid #c4d4e2;background:#fff;color:#15191c;font:13px/1.5 'DM Sans',sans-serif;border-radius:4px}#nn-share-dialog .nn-share-status{min-height:24px;margin:10px 0 0;color:#0669a6}#nn-share-dialog :focus-visible,#nn-share-launcher:focus-visible{outline:3px solid #087bc1;outline-offset:3px}
 @media(max-width:600px){#nn-share-launcher{right:14px;bottom:max(14px,env(safe-area-inset-bottom));padding:11px 16px}}
 @media print{#nn-share-launcher,#nn-share-dialog{display:none!important}}
+
+/* Keep shared chrome out of active sheets and the FPV cockpit. */
+body:has(#fx-backdrop:not([hidden])) #nn-share-launcher,
+body:has(dialog[open]) #nn-share-launcher,
+
+body:has(#shell.gone) #nn-share-launcher,
+body.nw-revopen #nn-share-launcher{visibility:hidden;pointer-events:none}
+
+body:has([data-share-inline]) #nn-share-launcher,body:has(.simulator[data-phase]) #nn-share-launcher{display:none}
+
+body:has(#root:not([hidden]) #boot) #nn-share-launcher{display:none}
