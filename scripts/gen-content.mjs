@@ -186,7 +186,7 @@ ${familyNav({active:'logs',assets:new URL(url).pathname.split('/').filter(Boolea
   Part of <a href="${SITE}/">narenana — free browser tools for RC pilots</a>,
   alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
 </footer>
-${familyFooter()}<script type="module" src="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/preview-links.js"></script></body>
+${familyFooter()}<script type="module" src="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/preview-links.js?v=share1"></script></body>
 </html>
 `
 }
@@ -255,7 +255,7 @@ ${cards}
   <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
   Part of <a href="${SITE}/">narenana — free browser tools for RC pilots</a>.
 </footer>
-${familyFooter()}<script type="module" src="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/preview-links.js"></script></body>
+${familyFooter()}<script type="module" src="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/preview-links.js?v=share1"></script></body>
 </html>
 `
 }
