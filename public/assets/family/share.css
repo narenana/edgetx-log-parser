@@ -14,3 +14,6 @@ body.nw-revopen #nn-share-launcher{visibility:hidden;pointer-events:none}
 body:has([data-share-inline]) #nn-share-launcher,body:has(.simulator[data-phase]) #nn-share-launcher{display:none}
 
 body:has(#root:not([hidden]) #boot) #nn-share-launcher{display:none}
+/* Migration guard: the previous website Worker injects this legacy widget.
+   Keep only the app-owned control visible during a staggered release. */
+body:has(#nn-share-launcher) #nn-shr{display:none!important}
