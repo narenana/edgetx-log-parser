@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f5f7fb" />
+    <meta name="theme-color" content="#087bc1" />
 
     <title>RC Log Viewer — EdgeTX & Betaflight/iNAV Blackbox in 3D</title>
     <meta name="description" content="Replay EdgeTX CSV and iNAV/Betaflight blackbox logs on a 3D globe with synced telemetry charts. Free, in-browser — logs never leave your machine." />
@@ -117,7 +117,7 @@
         ]
       }
     </script>
-  </head>
+  <link rel="stylesheet" href="/assets/family/fonts.css"><link rel="stylesheet" href="/assets/family/shell.css"></head>
   <body>
     <!-- Apply the saved theme BEFORE React mounts so there's no flash of
          wrong theme on first paint. Falls back to light mode for first
@@ -223,5 +223,5 @@
       </p>
     </noscript>
     <script type="module" src="/src/main.jsx"></script>
-  </body>
+  <script type="module" src="/assets/family/preview-links.js"></script></body>
 </html>

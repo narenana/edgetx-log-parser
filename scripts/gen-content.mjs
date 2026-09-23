@@ -20,6 +20,7 @@
 //     ogTitle, ogDescription, targetQuery,
 //     introHtml, sections:[{heading,html}], faqs:[{q,a}], relatedLinks:[{text,href}] }
 
+import {familyNav,familyFooter} from './brand-shell.mjs'
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -166,14 +167,9 @@ function renderPage(page) {
 ${jsonLd(page, url)}
 </script>
 <style>${STYLE}</style>
-</head>
+<link rel="stylesheet" href="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/fonts.css"><link rel="stylesheet" href="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/shell.css"><link rel="stylesheet" href="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/log-editorial.css"></head>
 <body>
-<div class="topbar"><div class="in">
-  <a class="brand" href="${BASE}">RC Log Viewer</a>
-  <a href="${BASE}guides/">Guides</a>
-  <span class="sp"></span>
-  <a href="${BASE}">Open the viewer →</a>
-</div></div>
+${familyNav({active:'logs',assets:new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')+'assets/family'})}
 <main class="wrap">
   <p class="crumbs">${crumbHtml}</p>
   <h1>${esc(page.h1)}</h1>
@@ -190,7 +186,7 @@ ${jsonLd(page, url)}
   Part of <a href="${SITE}/">narenana — free browser tools for RC pilots</a>,
   alongside the <a href="https://sim.narenana.com">Nanawing FPV wing simulator</a>.
 </footer>
-</body>
+${familyFooter()}<script type="module" src="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/preview-links.js"></script></body>
 </html>
 `
 }
@@ -243,14 +239,9 @@ ${jsonld}
 <style>${STYLE}
   .hub li{margin:0 0 16px;list-style:none}
   .hub ul{padding:0}</style>
-</head>
+<link rel="stylesheet" href="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/fonts.css"><link rel="stylesheet" href="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/shell.css"><link rel="stylesheet" href="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/log-editorial.css"></head>
 <body>
-<div class="topbar"><div class="in">
-  <a class="brand" href="${BASE}">RC Log Viewer</a>
-  <a href="${BASE}guides/">Guides</a>
-  <span class="sp"></span>
-  <a href="${BASE}">Open the viewer →</a>
-</div></div>
+${familyNav({active:'logs',assets:new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')+'assets/family'})}
 <main class="wrap hub">
   <p class="crumbs"><a href="${BASE}">RC Log Viewer</a> › Guides</p>
   <h1>RC flight log guides</h1>
@@ -264,7 +255,7 @@ ${cards}
   <a href="https://github.com/narenana/edgetx-log-parser">Source on GitHub (GPL-3.0)</a> ·
   Part of <a href="${SITE}/">narenana — free browser tools for RC pilots</a>.
 </footer>
-</body>
+${familyFooter()}<script type="module" src="${new URL(url).pathname.split('/').filter(Boolean).slice(1).map(()=>'../').join('')}assets/family/preview-links.js"></script></body>
 </html>
 `
 }
