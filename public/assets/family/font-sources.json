@@ -1,0 +1,56 @@
+[
+  {
+    "family": "Barlow Condensed",
+    "weight": "600",
+    "file": "BarlowCondensed-600.woff2",
+    "source": "https://fonts.gstatic.com/s/barlowcondensed/v13/HTxwL3I-JCGChYJ8VI-L6OO_au7B4873z3bWuQ.woff2"
+  },
+  {
+    "family": "Barlow Condensed",
+    "weight": "700",
+    "file": "BarlowCondensed-700.woff2",
+    "source": "https://fonts.gstatic.com/s/barlowcondensed/v13/HTxwL3I-JCGChYJ8VI-L6OO_au7B46r2z3bWuQ.woff2"
+  },
+  {
+    "family": "Barlow Condensed",
+    "weight": "800",
+    "file": "BarlowCondensed-800.woff2",
+    "source": "https://fonts.gstatic.com/s/barlowcondensed/v13/HTxwL3I-JCGChYJ8VI-L6OO_au7B47b1z3bWuQ.woff2"
+  },
+  {
+    "family": "DM Sans",
+    "weight": "400",
+    "file": "DMSans-400.woff2",
+    "source": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2"
+  },
+  {
+    "family": "DM Sans",
+    "weight": "500",
+    "file": "DMSans-500.woff2",
+    "source": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2"
+  },
+  {
+    "family": "DM Sans",
+    "weight": "600",
+    "file": "DMSans-600.woff2",
+    "source": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2"
+  },
+  {
+    "family": "DM Sans",
+    "weight": "700",
+    "file": "DMSans-700.woff2",
+    "source": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2"
+  },
+  {
+    "family": "JetBrains Mono",
+    "weight": "400",
+    "file": "JetBrainsMono-400.woff2",
+    "source": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2"
+  },
+  {
+    "family": "JetBrains Mono",
+    "weight": "500",
+    "file": "JetBrainsMono-500.woff2",
+    "source": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2"
+  }
+]

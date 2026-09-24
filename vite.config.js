@@ -104,11 +104,16 @@ export default defineConfig(() => {
     },
 
     workbox: {
+      // Only Vite's fingerprinted bundles are immutable. Public family files
+      // also live under assets/ but need content revisions on every release.
+      dontCacheBustURLsMatching: /\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)$/,
+      // Versioned family imports resolve to the active precache revision offline.
+      ignoreURLParametersMatching: [/^v$/, /^utm_/, /^fbclid$/],
       // App shell + sample log. CSV included so the demo button works offline.
       // Exclude /cesium/* — Cesium.js alone is 5.84 MB and would force every
       // visitor to precache it before ever opening the globe. We lazy-cache
       // it via runtimeCaching below.
-      globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,csv}'],
+      globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,csv,woff2}'],
       // og-card.jpg is for link scrapers, not app users — keep it out of
       // every visitor's precache.
       globIgnores: ['cesium/**/*', 'og-card.jpg'],

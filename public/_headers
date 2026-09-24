@@ -1,17 +1,7 @@
-# Cloudflare Pages reads this file on deploy and applies the headers to
-# matching responses. First match wins.
-#
-# We rely on Vite's content-hashed bundle filenames for cache busting:
-# every JS/CSS chunk lives at a URL like /assets/index-Bgtt1Ers.js where
-# the suffix is a hash of the file contents. Changing a file always
-# produces a new URL, so the old URL is permanent — safe to mark
-# `immutable` and cache for a year. The HTML, which references those
-# hashes, stays on the Pages default (`max-age=0, must-revalidate`)
-# so users always pick up the latest hash references after a deploy.
-
-# Vite-emitted hashed bundles + chunks + CSS.
+# Stable family assets share this directory with hashed Vite output.
+# Revalidate so changed styles/imports cannot remain immutable for a year.
 /assets/*
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=0, must-revalidate
 
 # Cesium runtime — not content-hashed (vite-plugin-cesium copies the
 # library verbatim into /cesium/). Filenames are stable across our

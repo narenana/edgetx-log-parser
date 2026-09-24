@@ -309,6 +309,7 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
   // ── Space bar to play/pause ─────────────────────────────────────────────────
   useEffect(() => {
     const onKey = e => {
+      if (document.querySelector('#nn-share-dialog[open]')) return
       if (e.code === 'Space' && e.target === document.body) {
         e.preventDefault()
         setPlaying(p => !p)

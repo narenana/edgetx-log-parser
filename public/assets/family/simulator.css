@@ -1,0 +1,19 @@
+/* Marketing adapters; cockpit/HUD rendering is deliberately outside this scope. */
+:is(#shell,#landing){--ink:#f4f8fc;--ink2:#e8f2fa;--surf:#fff;--line:#d3e0eb;--line2:#c4d4e2;--tx:#15191c;--mut:#586a79;--faint:#586a79;--blue:#087bc1;--bluehi:#087bc1;--osd:#087bc1;--sans:'DM Sans',Arial,sans-serif;--mono:'JetBrains Mono',monospace;color-scheme:light;font-family:var(--sans);background:var(--ink);color:var(--tx)}
+:is(#shell,#landing) :is(h1,h2,h3){font-family:'Barlow Condensed','Arial Narrow',sans-serif;font-weight:700;letter-spacing:-.02em}
+:is(#shell,#landing) h1{font-size:clamp(46px,6vw,88px);line-height:.98;max-width:14ch}
+:is(#shell,#landing) h2{font-size:clamp(32px,4vw,48px)}
+:is(#shell,#landing) .hero{--tx:#f4f8fc;--mut:#d6e2ec;--faint:#c6d5e0;--bluehi:#80c9f5;--osd:#ffad55;min-height:670px;min-height:min(800px,calc(100svh - 82px));color:var(--tx)}
+:is(#shell,#landing) .hero .in{padding-top:130px;padding-bottom:80px}
+:is(#shell,#landing) .cta{background:#ff8500;color:#15191c;border:1px solid #ff8500;border-radius:3px;box-shadow:none;font:700 14px/1.4 'DM Sans',sans-serif;padding:17px 24px}
+:is(#shell,#landing) .cta:hover{background:#e87800;box-shadow:none}
+:is(#shell,#landing) .shot{border-radius:4px;box-shadow:0 14px 40px #15191c16}
+:is(#shell,#landing) .feat :is(p,li),:is(#shell,#landing) .guide-page :is(p,li,td){color:#586a79}
+:is(#shell,#landing) .feat :is(strong,b),:is(#shell,#landing) .guide-page :is(strong,b){color:#15191c}
+:is(#shell,#landing) .card,:is(#shell,#landing) .aircraft-card{border-radius:4px;background:#fff;border-color:#d3e0eb}
+:is(#shell,#landing) .nn-header a{color:#15191c}:is(#shell,#landing) .nn-header a:hover,:is(#shell,#landing) .nn-header a[aria-current]{color:#087bc1}
+:is(#shell,#landing) .nn-footer{border-color:#d3e0eb}:is(#shell,#landing) .nn-footer a{color:#15191c}
+:is(#shell,#landing) .nn-footer p{color:#586a79}:is(#shell,#landing) .nn-header .nn-bar{padding-top:14px;padding-bottom:14px}
+#landing.guide{background:#f4f8fc;color:#15191c}#landing .guide-page{padding-top:44px}#landing.guide :is(code,kbd){background:#e8f2fa;color:#15191c;border-color:#c4d4e2}
+@media(max-width:760px){:is(#shell,#landing) .hero{min-height:720px}:is(#shell,#landing) .hero .in{padding-top:120px;padding-bottom:75px}:is(#shell,#landing) h1{font-size:56px}}
+@media(prefers-reduced-motion:reduce){:is(#shell,#landing) .cta{transition:none;transform:none}}

@@ -17,7 +17,7 @@
     },
     {
       "heading": "Opening a .bbl, .bfl, or .txt file",
-      "html": "<p>Betaflight writes blackbox in a few shapes depending on where it was logged and how you pulled it off:</p><ul><li><code>.bbl</code> / <code>.bfl</code> — the raw binary blackbox, either from onboard dataflash or an SD card.</li><li><code>.txt</code> — a log some setups export; RC Log Viewer reads these too.</li></ul><p>Steps: open <a href=\"https://www.narenana.com/log-viewer/\">the viewer</a>, then drag the file in (or click to browse). One thing to know about the format: a single <code>.bbl</code> can contain more than one arm/disarm session concatenated into the same file, so a big file is often several short flights back to back. If you're not sure which format you have or how to get the file off the quad, see <a href=\"https://www.narenana.com/log-viewer/guides/open-bbl-file/\">how to open a .bbl file</a>.</p>"
+      "html": "<p>Betaflight writes blackbox in a few shapes depending on where it was logged and how you pulled it off:</p><ul><li><code>.bbl</code> / <code>.bfl</code> — the raw binary blackbox, either from onboard dataflash or an SD card.</li><li><code>.txt</code> — a log some setups export; RC Log Viewer reads these too.</li></ul><p>Steps: open <a href=\"https://www.narenana.com/log-viewer/\">the viewer</a>, then drag the file in (or click to browse). One thing to know about the format: a single <code>.bbl</code> can contain more than one arm/disarm session concatenated into the same file, so a big file is often several short flights back to back. If you're not sure which format you have or how to get the file off the quad, see <a href=\"https://www.narenana.com/log-viewer/open-bbl-file/\">how to open a .bbl file</a>.</p>"
     },
     {
       "heading": "How this differs from Betaflight Blackbox Explorer",
@@ -61,7 +61,7 @@
     },
     {
       "text": "How to open a .bbl file",
-      "href": "https://www.narenana.com/log-viewer/guides/open-bbl-file/"
+      "href": "https://www.narenana.com/log-viewer/open-bbl-file/"
     },
     {
       "text": "Analyze a drone crash log",

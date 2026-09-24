@@ -21,7 +21,7 @@
     },
     {
       "heading": "Reading iNAV fields",
-      "html": "<p>iNAV blackbox packs a lot of navigation state most Betaflight racing logs don't. The charts surface the fields that matter for tuning and diagnosis:</p><ul><li><strong>Attitude</strong> (roll/pitch/heading) to check how the plane tracked through turns and RTH.</li><li><strong>Altitude &amp; vertical speed</strong> to see climb/descent, altitude-hold behavior, and the descent into landing.</li><li><strong>Speed &amp; heading</strong> from GPS to review ground track and navigation legs.</li><li><strong>Battery</strong> down to per-cell voltage, to catch sag under load on long-range legs.</li><li><strong>Signal</strong> to line up RC link quality against where in the flight things went wrong.</li></ul><p>For a walkthrough of what each trace means, see <a href=\"https://www.narenana.com/log-viewer/how-to-read-a-blackbox-log/\">how to read a blackbox log</a>; if you're diagnosing a specific incident, <a href=\"https://www.narenana.com/log-viewer/analyze-a-crash-log/\">analyze a crash log</a> walks the timeline backwards from the failure.</p>"
+      "html": "<p>iNAV blackbox packs a lot of navigation state most Betaflight racing logs don't. The charts surface the fields that matter for tuning and diagnosis:</p><ul><li><strong>Attitude</strong> (roll/pitch/heading) to check how the plane tracked through turns and RTH.</li><li><strong>Altitude &amp; vertical speed</strong> to see climb/descent, altitude-hold behavior, and the descent into landing.</li><li><strong>Speed &amp; heading</strong> from GPS to review ground track and navigation legs.</li><li><strong>Battery</strong> down to per-cell voltage, to catch sag under load on long-range legs.</li><li><strong>Signal</strong> to line up RC link quality against where in the flight things went wrong.</li></ul><p>For a walkthrough of what each trace means, see <a href=\"https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/\">how to read a blackbox log</a>; if you're diagnosing a specific incident, <a href=\"https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/\">analyze a crash log</a> walks the timeline backwards from the failure.</p>"
     },
     {
       "heading": "Private by design, works offline",
@@ -61,7 +61,7 @@
     },
     {
       "text": "How to enable blackbox logging in iNAV",
-      "href": "https://www.narenana.com/log-viewer/enable-blackbox-inav/"
+      "href": "https://www.narenana.com/log-viewer/guides/enable-blackbox-inav/"
     },
     {
       "text": "Betaflight blackbox viewer",
@@ -69,7 +69,7 @@
     },
     {
       "text": "How to read a blackbox log",
-      "href": "https://www.narenana.com/log-viewer/how-to-read-a-blackbox-log/"
+      "href": "https://www.narenana.com/log-viewer/guides/how-to-read-a-blackbox-log/"
     }
   ],
   "kind": "usecase"

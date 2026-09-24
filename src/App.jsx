@@ -1,3 +1,4 @@
+import FamilyNav from './FamilyNav'
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { parseEdgeTXLog } from './utils/parseLog'
 import { parseBlackboxBuffer, looksLikeBlackbox } from './utils/parseBlackbox'
@@ -313,8 +314,9 @@ export default function App() {
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
     >
+      <FamilyNav />
       <header className="header">
-        <span className="header-logo">RC Log Viewer</span>
+        <span className="header-logo">Your flight, explained.</span>
 
         {logs.length > 0 && (
           <div className="tabs">
@@ -357,6 +359,7 @@ export default function App() {
           </div>
         )}
 
+        {activeLog && <button type="button" className="open-btn" data-share-page data-share-inline aria-haspopup="dialog">Share</button>}
         <ThemeToggle theme={theme} onToggle={toggleTheme} />
 
         <button className="open-btn" onClick={() => fileInputRef.current.click()}>
