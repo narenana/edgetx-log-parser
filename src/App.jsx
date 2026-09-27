@@ -191,12 +191,19 @@ export default function App() {
         }
         results.push(log)
       } catch (e) {
+        // Extension + trimmed message only — file names can carry the
+        // pilot's name, so they never go into analytics.
+        track('parse_failed', {
+          ext: (file.name.split('.').pop() || '').toLowerCase().slice(0, 8),
+          message: String(e?.message || e).slice(0, 120),
+        })
         setError(`Failed to parse ${file.name}: ${e.message}`)
       } finally {
         setParsing(null)
       }
     }
     if (!anyMatched && files.length) {
+      track('parse_failed', { reason: 'unsupported_type' })
       setError('Unsupported file type. Drop an EdgeTX .csv or an iNAV / Betaflight blackbox (.bbl, .bfl, .txt).')
     }
     if (results.length) {
