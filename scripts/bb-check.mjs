@@ -119,6 +119,15 @@ for (const p of logs) {
   if (thr.bad) fails.push(`${thr.bad} non-finite throttle values`)
   if (!alt.empty && (alt.bad || Math.abs(alt.max) > 100000)) fails.push(`altitude non-finite/absurd (max ${f1(alt.max)})`)
   if (log.hasGPS && spd.empty) fails.push('GPS log but no speed values')
+  // Corrupt-tail signatures (unterminated SD logs): garbage frames
+  // decoded from stale/padded bytes made the timeline run backwards and
+  // attitude read thousands of degrees. The mapper truncates them now —
+  // if any of these trip again, that guard has regressed.
+  if (log.stats.duration < 0) fails.push(`negative duration (${f1(log.stats.duration)}s) — corrupt tail frames leaked through`)
+  let tsBreaks = 0
+  for (let i = 1; i < R.length; i++) if (R[i]._tSec < R[i - 1]._tSec) tsBreaks++
+  if (tsBreaks) fails.push(`${tsBreaks} non-monotonic _tSec steps — corrupt tail frames leaked through`)
+  if (!roll.empty && (roll.min < -180.5 || roll.max > 180.5)) fails.push(`roll out of ±180° (${f1(roll.min)}..${f1(roll.max)}) — garbage frames in output`)
 
   // ── soft checks (warn only — heuristics that can legitimately trip) ──
   // The throttle-scaling regression signature: a real flight idles the

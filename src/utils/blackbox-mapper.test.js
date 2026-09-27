@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mapToViewerLog } from './blackbox-mapper'
+import { mapToViewerLog, sanitizeDecodedTimes } from './blackbox-mapper'
 
 /**
  * Build a minimal fake of the WASM parser's FlightLog output so we can
@@ -61,6 +61,94 @@ describe('mapToViewerLog — throttle (iNAV rcCommand[3] regression)', () => {
       'noThrottle.txt',
     )
     expect(log.rows[0]._throttle).toBeNull()
+  })
+})
+
+describe('sanitizeDecodedTimes — corrupt-tail truncation', () => {
+  // SD logs that end at a crash (power loss) have no "End of log"
+  // marker and a preallocated tail of stale sectors; the decoder emits
+  // a few garbage frames with random timestamps from that region.
+  const s = 1e6 // one second in µs
+
+  it('keeps a fully monotonic timeline untouched', () => {
+    const t = Float64Array.from([0, s, 2 * s, 3 * s])
+    expect(sanitizeDecodedTimes(t)).toBe(4)
+    expect(Array.from(t)).toEqual([0, s, 2 * s, 3 * s])
+  })
+
+  it('truncates at a backwards jump (garbage tail frames)', () => {
+    // Real flight ticking along at ~20 Hz, then junk frames at 77µs /
+    // 73µs — the exact tail signature seen on a real crash log.
+    const t = Float64Array.from([635.3e6, 635.35e6, 635.4e6, 77, 73])
+    expect(sanitizeDecodedTimes(t)).toBe(3)
+  })
+
+  it('truncates at a wild forward jump not followed by sane cadence', () => {
+    // Garbage timestamp that happens to land AHEAD of the real data,
+    // then collapses — a single lookahead spots it.
+    const t = Float64Array.from([0, s, 2 * s, 900e6, 12])
+    expect(sanitizeDecodedTimes(t)).toBe(3)
+  })
+
+  it('truncates a lone forward-jump frame at the very end', () => {
+    const t = Float64Array.from([0, s, 2 * s, 900e6])
+    expect(sanitizeDecodedTimes(t)).toBe(3)
+  })
+
+  it('keeps a legit logging pause (gap resumes with normal cadence)', () => {
+    // Blackbox-switch pause: minutes-long gap, but frames after it tick
+    // normally, so the whole array stays.
+    const t = Float64Array.from([0, s, 2 * s, 200e6, 200e6 + s, 200e6 + 2 * s])
+    expect(sanitizeDecodedTimes(t)).toBe(6)
+  })
+
+  it('unwraps the 32-bit micros() rollover instead of truncating', () => {
+    // micros() wraps every 2^32 µs ≈ 71.6 min. Times must come out
+    // strictly increasing across the wrap.
+    const W = 2 ** 32
+    const t = Float64Array.from([W - 2 * s, W - s, 0.5 * s, 1.5 * s])
+    expect(sanitizeDecodedTimes(t)).toBe(4)
+    expect(Array.from(t)).toEqual([W - 2 * s, W - s, W + 0.5 * s, W + 1.5 * s])
+  })
+})
+
+describe('mapToViewerLog — unterminated log (crash) end-to-end', () => {
+  it('drops garbage tail frames so duration is positive and rows are clean', () => {
+    const fields = ['time', 'attitude[0]']
+    const log = mapToViewerLog(
+      makeParsed(fields, [
+        [0, 100],            // 10.0° roll
+        [0, 150],
+        [0, 200],
+        [0, -31337],         // garbage frame from the stale tail
+      ], [635.3e6, 635.8e6, 636.3e6, 77]),
+      'crash.txt',
+    )
+    expect(log.rows).toHaveLength(3)
+    expect(log.stats.duration).toBeCloseTo(1.0)
+    expect(log.rows.every(r => Math.abs(r._rollDeg) <= 180)).toBe(true)
+  })
+
+  it('truncates garbage GPS frames so the last rows keep real coordinates', () => {
+    // The gpsPtr walk advances while gpsTimes[ptr+1] <= tUs — junk
+    // low-timestamp GPS frames at the tail would otherwise capture
+    // every late row (the crash moment itself).
+    const parsed = makeParsed(['time'], [[0], [0], [0]], [0, 1e6, 2e6])
+    parsed.hasGps = true
+    parsed.gpsCols = 3
+    parsed.gpsFieldNames = ['GPS_coord[0]', 'GPS_coord[1]', 'GPS_fixType']
+    parsed.gpsTimes = Float64Array.from([0, 2e6, 55]) // last one is garbage
+    parsed.gpsFrames = Float64Array.from([
+      // Synthetic coordinates (1e-7° units) — not from any real log.
+      100000000, 200000000, 2,   // real fix: 10.0000, 20.0000
+      100001000, 200001000, 2,   // real fix: 10.0001, 20.0001
+      -999999999, 999999999, 2,  // garbage from stale tail
+    ])
+    const log = mapToViewerLog(parsed, 'gpsJunk.txt')
+    expect(log.hasGPS).toBe(true)
+    const last = log.rows[log.rows.length - 1]
+    expect(last._lat).toBeCloseTo(10.0001, 3)
+    expect(last._lon).toBeCloseTo(20.0001, 3)
   })
 })
 

@@ -18,11 +18,28 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
   const mainCols = parsed.mainCols
   const mainTimes = parsed.mainTimes
   const mainFrames = parsed.mainFrames
-  const numMain = mainTimes.length
   diag(
     `extracted main arrays in ${(performance.now() - tExtract).toFixed(0)}ms ` +
-      `(numMain=${numMain}, mainFrames.len=${mainFrames.length}, mainCols=${mainCols})`,
+      `(numMain=${mainTimes.length}, mainFrames.len=${mainFrames.length}, mainCols=${mainCols})`,
   )
+
+  // ── Corrupt-tail truncation ─────────────────────────────────────────
+  // SD-card logs that end in a crash / power loss never get their "End
+  // of log" marker, and iNAV's AFATFS preallocates the file — so the
+  // bytes after the last real frame are zero padding or STALE SECTORS
+  // from older deleted logs. The decoder resyncs into that region and
+  // emits a few garbage frames with random timestamps and wild values.
+  // Trusting them made duration negative (last − first), blew chart
+  // scales, and fed junk GPS fixes to the final rows of the flight —
+  // the crash moment itself. Keep only the leading run of frames whose
+  // timeline is sane (see sanitizeDecodedTimes).
+  const numMain = sanitizeDecodedTimes(mainTimes)
+  if (numMain < mainTimes.length) {
+    diag(
+      `corrupt tail: dropped ${mainTimes.length - numMain} of ` +
+        `${mainTimes.length} main frames (unterminated log — power loss?)`,
+    )
+  }
 
   if (numMain === 0) {
     throw new Error('Blackbox file contains no main frames — log appears empty.')
@@ -33,7 +50,14 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
   const gpsFieldNames = hasGps ? parsed.gpsFieldNames : []
   const gpsTimes = hasGps ? parsed.gpsTimes : null
   const gpsFrames = hasGps ? parsed.gpsFrames : null
-  const numGps = gpsTimes ? gpsTimes.length : 0
+  // GPS frames decoded from the same stale tail get truncated by the
+  // same rule — without this the gpsPtr walk below (`gpsTimes[ptr+1]
+  // <= tUs`) skips PAST the junk low timestamps and pins the last real
+  // rows of the flight to garbage coordinates.
+  const numGps = gpsTimes ? sanitizeDecodedTimes(gpsTimes) : 0
+  if (gpsTimes && numGps < gpsTimes.length) {
+    diag(`corrupt tail: dropped ${gpsTimes.length - numGps} of ${gpsTimes.length} GPS frames`)
+  }
 
   const idxOf = (names, target) => names.indexOf(target)
   const i_attRoll = idxOf(mainFieldNames, 'attitude[0]')
@@ -340,6 +364,59 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
+
+// micros() on the FC is 32-bit — wraps every 2^32 µs ≈ 71.6 minutes.
+const WRAP_US = 2 ** 32
+// Largest believable gap between two consecutive DECODED frames. Real
+// cadence is ≥ 50 Hz even after stride thinning (stride caps output at
+// ~8000 frames over a whole flight → worst case a few hundred ms), and
+// a blackbox-switch pause can stretch that to seconds — but a jump of
+// minutes inside one session means the decoder wandered into garbage.
+const MAX_GAP_US = 60e6
+
+/**
+ * Validate a decoded timestamp array IN PLACE and return the length of
+ * its sane leading run. Everything from the first insane step onward is
+ * garbage the decoder resynced out of stale/padded bytes at the tail of
+ * an unterminated SD log (crash / power loss — no "End of log" marker,
+ * file preallocated by AFATFS, tail full of old sectors).
+ *
+ * Rules per step dt = t[i] − t[i−1] (after the running wrap offset):
+ *   • 0 ≤ dt ≤ MAX_GAP_US            → sane, keep going.
+ *   • dt ≈ −2^32 (within MAX_GAP_US) → legit 32-bit micros() wrap: add
+ *     2^32 to this and all later times (mutates the array) and keep going.
+ *   • dt < 0 otherwise               → garbage; truncate here.
+ *   • dt > MAX_GAP_US                → forward jump. A real logging
+ *     pause resumes with normal cadence, so peek at the NEXT step: if it
+ *     is sane the gap was legit; a random garbage timestamp almost never
+ *     produces a second consecutive sane step, so otherwise truncate.
+ *
+ * Works on both main and GPS timestamp arrays.
+ */
+export function sanitizeDecodedTimes(times) {
+  const n = times.length
+  if (n < 2) return n
+  let offset = 0
+  let prev = times[0]
+  for (let i = 1; i < n; i++) {
+    let t = times[i] + offset
+    let dt = t - prev
+    if (dt < 0 && dt + WRAP_US >= 0 && dt + WRAP_US <= MAX_GAP_US) {
+      offset += WRAP_US
+      t += WRAP_US
+      dt += WRAP_US
+    }
+    if (dt < 0) return i
+    if (dt > MAX_GAP_US) {
+      const tNext = i + 1 < n ? times[i + 1] + offset : NaN
+      const dtNext = tNext - t
+      if (!(dtNext >= 0 && dtNext <= MAX_GAP_US)) return i
+    }
+    times[i] = t
+    prev = t
+  }
+  return n
+}
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371
