@@ -33,17 +33,26 @@ Per detector, three mandatory cases — **trigger** (fires with correct severity
 - B3: divergence growth fires / static offset silent.
 - M1/M2: banded fixtures; **guard:** stick-command-correlated gyro energy exempt (M2's gate).
 - X1/X2: clean flight yields `clean:true` + B4; CSV source lists skipped detectors correctly.
-- Schema: every emitted findings JSON validates against `debrief.schema.json`; property-based sweep asserts NO key ever contains lat/lon-like pairs, craft name, or filename (privacy invariant #2 as a test).
+- Schema: every emitted findings JSON validates against `debrief.schema.json`; property-based sweep asserts NO key ever contains lat/lon-like pairs, craft name, filename, or sub-second t precision (privacy invariants #2–3 as tests).
+- **Mapper contract (rev 2):** detectors receive parsed.slow* arrays in-worker before free(); truncation stats (droppedMain/droppedGps) returned; end-marker tail scan correct on: clean log, truncated log, log with 'End of log' bytes inside frame data (false-positive guard). "Mapper untouched" is withdrawn — these ARE mapper tests.
+- **Stride emulation (rev 2):** every synthetic main-frame fixture is generated full-rate then decimated with production stride math; E5's pinned-impedance guard and E6's dip fixtures exist in strided form. A fixture pair (same event, 2 MB vs 25 MB stride) asserts detector verdicts MATCH — the stride-invariance test.
+- **Chemistry (rev 2):** B1/B2 fixture pairs per chemistry — Li-ion healthy flight (3.2 V/cell landing, 35 mΩ) fires NOTHING; LiPo same numbers fires B2 warning + B1. Manual override respected.
+- **Acknowledge demotion (rev 2):** chronic B1 acknowledged for craft → next flight severity notice, panel not auto-expanded.
+- **Allowlists (rev 2):** custom-firmware string ("INAV 9.0.1 (deadbeef) MYFORK"), renamed EdgeTX sensor columns, and a 31-char target all REJECTED client-side (payload never built) — and the same fixtures rejected Worker-side.
 
 ## 3. Harness (`npm run debrief:check`)
 
-Extends bb:check: decode each test-log → run detectors → diff against `expectations.json` → non-zero exit on any miss/extra above `info`. Prints the findings JSON per log (evidence values visible for eyeballing). Runs in CI only when test-logs exist (local gate, like bb:check today).
+Extends bb:check: decode each test-log → run detectors → diff against `expectations.json` → non-zero exit on any miss/extra above `info`. Prints the findings JSON per log (evidence values visible for eyeballing) plus sparkline-slice byte sizes (bounded, coordinate-free — asserted < 8 KB per finding). Runs in CI only when test-logs exist (local gate, like bb:check today).
 
 ## 4. Narration tier tests (D2)
 
 **Endpoint (Worker, integration):**
 - schema-invalid body → 400; >8 KB → 413; missing Turnstile on first-seen device → 403; 11th call in an hour per IP → 429; daily budget counter exhausted → 503 `{fallback:"templates"}`.
 - identical findings JSON twice → second response has `cached:true` and no `env.AI` invocation (assert via test double).
+- **cache key (rev 2):** model env-var swap OR prompt_version bump → previously cached findings produce a cache MISS; a response failing the post-check is NOT cached.
+- **hostile-but-valid payloads (rev 2):** duplicate finding ids, unknown evidence keys, 30 findings, instruction-text laundered into enum-ish strings, per-id evidence keys from the wrong detector — all 400, none reach env.AI.
+- **device token (rev 2):** replayed token from a different IP prefix → 403 + re-challenge; expired (>24 h) token → 403; forged "not-first" request without token → 403; rate-limit breach invalidates the token.
+- **rate limiter (rev 2):** 20 parallel requests from one IPv6 /64 → ≥10 rejected (Durable Object consistency test — this is exactly what KV counters fail).
 - CORS: allowed for `https://www.narenana.com`, refused for others (preview policy per design open-question #1).
 
 **Model output (eval rubric, run per candidate model + on any prompt change):** feed the four fixture findings JSONs + 4 synthetic scenario JSONs; PASS requires for each: (a) references every critical finding id, (b) zero references to ids absent from the payload (the guardrail check must find nothing to strip), (c) no invented numeric sensor values (every number in the output must appear in the payload, ±rounding), (d) sections all present, ≤ length caps, (e) tone: no blame, hedged appropriately — human-scored 1–5, ≥4 required. Store rubric scores in `docs/eval/` (numbers only, no payloads).
@@ -57,13 +66,20 @@ Extends bb:check: decode each test-log → run detectors → diff against `expec
 5. Endpoint 503 → template text + "resting" notice, no error state.
 6. Consent revoke in footer → next click shows the sheet again.
 7. Panel absent from desktop/offline build (build-flag test).
-8. Reduced coverage: EdgeTX CSV load shows X2 "checks run n of 16".
+8. Reduced coverage: EdgeTX CSV load shows the CSV-positive footer ("Ran all N checks this log type supports") + blackbox-upsell X2 card.
+9. **(rev 2)** Expanded E3 card renders the vbat-collapse sparkline — the evidence is VISIBLE (pixel-diff against a blank-sparkline baseline).
+10. **(rev 2)** E2/E4 card shows the local Last-known-position row; the network spy asserts its coordinates appear in NO request of any kind.
+11. **(rev 2)** No third-party script (incl. Turnstile) loads before consent acceptance; after acceptance the widget loads inside the sheet.
+12. **(rev 2)** "Copy debrief as text" produces markdown containing every finding title + evidence number + the tool URL, and no coordinates.
+13. **(rev 2)** Desktop (Electron) bundle contains no "/api/debrief" string and no Explain button; panel + detectors fully present.
+14. **(rev 2)** Clean flight: no standalone panel; StatsPanel header shows the ✓ badge; badge click expands the debrief.
 
 ## 6. Regression safety
 
-- Detectors run post-parse in a `try/catch`; a thrown detector = Sentry event (no log data) + panel "unavailable" state; the dashboard must render normally regardless (test: detector forced to throw).
-- Perf budget: full detector pass over a 400k-row log < 250 ms on a mid laptop (bench in harness, warn at 150 ms).
-- bb:check + existing 52 unit tests stay green (detectors are additive; the mapper is untouched).
+- Detectors run in-worker in a `try/catch`; a thrown detector = Sentry event carrying ONLY {detector_id, error_name} (asserted — no message, no evidence, no filename) + panel "unavailable" state; the dashboard renders normally regardless (test: detector forced to throw).
+- Perf budget (rev 2, real inputs): full detector pass over strided main (~8 k rows) + full-rate slow (~55 k) + gps arrays < 100 ms in-worker on a mid laptop; end-marker tail scan < 10 ms on a 25 MB buffer. Bench in harness, warn at 60 ms.
+- Sentry hygiene (rev 2): beforeBreadcrumb drops JSON-ish/long console lines (unit-tested); captureParseError no longer sends filename (extension + size only) — this side-fix ships in D1 and has its own test.
+- bb:check + existing 52 unit tests stay green. The mapper CHANGES (slow-array consumption, truncation stats) — covered by the §2 mapper-contract tests, not hand-waved.
 
 ## 7. Exit criteria
 

@@ -1,170 +1,100 @@
-# Flight Debrief — design
+# Flight Debrief — design (rev 2, post-review)
 
-**Status:** DRAFT for owner review. No code until this and the test plan are approved.
-**Owner decisions baked in (2026-09-28):** name = **Flight Debrief**; UX = collapsible panel under the charts; detectors run locally and automatically, AI narration is on-click with a one-time payload preview; v1 covers all four failure classes (electrical, RX/link, battery, mechanical).
+**Status:** REVIEWED — 3-lens adversarial review (engineering / privacy-abuse / pilot-UX) returned *sound-with-fixes* on all lenses; every blocker and major is integrated below and marked `[R]`. Awaiting owner sign-off before implementation.
+**Owner decisions baked in (2026-09-28):** name = **Flight Debrief**; panel in the right column; detectors local + automatic; AI narration on-click with payload preview; all four failure classes in v1. Review resolved former open question #2: **regenerate is cut from v1**.
 
 ---
 
 ## 1. What this is
 
-Every loaded log gets an automatic, local, deterministic **findings pass** (the detectors), rendered as evidence cards in a Debrief panel. A **narration tier** — Cloudflare Workers AI, called from the narenana-website Worker — turns those findings into a plain-English story on request. The raw log never leaves the browser, in any tier, ever. The model input is a derived **findings JSON** of a few KB.
+Every loaded log gets an automatic, local, deterministic **findings pass** (detectors), rendered as evidence cards. A **narration tier** — Cloudflare Workers AI via the narenana-website Worker — turns findings into a plain-English story on request. The raw log never leaves the browser in any tier. The model input is a derived, allowlisted, quantized **findings JSON** of a few KB.
 
-The origin story is a real case: a pilot's 25 MB crash log that the viewer previously called "empty." The corrected pipeline plus manual analysis produced a complete electrical forensic (mid-air power cutoff, ADC death rattle, no sag precursor, board-specific suspect list). The Debrief feature is that analysis, productised: detectors find, templates explain, the model narrates.
+Origin case: a pilot's 25 MB crash log the viewer called "empty." The corrected pipeline plus manual forensics produced a complete electrical diagnosis. This feature is that analysis productised: detectors find, cards prove, templates explain, the model narrates.
 
 ### Non-goals (v1)
-- No PID/filter tuning advice (that is Plasmatree/PIDtoolbox territory; revisit in LATER).
-- No auto-run of the AI tier — narration is always user-initiated.
-- No accounts, no server-side log storage, no learning loop that uploads anything.
-- No DJI/rotorflight formats beyond what the parsers already support.
-
----
+No PID/filter tuning advice. No auto-run of the AI tier. No accounts or server-side log storage. No narration regenerate button `[R]`. No new log formats.
 
 ## 2. Architecture
 
 ```
-browser (log viewer, all local)                 narenana-website Worker (existing)
-┌──────────────────────────────────┐            ┌──────────────────────────────┐
-│ parse → rows (existing)          │            │ POST /api/debrief            │
-│ detectors.js  → findings JSON ───┼── click ──▶│  validate schema (reject >8KB)│
-│ templates.js  → evidence cards   │  (~2KB)    │  Turnstile check (first use) │
-│ debrief panel UI                 │◀─ stream ──│  KV cache by findings hash   │
-│ consent + payload preview        │            │  env.AI.run(model, prompt)   │
-└──────────────────────────────────┘            │  per-IP RL + daily budget cap │
-                                                └──────────────────────────────┘
+browser (all local)                                  narenana-website Worker
+┌────────────────────────────────────────┐           ┌──────────────────────────────┐
+│ decode (worker) ─ mapToViewerLog       │           │ POST /api/debrief            │
+│   ├ detectors run HERE, before free(): │── click ─▶│  strict schema (closed enums)│
+│   │  see rows + parsed.slow*/gps* +    │  (~2KB)   │  device-token / Turnstile    │
+│   │  tail-scan + truncation stats      │◀─ stream ─│  DO rate limiter + budget    │
+│   └ findings attached to log object    │           │  KV cache (findings‖model‖   │
+│ templates + cards + sparklines         │           │            prompt_version)   │
+│ consent + always-inspectable payload   │           │  env.AI.run → post-check     │
+└────────────────────────────────────────┘           └──────────────────────────────┘
 ```
 
-- **Detectors** run in the viewer after parse (same place `stats` are computed today), pure functions over the row arrays + the raw decoded S-frame arrays. Zero network. Work offline, in the PWA, on desktop builds.
-- **Templates** give every finding a deterministic explanation + "check this" list. They are the offline story, the quota-exhausted fallback, and the guarantee that the panel is never empty of meaning.
-- **Narration endpoint** lives in the narenana-website Worker (it already has `env.AI`-capable plumbing, Turnstile availability, KV) — NOT in the Pages app, which has no bindings. CORS-allow `www.narenana.com` only. The viewer calls it with the findings JSON; the Worker streams model tokens back.
-- **The findings JSON is the product's stable interface**: panel input, template input, model payload, and later the PNG share card and event-strip data source. Schema-versioned from day one.
+**Integration point (normative).** `[R blocker]` Detectors execute **inside `mapToViewerLog`** — the single function all three blackbox paths share (rust-worker, rust main-thread fallback, C fallback) — receiving the mapped rows **and** the raw `parsed` object (`slowFieldNames/slowTimes/slowFrames`, `gps*`) *before* `parsed.free()`. The worker attaches `log.debrief = { findings, coverage }` to the posted result. The EdgeTX CSV path gets its own named call site at the end of `parseEdgeTXLog`. The mapper/worker contract therefore **changes** (slow arrays consumed in-worker; truncation stats returned); the test plan carries mapper-contract tests for this.
 
-## 3. Privacy invariants (hard rules, enforced in code + tests)
+**Data-rate reality (normative).** `[R blocker]` Main frames are stride-decimated at decode (~8,000 frames regardless of file size; ≈20 Hz effective on the founding 25 MB fixture). Slow frames and GPS frames are full-rate. Every v1 detector is specified against **strided main + full-rate slow/gps**; synthetic fixtures must emulate production stride. Consequences: M2 is re-scoped (below), E6 carries a resolution caveat, and thresholds are calibrated on strided data only.
 
-1. The log file, row arrays, and any GPS coordinate never leave the browser.
-2. The findings JSON contains: no lat/lon, no craft name (header `Craft name` can be a person's name), no filename, no timestamps other than flight-relative seconds, no free-text from the log except the firmware target string (e.g. `SPEEDYBEEF405WING`) and firmware version.
-3. The payload preview shows the literal JSON that will be sent, pretty-printed, before the first narration call (per-device consent, `localStorage`, revocable in the panel footer).
-4. The Worker logs request metadata only (status, model, token counts) — never payload bodies.
-5. Desktop/offline builds compile with the narration button absent (build flag), not hidden.
+**E1 plumbing (normative).** `[R major]` The worker scans the raw byte tail for the ASCII `End of log` event marker before the buffer is transferred, and `mapToViewerLog` returns truncation stats (`droppedMain`, `droppedGps`). `context.cells` derives from a start-of-log voltage heuristic (`round(v / 4.2)`, chemistry-adjusted) — `vbatref` is not exposed by the wrappers.
+
+## 3. Privacy invariants (hard rules, each one a test)
+
+1. The log file, row arrays, and any GPS coordinate never leave the browser. Local-only UI (cards, sparklines, last-known-position) may use full-precision data freely; the payload may not.
+2. The findings JSON contains no lat/lon, no craft name, no filename, no absolute timestamps. **All strings are allowlisted** `[R blocker]`: `context.fields` against the mapper's canonical vocabulary; `target` against `^[A-Z0-9_]{1,30}$`; `fw` extracted by strict regex (`^(INAV|Betaflight) \d+\.\d+\.\d+$` — commit hashes of personal forks fingerprint people and are dropped); reject-on-no-match, enforced client-side AND in the Worker.
+3. **Evidence is quantized before sending** `[R major]`: durations and t-ranges to whole seconds, voltages to 0.1 V, altitudes to 10 m buckets, currents to 0.5 A. Templates and cards keep full precision locally; narration does not need it (a findings payload precise to 0.1 s is a unique flight fingerprint).
+4. Server retention, stated honestly: the Worker keeps no request bodies in logs; the KV cache retains *generated narrations* keyed by findings-hash for 30 days; the Cloudflare edge sees client IPs as with any request to the site. The consent sheet says exactly this.
+5. Consent is remembered per browser (`debrief-consent:<schema-major>`) but the payload stays **permanently inspectable** — a "view what will be sent" link sits beside the button every time, and a schema major bump forces a fresh preview `[R major]`.
+6. Sentry never receives log-derived content `[R major]`: detector failures report `{detector_id, error_name}` only (never `err.message`); a `beforeBreadcrumb` hook drops console breadcrumbs that look like JSON or exceed 200 chars. **Pre-existing side-fix shipped with D1:** `captureParseError` currently sends `filename` — replace with extension + size.
+7. Electron builds compile the narration tier out (button, consent, fetch — tree-shaken via `VITE_BUILD_TARGET`); the web/PWA build hides the button offline at runtime and falls back to templates `[R minor]`.
+8. Analytics: `debrief_shown` carries only `{any_warning: bool}` — class/severity breakdowns never go to GA `[R minor]`. Richer aggregates live only in the narration endpoint's own first-party metadata.
+9. No third-party script (including Turnstile's) loads before the user accepts the consent sheet `[R minor]`.
 
 ## 4. Findings schema v1 (`debrief.schema.json`)
 
-```jsonc
-{
-  "v": 1,
-  "context": {
-    "source": "blackbox" | "edgetx-csv",
-    "fw": "INAV 9.0.0",              // family + version only
-    "target": "SPEEDYBEEF405WING",   // board target string
-    "duration_s": 390.2,
-    "cells": 4,                       // derived from vbatcellvoltage/vbatref
-    "has_gps": true,
-    "fields": ["vbat","amperage","impedance","imu_temp", ...]  // what was available
-  },
-  "findings": [
-    {
-      "id": "E4",                    // detector id, stable
-      "class": "electrical",         // electrical | link | battery | mechanical | meta
-      "severity": "critical",        // info | notice | warning | critical
-      "confidence": 0.9,             // detector-assigned, honest
-      "t": [389.8, 389.9],           // flight-relative seconds (null = whole flight)
-      "evidence": {                   // numbers only, detector-specific keys
-        "vbat_at_cutoff": 15.49,
-        "vbat_stddev_5s": 0.02,
-        "amps_at_cutoff": 1.3,
-        "alt_agl_at_end": 845
-      }
-    }
-  ],
-  "clean": false                      // true = no warning/critical findings
-}
-```
+Shape as rev 1 (context + findings array + `clean`), hardened `[R major]`: `additionalProperties: false` at every level; `id` a **closed enum** of the 17 detector ids; a per-id **evidence-key allowlist** (one table, generated from the catalog); `findings` maxItems 24, duplicate ids rejected; evidence values are numbers, booleans, or named enums only — no free strings. The Worker validates independently of the client; hostile-but-valid fixtures are in the test plan.
 
-Rules: `evidence` values are numbers/booleans/short enums only (schema-enforced `maxLength` on strings, no arrays of raw samples). Whole payload hard-capped at 8 KB by the Worker. Findings sorted severity-desc. A `clean: true` flight still produces `info` findings (endurance summary) so happy flights get a positive debrief.
+## 5. Detector catalog (v1: 16 + composite layer)
 
-## 5. Detector catalog (v1: 16 detectors + 1 composite layer)
+Unchanged in intent from rev 1 (same ids/classes/table), with these review amendments:
 
-Every detector declares `requires: [fields]` and silently skips when the source lacks them (EdgeTX CSV has no S-frames → electrical forensics partially unavailable there; the panel says which checks ran). Thresholds live in one `thresholds.js` with a rationale comment each — they are all tunable constants, not magic numbers.
-
-### Electrical / power (blackbox-first)
-| id | Finding | Signal | Trigger sketch |
-|---|---|---|---|
-| E1 | Unterminated log | decoder | sanitizer truncated ≥1 frame OR no end-marker event; evidence: frames removed, pad bytes |
-| E2 | Ends mid-air | baro/GPS alt | last-valid AGL > 20 m AND no landing signature (alt slope + |vspeed| in final 3 s) |
-| E3 | ADC death rattle | S-frames | final ≤3 S-frames: sagVbat < 2 V after stable > 3 V/cell, OR enum fields out of range, OR temp step > 20 °C within 1 s |
-| E4 | *Composite:* instant power interruption | E1+E2+E3 + vbat σ<0.05 V over last 5 s + amps < 30 % of flight max | the Suchit signature; confidence scales with how many constituents fired |
-| E5 | Degrading connection | powerSupplyImpedance | robust slope > +50 % of baseline over flight, or step > 2× median |
-| E6 | In-flight brownout (recovered) | vbat | dip < 3.0 V/cell recovering < 500 ms while log continues |
-
-### RX / link
-| id | Finding | Signal | Trigger sketch |
-|---|---|---|---|
-| R1 | Failsafe entered | failsafePhase | any transition ≠ 0; evidence: phase, count, t-ranges |
-| R2 | RX signal lost | rxSignalReceived / rxFlightChannelsValid | windows of 0 ≥ 200 ms |
-| R3 | Link degrading before event | rssi (+LQ where present) | ≥ 40 % sustained decline in the 30 s before any critical finding, vs flight median |
-| R4 | RC update gaps | rxUpdateRate | rate < 25 % of median for ≥ 500 ms |
-
-### Battery health
-| id | Finding | Signal | Trigger sketch |
-|---|---|---|---|
-| B1 | High effective IR | vbat vs amperage | per-cell sag/current ratio > 40 mΩ (warm pack norm; tunable), computed on throttle punches |
-| B2 | Deep discharge at end | vbat | resting-estimate < 3.5 V/cell at log end (info at 3.6, warning at 3.5, critical at 3.3) |
-| B3 | Sag-comp divergence | sagCompensatedVBat vs vbat | growing gap = pack weaker than iNAV's model expects |
-| B4 | Endurance summary (always, info) | mAh/duration/avg amps | not a fault — feeds the clean-flight debrief |
-
-### Mechanical / vibration *(experimental badge in UI)*
-| id | Finding | Signal | Trigger sketch |
-|---|---|---|---|
-| M1 | Elevated vibration | accVib | RMS percentile bands; warn > sustained 0.5 g-equiv (tunable; needs fixture calibration) |
-| M2 | Sustained oscillation | gyroADC rolling band energy | windowed std × frequency proxy above band for > 2 s in cruise (not during stick moves — gate on rcCommand rate) |
-
-### Meta
-| id | Finding | | |
-|---|---|---|---|
-| X1 | Clean flight | none of warning+ fired | positive summary from B4 + max stats |
-| X2 | Checks skipped | requires-matrix | lists detectors that couldn't run on this source format |
-
-**The composite layer (E4 pattern) is the "synthesis" made deterministic:** a small rule table combining detector outputs into named scenarios (instant power interruption; failsafe crash; battery exhaustion landing; vibration-degraded flight). Rules are data (`scenarios.js`), reviewed like copy, unit-tested like code.
-
-### Board-specific advice (v1.1, data-only change)
-`advice.json` keyed by `context.target` — e.g. SPEEDYBEE F405 WING → "inspect the PDB↔FC board-to-board header" appears in E4's check-list. Ships with ~5 popular wing/AIO targets; community-extendable later.
+- **Every detector declares `plots: {series, window}`** — the evidence series its card renders as a local mini-sparkline (raw arrays, t-range ± 5 s, threshold annotated). `[R major ×2]` This is the falsifiability answer: no finding without a visible curve, including S-frame signals no main chart shows (impedance, sagVbat, failsafePhase). It also documents that detectors consume the raw slow arrays in-worker — sparkline slices (bounded, coordinate-free) ride along inside `log.debrief` for local rendering only.
+- **E1** uses the end-marker tail scan + truncation stats (see §2). A cleanly-flushed mid-air-ending log fires E2 without E1 — the composite handles both shapes.
+- **E6** carries a stated resolution limit (dip must span ≥2 strided samples; sub-100 ms brownouts are invisible at large stride) — severity `notice`, wording hedged.
+- **M2 re-scoped** `[R blocker]`: gyro-band analysis is impossible at ~20 Hz effective. v1 M2 = sustained high `accVib` variance gated on low stick rate (accel-RMS proxy), badge *experimental*; true oscillation detection deferred until a full-rate windowed decode exists (vNext note).
+- **B1/B2 are chemistry-aware** `[R major]`: full-charge voltage detection (≈4.2 V/cell LiPo vs ≤4.1 Li-ion) selects the threshold set (Li-ion: healthy IR 20–40+ mΩ, normal landing 3.0–3.3 V/cell), with a manual chemistry override in the panel. Without this, every Li-ion long-range wing — the founding demographic — gets a false CRITICAL per flight.
+- **Per-finding acknowledge** `[R major]`: "expected for this craft" (localStorage, per-craft key like bookmarks) demotes a chronic B1/M1 warning to notice on subsequent flights — anti-alarm-fatigue.
+- **E2/E4 add a LOCAL-ONLY "Last known position" row** `[R major — the #1 pilot need]`: distance + bearing from home, show-on-map (centers the globe/map at the last fix), copy-coordinates for Google Maps. Rendered from local rows, **never in the findings JSON** (the privacy property sweep asserts this). This delivers roadmap NOW #4 inside the debrief.
+- **CSV-positive framing** `[R minor]`: on EdgeTX logs the footer reads "Ran all 8 checks this log type supports" (not "8 of 16"), leading with what ran; X2 becomes the blackbox upsell ("enable blackbox for electrical forensics") — a growth hook, not an apology.
 
 ## 6. Narration tier (Workers AI)
 
-- **Endpoint:** `POST https://www.narenana.com/api/debrief` (Worker route beside `/videos.json`). Body = findings JSON; response = SSE token stream + final `usage` frame.
-- **Model:** start with an 8B-class instruct model on Workers AI; selection is an eval task in the test plan (fixture findings → rubric), not a design decision. Model id is a Worker env var so swaps need no deploy of the viewer.
-- **Prompt contract:** system prompt embeds the detector taxonomy, tone rules ("incident debrief, plain English, no blame, hedge appropriately"), and the OUTPUT SECTIONS: *What happened* (≤120 words) / *The evidence* (bullet per finding id it references) / *Check before the next flight* (numbered, concrete). The model may only reference finding ids present in the payload; it never invents sensor values.
-- **Guardrail:** client renders narration *below* the deterministic cards, labelled "AI narration — generated from the findings above". A post-check drops any narration paragraph naming a finding id not in the payload (belt-and-braces; cheap string check).
-- **Cache:** Worker KV keyed by SHA-256 of the canonicalised findings JSON, TTL 30 d — identical findings (e.g. the same log re-opened, or a shared sample) cost zero Neurons.
-- **Budget & abuse:** Turnstile token required on a device's first call; per-IP sliding-window limit (10/h) via KV; global daily Neuron counter — past the cap the endpoint returns `503 {fallback:"templates"}` and the panel shows template text with "AI narration is resting — back tomorrow." Free-plan worst case is ₹0 by construction.
-- **Failure = fallback, always:** any endpoint error renders templates. The panel never blocks on the network.
+As rev 1 (endpoint beside `/videos.json`; 8B-class model chosen by eval; prompt contract with fixed sections; client + **server-side** post-check; narration rendered as plain text with URLs stripped `[R blocker — injection]`), amended:
 
-## 7. UX specification
+- **Cache key = SHA-256(canonical findings ‖ model_id ‖ prompt_version)** `[R major ×2]`; prompt_version is a Worker constant bumped on any prompt edit (a model swap or prompt fix must never serve stale narrations — and the shared samples are the hottest keys). Only responses that pass the post-check are cached; KV namespace prefix is an env var (incident kill-switch = rotate prefix).
+- **Rate limiting on a Durable Object** (or the Workers rate-limiting binding), never KV `[R major — KV can't count]`: keys = IPv6 /64 + IPv4 /32; 10/h per key as backstop.
+- **Device token, defined** `[R major]`: first accept → Turnstile widget lazy-injected *inside the consent sheet* ("quick bot check — first time only") → Worker `siteverify` → signed ≤24 h token bound to the IP prefix; requests present the token; a rate-limit breach or expiry forces a fresh challenge. No "first-seen device" fiction.
+- **Budget**: global daily Neuron counter on the same DO; 80% threshold fires an alert (email via a simple Worker cron notification); past cap → `503 {fallback:"templates"}` and the panel's "resting — back tomorrow" line. Free-plan worst case remains ₹0 by construction.
+- Any failure → template fallback; the panel never blocks on the network.
 
-**Placement:** a `DebriefPanel` section at the top of the right column (above Altitude chart), collapsed to a one-line strip when `clean: true` ("✓ Clean flight — 6:30, 1.9 km, battery healthy · expand"), expanded by default when any warning/critical finding exists.
+## 7. UX specification (amended)
 
-**Anatomy (top → bottom):**
-1. Header row: `FLIGHT DEBRIEF` + severity chips (`1 critical · 2 notice`) + collapse control.
-2. Finding cards, severity-sorted: icon, title (template), one-line evidence sentence with real numbers, expandable detail (evidence table + t-range "jump to" link that scrubs the timeline — reuses the bookmark-jump plumbing).
-3. `✦ Explain this flight` button (primary, only when ≥1 notice+ finding, or always? → always, smaller when clean). First click → consent sheet: the literal payload, "This summary — never your log file — is sent to narenana's server (Cloudflare) to write the narration. Remember on this device." → streamed narration block with the AI label + "regenerate" (cache-busting regenerate capped at 2/flight).
-4. Footer: `Checks run: 14 of 16 (2 need blackbox S-frames)` + privacy line + consent-revoke link.
-
-**Summary modal tie-in:** one added line under the stats grid when warnings exist: `⚠ 2 findings — see Flight Debrief` (anchor-scrolls to panel after "Proceed"). No second modal page.
-
-**Mobile:** the panel participates in the existing right-column flow; cards stack; consent sheet becomes full-screen.
-
-**Empty/edge states:** CSV-only fields → X2 card explains reduced coverage; no battery fields at all → battery class hidden; detectors error → panel shows "Debrief unavailable for this log" and reports to Sentry (no log data attached).
+- **Cards are one-line rows** (icon · title · headline number), expanding on tap to evidence table + sparkline + check-list; the panel has a max-height with internal scroll so Battery/Signal charts stay reachable `[R major — displacement]`.
+- **Auto-expand on CRITICAL only**; warnings appear as chips on the collapsed strip `[R major — alarm fatigue]`.
+- **Clean flights**: no standalone panel — a "✓ Clean flight · view debrief" badge in StatsPanel's header expands the panel on demand (kills the duplicate-stats strip) `[R minor]`.
+- **Mobile discovery**: a severity pill in the sticky header + red debrief markers on the flight-mode bar (reusing the event-marker affordance) that scroll to the panel `[R major]`.
+- **"✦ Explain this flight"** is primary only when ≥1 notice+ finding; clean flights get a quiet text link ("Write a plain-English summary") `[R minor — don't lead with AI]`.
+- **"Copy debrief as text"** ships in D1 `[R minor — highest-leverage growth surface]`: markdown rendering of the cards (findings, evidence numbers, checks-run footer, tool URL) — exactly the artifact pilots paste into Discord/IntoFPV #help threads today.
+- Consent copy adds explicit negatives: "No GPS positions, no file, no filename — just the numbers below," and names the IP + 30-day-cache facts from invariant 4.
+- Summary-modal tie-in unchanged (one warning line, anchor-scroll).
 
 ## 8. Rollout
 
 | Phase | Ships | Gate |
 |---|---|---|
-| D1 | schema + detectors + templates + panel (no network) | test plan green incl. fixture matrix |
-| D2 | Worker endpoint + consent flow + narration + guards | model eval rubric ≥ pass on all fixtures; abuse tests green |
-| D3 | advice.json board knowledge + share-card integration | D2 telemetry ≥ 1 week healthy |
-
-Analytics (consent-gated, already live): `debrief_shown {classes, severities}`, `debrief_expanded`, `narration_requested`, `narration_completed {cached}`, `narration_fallback {reason}` — no evidence values in events.
+| D1 | schema + detectors (in-worker) + templates + panel + sparklines + last-known-position + copy-as-text + Sentry filename side-fix | test plan §§2–3, 5, 6 green incl. fixture matrix + stride-emulating fixtures |
+| D2 | Worker endpoint (DO limiter, device token, cache, post-check) + consent flow + narration | §4 green; model eval rubric passed; hostile-payload + token-replay tests green |
+| D3 | advice.json board knowledge; share-card integration; preview-host policy | D2 telemetry healthy ≥ 1 week |
 
 ## 9. Open questions for the owner
-1. `api/debrief` on www.narenana.com implies the viewer (served from the same origin via the proxy) has no CORS friction — but latest.narenana.com and *.pages.dev previews will need an allow-list entry each. Ship narration on previews, or www-only?
-2. Regenerate button: worth the Neurons, or cut it?
-3. Should `clean` flights get a one-click "brag card" (ties into the roadmap PNG share card) as the debrief's happy-path payoff?
+1. Narration endpoint on www only, or also latest.narenana.com / pages.dev previews (each needs a CORS + Turnstile allow-list entry)? *(Recommend: www-only for D2.)*
+2. ~~Regenerate?~~ Resolved: cut `[R]`.
+3. Clean-flight PNG "brag card" in D3 — still wanted as the happy-path payoff?
+4. NEW `[R]`: altitude evidence quantized to 10 m buckets — comfortable, or prefer coarse bands (">120 m") given some payloads will document altitude-limit breaches next to an IP at the edge? *(Recommend: 10 m buckets + the invariant-4 honesty line; bands if you want maximum caution.)*
