@@ -12,8 +12,10 @@ Companion to `FLIGHT-DEBRIEF-DESIGN.md`. Gate for phase D1/D2 per its rollout ta
 | LOG00041 | unterminated, landed variant | E1, B4 | E2†, E4, R1 |
 | LOG00046 | clean control, "End of log" marker | B4, X1 (`clean:true`) | every E/R warning+ |
 | LOG00057 | 1.5 s arm-only blip | X2/B4 only, short-flight guard | E2, E4 (duration gate <10 s) |
+| WING-…-110747.csv | **EdgeTX CSV clean control** (2026-09-29 addition): healthy 9:03 ELRS wing flight, 507 m, 152 km/h, lands 3.72 V/cell, link 98–100 % to last row; RTH excursion early; final-pass RSSI dip −46→−86 dB with RQly steady | B4, X1 (`clean:true`), CSV-positive footer; existing event engine finds takeoff + rth_on/rth_off | R2/R3 (the −86 dB dip is the canonical must-NOT-fire: RSSI dip ≠ link loss), B2 (3.72 V/cell LiPo is healthy), E2 (lands), X2 phrased positively |
 
 † verify against the actual data during implementation; if 41 also ends airborne, move it to the must-fire column — the harness makes this a one-line change.
+CSV note: the radio freezes GSpd at its last GPS fix for several rows around landing (observed 63.8 km/h at 0 AGL) — speed-derived detectors must gate on fix freshness/Sats, and this fixture is the regression case.
 
 **Synthetic fixtures (committed, coordinate-free):** a `fixtures/synth.js` generator building typed arrays per scenario — the mapper tests already established this style. One scenario per detector trigger, boundary, and false-positive guard. Synthetic EdgeTX CSV strings for the CSV-side subset.
 
