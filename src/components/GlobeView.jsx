@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
+import { analyzeGpsCadence, dedupeFixes, hermitePathGeodetic } from '../utils/pathSmoothing.js'
 import { CAMERA_VIEWS, parseCameraViewFromUrl, DEFAULT_CHASE_M } from '../utils/cameraViews'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
@@ -413,7 +414,17 @@ export default function GlobeView({
   // every GPS-frame boundary, visible as waves on the path.
   // Downsample to ~600 points (matches the original GPS rate) so the
   // smoother sees coarse waypoints and produces a clean curve.
+  // Radio (EdgeTX) logs deliver a fresh GPS fix only every ~9 s while
+  // rows tick at 0.5 s — 18 duplicate positions per fix. Feeding those
+  // duplicates to the smoother degenerates the path into straight
+  // chords with pointed corners. Sparse logs instead use the DISTINCT
+  // fixes as waypoints and reconstruct curvature from the logged
+  // heading/speed (hermitePathGeodetic). Dense logs (blackbox — the
+  // mapper interpolates per row; classic 1 Hz EdgeTX GPS) keep the
+  // original pipeline byte-identical.
+  const gpsCadence = useMemo(() => analyzeGpsCadence(gpsRows), [gpsRows])
   const pathRows = useMemo(() => {
+    if (gpsCadence.sparse) return dedupeFixes(gpsRows)
     const target = 600
     const stride = Math.max(1, Math.floor(gpsRows.length / target))
     if (stride === 1) return gpsRows
@@ -424,7 +435,7 @@ export default function GlobeView({
       out.push(gpsRows[gpsRows.length - 1])
     }
     return out
-  }, [gpsRows])
+  }, [gpsRows, gpsCadence])
 
   useEffect(() => {
     if (!containerRef.current || gpsRows.length < 2) return
@@ -538,7 +549,10 @@ export default function GlobeView({
     // AND the rebuild trigger is held at pathRow granularity so the
     // primitive is reconstructed only ~4×/sec at 1× playback (one
     // rebuild per pathRow boundary cross), not 30×/sec.
-    const SMOOTH_STEPS = 8
+    // Sparse logs get more subdivisions per (much longer) fix-to-fix
+    // segment; the (n-1)*steps+1 length invariant holds either way, so
+    // every downstream index mapping is untouched.
+    const SMOOTH_STEPS = gpsCadence.sparse ? 24 : 8
     // Absolute ellipsoid altitude for a row = launch-terrain elevation +
     // the row's AGL / home-relative altitude. baseElevRef is 0 until terrain
     // sampling resolves, then pathPositions is recomputed in place.
@@ -548,10 +562,13 @@ export default function GlobeView({
     const absAlt = (row) =>
       baseElevRef.current + (Number.isFinite(row['Alt(m)']) ? row['Alt(m)'] : 0)
     const computePathPositions = () =>
-      catmullRomSmooth(
-        pathRows.map(r => Cesium.Cartesian3.fromDegrees(r._lon, r._lat, absAlt(r))),
-        SMOOTH_STEPS,
-      )
+      gpsCadence.sparse
+        ? hermitePathGeodetic(pathRows, SMOOTH_STEPS, absAlt)
+            .map(p => Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.alt))
+        : catmullRomSmooth(
+            pathRows.map(r => Cesium.Cartesian3.fromDegrees(r._lon, r._lat, absAlt(r))),
+            SMOOTH_STEPS,
+          )
     const pathPositions = computePathPositions()
     // Recompute pathPositions IN PLACE (same length) so every downstream
     // reference — aircraft-pose interpolation, camera follow, path primitive
