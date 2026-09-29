@@ -220,7 +220,7 @@
         <dt>How do I get logs off my radio?</dt>
         <dd>Enable SD-card logging on your EdgeTX/OpenTX radio (a Special Function on a switch), fly, then copy the CSV from the <code>/LOGS</code> folder of the SD card.</dd>
         <dt>Which firmware versions are supported?</dt>
-        <dd>EdgeTX and OpenTX CSV logs. iNAV blackbox 9.x and earlier, tested on real iNAV 9.0.0 and 9.0.1 logs. Betaflight blackbox up to 4.5.x; logs from Betaflight 2025.12 and later are not tested yet and may not open. Two independent parsers try each file, so most real-world logs open.</dd>
+        <dd>EdgeTX and OpenTX CSV logs. iNAV blackbox 9.x and earlier, tested on real iNAV 9.0.0 and 9.0.1 logs. Betaflight blackbox up to 4.5.x; logs from Betaflight 2025.12 and later are not tested yet and may not open. If the main parser rejects a blackbox file, a second, independent parser tries it, so most real-world logs open.</dd>
         <dt>My log has no GPS. Is it still useful?</dt>
         <dd>Yes. Without GPS you still get the telemetry bar and all synced charts (attitude, altitude, battery, signal); the 3D globe needs coordinates.</dd>
         <dt>Does it work offline?</dt>
