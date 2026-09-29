@@ -24,6 +24,7 @@ import init, { parseBlackbox as wasmParseBlackbox } from 'blackbox-parser'
 // relying on the relative-import shape that broke the bundler target.
 import wasmUrl from 'blackbox-parser/blackbox_parser_bg.wasm?url'
 import { mapToViewerLog } from './blackbox-mapper'
+import { scanLogTail } from '../debrief/index.js'
 
 // Target post-decode row count. Stride keeps the data crossing the
 // WASM/JS boundary bounded regardless of input size.
@@ -69,7 +70,9 @@ self.addEventListener('message', async e => {
     self.postMessage({ type: 'progress', stage: 'mapping', pct: 60 })
 
     const tMap = performance.now()
-    const log = mapToViewerLog(parsed, filename, diag)
+    const tail = scanLogTail(bytes)
+    diag(`tail scan: endMarker=${tail.endMarker}, padBytes=${tail.padBytes}`)
+    const log = mapToViewerLog(parsed, filename, diag, tail)
     diag(`mapToViewerLog returned in ${(performance.now() - tMap).toFixed(0)}ms, rows=${log.rows.length}`)
 
     parsed.free()

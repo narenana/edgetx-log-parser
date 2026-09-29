@@ -12,7 +12,9 @@
  * Web Worker can share the exact same mapping logic.
  */
 
-export function mapToViewerLog(parsed, filename, diag = () => {}) {
+import { runDebrief, parseFirmware } from '../debrief/index.js'
+
+export function mapToViewerLog(parsed, filename, diag = () => {}, opts = {}) {
   const tExtract = performance.now()
   const mainFieldNames = parsed.mainFieldNames
   const mainCols = parsed.mainCols
@@ -351,7 +353,7 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
     dominantPct,
   }
 
-  return {
+  const log = {
     filename,
     rows,
     flightModes,
@@ -361,6 +363,60 @@ export function mapToViewerLog(parsed, filename, diag = () => {}) {
     stats,
     events: [],
   }
+
+  // ── Flight Debrief ──────────────────────────────────────────────────
+  // Detectors run HERE — the one point all three blackbox decode paths
+  // share, while `parsed` (with the slow-frame arrays the rows never
+  // carry) is still alive. Never allowed to break parsing: any detector
+  // error is captured as {id, error_name} for main-thread Sentry.
+  try {
+    let slow = null
+    const slowNames = parsed.slowFieldNames
+    if (slowNames && slowNames.length) {
+      const slowTimes = parsed.slowTimes
+      const slowN = sanitizeDecodedTimes(slowTimes)
+      slow = {
+        names: Array.from(slowNames),
+        times: slowTimes,
+        frames: parsed.slowFrames,
+        cols: parsed.slowCols,
+        n: slowN,
+        t0Us: mainTimes[0],
+      }
+    }
+    const fw = parseFirmware(parsed.firmware)
+    const cadenceS = numMain > 1 ? totalSec / (numMain - 1) : 1
+    log.debrief = runDebrief({
+      source: 'blackbox',
+      rows,
+      stats,
+      events: log.events,
+      slow,
+      main: {
+        names: Array.from(mainFieldNames),
+        times: mainTimes,
+        frames: mainFrames,
+        cols: mainCols,
+        n: numMain,
+        t0Us: mainTimes[0],
+      },
+      meta: {
+        endMarker: opts.endMarker ?? null,
+        droppedMain: mainTimes.length - numMain,
+        droppedGps: gpsTimes ? gpsTimes.length - numGps : 0,
+        padBytes: opts.padBytes ?? null,
+        ...fw,
+        cadenceS,
+      },
+    })
+    diag(`debrief: ${log.debrief.findings.length} findings, clean=${log.debrief.clean}` +
+      (log.debrief.errors.length ? `, detectorErrors=${log.debrief.errors.map(e => e.id).join(',')}` : ''))
+  } catch (e) {
+    diag(`debrief failed entirely: ${e?.name || 'Error'}`)
+    log.debrief = null
+  }
+
+  return log
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

@@ -335,7 +335,7 @@ async function parseOnMainThread(bytes, filename, onProgress, onDiag) {
   if (onProgress) onProgress('mapping', 60)
   await new Promise(r => setTimeout(r, 0))
 
-  const log = mapToViewerLog(parsed, filename, diag)
+  const log = mapToViewerLog(parsed, filename, diag, scanLogTail(bytes))
   parsed.free()
   if (onProgress) onProgress('done', 100)
   return log

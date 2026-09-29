@@ -1,4 +1,5 @@
 import Papa from 'papaparse'
+import { runDebrief } from '../debrief/index.js'
 
 const R2D = 180 / Math.PI
 
@@ -185,7 +186,29 @@ export function parseEdgeTXLog(text, filename) {
 
   const events = detectEvents(rows)
 
-  return { filename, rows, flightModes, hasGPS, hasBattery, hasCurrent, stats, events }
+  const log = { filename, rows, flightModes, hasGPS, hasBattery, hasCurrent, stats, events }
+
+  // ── Flight Debrief (CSV call site — design §2) ──────────────────────
+  // Radio logs have no decoded slow/main arrays; detectors that need
+  // them skip via requires() and the coverage footer says so.
+  try {
+    const dts = []
+    for (let i = 1; i < Math.min(rows.length, 50); i++) dts.push(rows[i]._tSec - rows[i - 1]._tSec)
+    const cadenceS = dts.length ? dts.sort((a, b) => a - b)[Math.floor(dts.length / 2)] : 1
+    log.debrief = runDebrief({
+      source: 'edgetx-csv',
+      rows,
+      stats,
+      events,
+      slow: null,
+      main: null,
+      meta: { endMarker: null, droppedMain: 0, droppedGps: 0, padBytes: null, firmwareFamily: null, firmwareVersion: null, target: null, cadenceS },
+    })
+  } catch {
+    log.debrief = null
+  }
+
+  return log
 }
 
 function detectEvents(rows) {

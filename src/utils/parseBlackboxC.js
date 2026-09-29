@@ -89,7 +89,7 @@ export async function parseBlackboxBufferC(bytes, filename, onProgress, onDiag) 
   // worker uses, so downstream code (Dashboard, Globe, charts) sees an
   // identical row schema regardless of which parser ran.
   const tMap = performance.now()
-  const log = mapToViewerLog(parsed, filename, diag)
+  const log = mapToViewerLog(parsed, filename, diag, scanLogTail(bytes))
   diag(`mapToViewerLog returned in ${(performance.now() - tMap).toFixed(0)}ms, rows=${log.rows.length}`)
 
   if (onProgress) onProgress('done', 100)
