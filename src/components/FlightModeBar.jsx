@@ -6,6 +6,7 @@ const EVENT_STYLES = {
   rth_on:  { icon: '⚑', label: 'RTH',     color: '#f7768e' },
   rth_off: { icon: '⚐', label: 'RTH off', color: '#ff9e64' },
   land:    { icon: '▼', label: 'LND',     color: '#7dcfff' },
+  debrief: { icon: '⛔', label: 'Finding', color: '#f7768e' },
 }
 
 export default function FlightModeBar({

@@ -39,7 +39,7 @@ function fmtDistance(km) {
   return `${km.toFixed(2)} km`
 }
 
-export default function StatsPanel({ log }) {
+export default function StatsPanel({ log, debriefClean, onOpenDebrief }) {
   // Mobile-only: collapsed by default to save vertical space. Desktop
   // CSS overrides the toggle to always-show.
   const [expanded, setExpanded] = useState(false)
@@ -95,6 +95,11 @@ export default function StatsPanel({ log }) {
       >
         Flight Stats {expanded ? '▴' : '▾'}
       </button>
+      {debriefClean && (
+        <button type="button" className="db-clean-badge" onClick={onOpenDebrief}>
+          ✓ Clean flight · view debrief
+        </button>
+      )}
       <div className="stats-panel">
         {items.map(item => (
           <div key={item.label} className="stat-item">

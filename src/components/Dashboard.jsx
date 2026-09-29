@@ -4,6 +4,9 @@ import FlightMap from './FlightMap'
 import SyncedChart from './SyncedChart'
 import FlightModeBar from './FlightModeBar'
 import StatsPanel from './StatsPanel'
+import DebriefPanel from './DebriefPanel'
+import { reportDebriefErrors } from '../utils/sentry'
+import { SEVERITY_RANK } from '../debrief/detectors.js'
 import FullscreenButton from './FullscreenButton'
 import { track } from '../utils/analytics'
 
@@ -144,6 +147,29 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
     track('bookmark_jumped', { direction })
   }, [bookmarks, cursorIndex, rows])
 
+  // ── Flight Debrief wiring ──────────────────────────────────────────
+  const [debriefOpen, setDebriefOpen] = useState(false)
+  const jumpToTime = useCallback(tSec => {
+    let idx = rows.findIndex(r => r._tSec >= tSec)
+    if (idx < 0) idx = rows.length - 1
+    setCursorIndex(idx)
+    virtualTimeRef.current = rows[idx]._tSec
+    setPlaying(false)
+    track('debrief_jumped')
+  }, [rows])
+  // Warning+ findings with a time range become red markers on the
+  // flight-mode bar (same affordance as the event chips).
+  const debriefEvents = useMemo(() => {
+    const list = log.debrief?.findings || []
+    return list
+      .filter(f => f.t && SEVERITY_RANK[f.severity] >= SEVERITY_RANK.warning)
+      .map(f => {
+        let idx = rows.findIndex(r => r._tSec >= f.t[0])
+        if (idx < 0) idx = rows.length - 1
+        return { type: 'debrief', index: idx }
+      })
+  }, [log.debrief, rows])
+
   // ── Per-log analytics summary (privacy-safe aggregates only) ────────────────
   // Fired once per loaded log. No GPS, no flight content — just shape metrics
   // that help us see what kinds of flights people are analysing.
@@ -157,6 +183,8 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
       mode_count: log.flightModes?.length ?? 0,
       event_count: events?.length ?? 0,
     })
+    track('debrief_shown', { any_warning: !!log.debrief && !log.debrief.clean })
+    if (log.debrief?.errors?.length) reportDebriefErrors(log.debrief.errors)
   }, [log.filename]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Animation loop ──────────────────────────────────────────────────────────
@@ -446,7 +474,17 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
               and the parse-time modal grid. Lives at the TOP of the right
               column so it sits above the chart panels and stays in view
               while the user scrolls through individual chart cards. */}
-          <StatsPanel log={log} />
+          <StatsPanel
+            log={log}
+            debriefClean={!!log.debrief?.clean}
+            onOpenDebrief={() => setDebriefOpen(true)}
+          />
+          <DebriefPanel
+            log={log}
+            onJumpToTime={jumpToTime}
+            forceOpen={debriefOpen}
+            onClose={() => setDebriefOpen(false)}
+          />
           <SyncedChart title="Attitude" datasets={attitudeDatasets} labels={labels} yLabel="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
           <SyncedChart title="Altitude & Vertical Speed" datasets={altDatasets} labels={labels} yLabel="m" y1Label="m/s" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
           <SyncedChart title="Speed & Heading" datasets={speedDatasets} labels={labels} yLabel="km/h" y1Label="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
@@ -544,7 +582,7 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
           rows={rows}
           cursorIndex={cursorIndex}
           onCursorChange={idx => { handleCursor(idx); setPlaying(false) }}
-          events={events}
+          events={[...events, ...debriefEvents]}
           onSegmentClick={mode => track('flight_mode_clicked', { mode })}
           onEventClick={type => track('event_marker_clicked', { type })}
         />

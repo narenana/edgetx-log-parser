@@ -60,6 +60,15 @@ export function initSentry() {
   initialized = true
 
   Sentry.init({
+    beforeBreadcrumb(crumb) {
+      // Console lines can carry findings JSON or parser diagnostics —
+      // drop anything JSON-shaped or long before it reaches Sentry.
+      if (crumb.category === 'console') {
+        const m = String(crumb.message || '')
+        if (m.length > 200 || /[{[]"/.test(m)) return null
+      }
+      return crumb
+    },
     dsn: DSN,
     release: RELEASE,
     environment: import.meta.env.MODE,
@@ -158,7 +167,10 @@ export function captureParseError(err, ctx) {
     },
     extra: {
       file_size_bytes: ctx.fileSize,
-      filename: ctx.filename, // basename only — no path
+      // Extension + size only — file names can carry the pilot's name
+        // (the founding fixtures literally did), and identifiers don't
+        // belong in crash reports. Design §3.6.
+        file_ext: String(ctx.filename || '').split('.').pop().toLowerCase().slice(0, 8),
       firmware: ctx.firmware,
       schema_fields: ctx.fields,
     },
@@ -167,3 +179,17 @@ export function captureParseError(err, ctx) {
 
 // Re-export the React Error Boundary so main.jsx can wrap <App />.
 export const SentryErrorBoundary = Sentry.ErrorBoundary
+
+/**
+ * Debrief detector failures — shape-only reporting ({id, error_name}),
+ * never messages (which could interpolate log values). Design §3.6.
+ */
+export function reportDebriefErrors(errors) {
+  if (!isSentryAvailable() || !Array.isArray(errors)) return
+  for (const e of errors) {
+    Sentry.captureMessage('debrief detector failed: ' + String(e.id).slice(0, 24), {
+      level: 'warning',
+      tags: { detector: String(e.id).slice(0, 24), error_name: String(e.error_name).slice(0, 40) },
+    })
+  }
+}
