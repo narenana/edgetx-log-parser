@@ -91,10 +91,10 @@ As rev 1 (endpoint beside `/videos.json`; 8B-class model chosen by eval; prompt 
 |---|---|---|
 | D1 | schema + detectors (in-worker) + templates + panel + sparklines + last-known-position + copy-as-text + Sentry filename side-fix | test plan §§2–3, 5, 6 green incl. fixture matrix + stride-emulating fixtures |
 | D2 | Worker endpoint (DO limiter, device token, cache, post-check) + consent flow + narration | §4 green; model eval rubric passed; hostile-payload + token-replay tests green |
-| D3 | advice.json board knowledge; share-card integration; preview-host policy | D2 telemetry healthy ≥ 1 week |
+| D3 | advice.json board knowledge | D2 telemetry healthy ≥ 1 week |
 
-## 9. Open questions for the owner
-1. Narration endpoint on www only, or also latest.narenana.com / pages.dev previews (each needs a CORS + Turnstile allow-list entry)? *(Recommend: www-only for D2.)*
-2. ~~Regenerate?~~ Resolved: cut `[R]`.
-3. Clean-flight PNG "brag card" in D3 — still wanted as the happy-path payoff?
-4. NEW `[R]`: altitude evidence quantized to 10 m buckets — comfortable, or prefer coarse bands (">120 m") given some payloads will document altitude-limit breaches next to an IP at the edge? *(Recommend: 10 m buckets + the invariant-4 honesty line; bands if you want maximum caution.)*
+## 9. Owner decisions (all questions closed, 2026-09-29)
+1. Endpoint scope: **www + latest + pages.dev previews** — testing precedes prod. All three in the CORS/Turnstile allow-list from D2.
+2. Regenerate: **cut** (review recommendation, confirmed).
+3. Clean-flight PNG "brag card": **no** — most flights are clean; a per-flight card would be noise. The share ladder stays a roadmap item, unlinked from the debrief.
+4. Altitude in the AI payload: **10 m buckets** (recommended default, applied). Plain-language rationale: the AI summary needs "the log ends about 850 m up," not "845.3 m" — rounding to 10 m keeps the story intact while making the payload less uniquely identifying. Cards on screen keep full precision; only the payload rounds.
