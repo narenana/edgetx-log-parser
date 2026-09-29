@@ -55,7 +55,7 @@
             "@type": "SoftwareApplication",
             "@id": "https://www.narenana.com/log-viewer/#app",
             "name": "RC Log Viewer",
-            "alternateName": ["narenana RC Log Viewer", "EdgeTX Log Viewer", "iNAV Blackbox Viewer", "Betaflight Blackbox Viewer"],
+            "alternateName": ["narenana RC Log Viewer", "EdgeTX Log Viewer", "iNAV Log Viewer", "iNAV Blackbox Viewer", "Betaflight Log Viewer", "Betaflight Blackbox Viewer"],
             "url": "https://www.narenana.com/log-viewer/",
             "applicationCategory": "UtilitiesApplication",
             "applicationSubCategory": "Flight log analysis",
@@ -142,70 +142,55 @@
          children of #root wholesale on mount, so this doubles as the
          pre-JS splash and never conflicts with hydration (there is none).
          Keep this copy truthful and in sync with the app's empty state —
-         it must describe what the tool actually does, nothing more. -->
+         it must describe what the tool actually does, nothing more.
+
+         The formats table and FAQ live OUTSIDE #root (#lv-more below) so
+         the mount can't wipe them: Google indexes the rendered DOM, and
+         before this split the mounted page lost both. While the landing
+         is on screen, App.jsx (LandingMore) borrows #lv-more into the
+         landing so it scrolls with it; once a log is loaded it goes back
+         here with `hidden` set. It is never removed from the document. -->
     <style>
-      .seo-shell { max-width: 780px; margin: 0 auto; padding: 48px 24px 64px;
+      .seo-shell, .lv-more { max-width: 780px; margin: 0 auto; padding: 48px 24px 64px;
         font-family: 'Segoe UI', system-ui, sans-serif; color: #2c3e5c; line-height: 1.6; }
+      .lv-more { padding-top: 0; }
+      .lv-more[hidden] { display: none !important; }
       .seo-shell h1 { font-size: 28px; line-height: 1.25; color: #0f1a2c; margin: 0 0 6px; }
       .seo-shell .seo-tag { font-size: 16px; color: #4a5c80; margin: 0 0 28px; }
-      .seo-shell h2 { font-size: 18px; color: #0f1a2c; margin: 28px 0 8px; }
+      .seo-shell h2, .lv-more h2 { font-size: 18px; color: #0f1a2c; margin: 28px 0 8px; }
       .seo-shell p, .seo-shell li { font-size: 14.5px; margin: 0 0 8px; }
       .seo-shell ol, .seo-shell ul { padding-left: 22px; margin: 0 0 8px; }
-      .seo-shell table { border-collapse: collapse; font-size: 14px; margin: 6px 0 10px; }
-      .seo-shell th, .seo-shell td { border: 1px solid #d7dde8; padding: 6px 12px; text-align: left; }
-      .seo-shell th { background: #f5f7fb; color: #0f1a2c; }
-      .seo-shell dt { font-weight: 600; color: #0f1a2c; margin-top: 12px; }
-      .seo-shell dd { margin: 2px 0 0 0; }
-      .seo-shell a { color: #2272d8; }
+      .lv-more table { border-collapse: collapse; font-size: 14px; margin: 6px 0 10px; }
+      .lv-more th, .lv-more td { border: 1px solid #d7dde8; padding: 6px 12px; text-align: left; }
+      .lv-more th { background: #f5f7fb; color: #0f1a2c; }
+      .lv-more dt { font-weight: 600; color: #0f1a2c; margin-top: 12px; }
+      .lv-more dd { margin: 2px 0 0 0; font-size: 14.5px; }
+      .seo-shell a, .lv-more a { color: #2272d8; }
       .seo-shell .seo-foot { margin-top: 32px; font-size: 13px; color: #4a5c80; }
     </style>
     <div id="root">
       <div class="seo-shell">
-        <h1>RC Log Viewer — replay EdgeTX &amp; iNAV / Betaflight flight logs in 3D</h1>
-        <p class="seo-tag">Free and open-source. Runs entirely in your browser — your logs never leave your machine.</p>
+        <h1>Log viewer for EdgeTX, iNAV and Betaflight flight logs</h1>
+        <p class="seo-tag">Replay any flight, right in your browser. Free and open source, and your logs never leave your machine.</p>
 
         <h2>How it works</h2>
         <ol>
-          <li><strong>Open a log.</strong> Drop an EdgeTX CSV from your radio's SD card, or an iNAV / Betaflight blackbox file — or try a built-in sample flight.</li>
+          <li><strong>Open a log.</strong> Drop an EdgeTX CSV from your radio's SD card or an iNAV or Betaflight blackbox file, or try a built-in sample flight.</li>
           <li><strong>Watch the replay.</strong> Your whole flight is rebuilt on a 3D satellite globe with a chase camera, a live telemetry bar (battery per-cell voltage, altitude, speed, heading, attitude and stick inputs), and playback controls.</li>
-          <li><strong>Analyze it.</strong> Scrub the timeline, jump between takeoff / RTH / landing events, set bookmarks, and read synced charts for attitude, altitude, speed, battery and signal.</li>
+          <li><strong>Analyse it.</strong> Scrub the timeline, jump between takeoff, RTH and landing events, set bookmarks, and read synced charts for attitude, altitude, speed, battery and signal.</li>
         </ol>
-
-        <h2>Supported log formats</h2>
-        <table>
-          <tr><th>Source</th><th>Format</th><th>Typical file</th></tr>
-          <tr><td>EdgeTX / OpenTX radios</td><td>SD-card telemetry logs (CSV)</td><td><code>Model-2026-04-26.csv</code></td></tr>
-          <tr><td>iNAV flight controllers</td><td>Blackbox logs</td><td><code>.bbl</code>, <code>.bfl</code>, <code>.txt</code></td></tr>
-          <tr><td>Betaflight flight controllers</td><td>Blackbox logs</td><td><code>.bbl</code>, <code>.bfl</code>, <code>.txt</code></td></tr>
-        </table>
 
         <h2>Private by design</h2>
         <p>Logs are parsed in your browser with WebAssembly. Nothing is uploaded, there are no accounts, and the viewer works offline once installed as an app. GPS traces of your flying spots stay on your machine.</p>
 
         <h2>Guides for your firmware</h2>
         <ul>
-          <li><a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV blackbox viewer</a> — replay iNAV logs with GPS on a 3D globe.</li>
-          <li><a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a> — read RC-input, attitude and battery charts in the browser.</li>
-          <li><a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX log viewer</a> — open SD-card telemetry CSV logs from your radio.</li>
-          <li><a href="https://www.narenana.com/log-viewer/open-bbl-file/">How to open a .bbl file</a> — what blackbox files are and how to view them online.</li>
-          <li><a href="https://www.narenana.com/log-viewer/guides/">All guides</a> — enabling logging on EdgeTX, Betaflight and iNAV, reading a log, and analyzing a crash.</li>
+          <li><a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX log viewer</a>: open SD-card telemetry CSV logs from your radio, including ELRS telemetry.</li>
+          <li><a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV log viewer</a>: replay iNAV blackbox logs with GPS on a 3D globe.</li>
+          <li><a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a>: GPS replay and crash review for Betaflight logs.</li>
+          <li><a href="https://www.narenana.com/log-viewer/open-bbl-file/">Open a .bbl file</a>: what blackbox files are and how to view them in your browser.</li>
+          <li><a href="https://www.narenana.com/log-viewer/guides/">All guides</a>: enabling logging on EdgeTX, Betaflight and iNAV, reading a log, and analysing a crash.</li>
         </ul>
-
-        <h2>Frequently asked questions</h2>
-        <dl>
-          <dt>Is my flight log uploaded anywhere?</dt>
-          <dd>No. Parsing and 3D replay run entirely client-side. The only network traffic is fetching map imagery tiles.</dd>
-          <dt>How do I get logs off my radio?</dt>
-          <dd>Enable SD-card logging on your EdgeTX/OpenTX radio (a Special Function on a switch), fly, then copy the CSV from the <code>/LOGS</code> folder of the SD card.</dd>
-          <dt>Which firmware versions are supported?</dt>
-          <dd>EdgeTX and OpenTX CSV logs; iNAV blackbox up to 8.x and Betaflight blackbox up to 4.5.x (two independent parsers — most real-world files open fine).</dd>
-          <dt>My log has no GPS — is it still useful?</dt>
-          <dd>Yes. Without GPS you still get the telemetry bar and all synced charts (attitude, altitude, battery, signal); the 3D globe needs coordinates.</dd>
-          <dt>Does it work offline?</dt>
-          <dd>Yes — it's an installable PWA. After the first visit the viewer loads without a connection.</dd>
-          <dt>Is there a desktop app?</dt>
-          <dd>Yes, free Electron builds for Windows, macOS and Linux are on the <a href="https://github.com/narenana/edgetx-log-parser/releases">GitHub releases page</a>.</dd>
-        </dl>
 
         <p class="seo-foot">
           <a href="https://www.narenana.com/log-viewer/?sample=fixed-wing&amp;autoplay=1">Watch a sample flight</a> ·
@@ -216,6 +201,34 @@
         </p>
       </div>
     </div>
+    <!-- Sibling of #root on purpose; see the comment above the <style>. -->
+    <section id="lv-more" class="lv-more" aria-label="Supported log formats and questions">
+      <h2>Supported log formats</h2>
+      <table>
+        <thead><tr><th>Source</th><th>Format</th><th>Typical file</th></tr></thead>
+        <tbody>
+          <tr><td>EdgeTX / OpenTX radios</td><td>SD-card telemetry logs (CSV), including ELRS telemetry</td><td><code>Model-2026-04-26.csv</code></td></tr>
+          <tr><td>iNAV flight controllers</td><td>Blackbox logs, iNAV 9.x and earlier</td><td><code>.bbl</code>, <code>.bfl</code>, <code>.txt</code></td></tr>
+          <tr><td>Betaflight flight controllers</td><td>Blackbox logs, Betaflight 4.5.x and earlier</td><td><code>.bbl</code>, <code>.bfl</code>, <code>.txt</code></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Frequently asked questions</h2>
+      <dl>
+        <dt>Is my flight log uploaded anywhere?</dt>
+        <dd>No. Parsing and the 3D replay run in your browser, and the log itself is never sent. The viewer does fetch map imagery, and it sends anonymous usage and error reports.</dd>
+        <dt>How do I get logs off my radio?</dt>
+        <dd>Enable SD-card logging on your EdgeTX/OpenTX radio (a Special Function on a switch), fly, then copy the CSV from the <code>/LOGS</code> folder of the SD card.</dd>
+        <dt>Which firmware versions are supported?</dt>
+        <dd>EdgeTX and OpenTX CSV logs. iNAV blackbox 9.x and earlier, tested on real iNAV 9.0.0 and 9.0.1 logs. Betaflight blackbox up to 4.5.x; logs from Betaflight 2025.12 and later are not tested yet and may not open. If the main parser rejects a blackbox file, a second, independent parser tries it, so most real-world logs open.</dd>
+        <dt>My log has no GPS. Is it still useful?</dt>
+        <dd>Yes. Without GPS you still get the telemetry bar and all synced charts (attitude, altitude, battery, signal); the 3D globe needs coordinates.</dd>
+        <dt>Does it work offline?</dt>
+        <dd>Yes, it's an installable PWA. After the first visit the viewer loads without a connection.</dd>
+        <dt>Is there a desktop app?</dt>
+        <dd>Yes, free Electron builds for Windows, macOS and Linux are on the <a href="https://github.com/narenana/edgetx-log-parser/releases">GitHub releases page</a>.</dd>
+      </dl>
+    </section>
     <noscript>
       <p style="max-width:780px;margin:0 auto;padding:0 24px 40px;font-family:'Segoe UI',system-ui,sans-serif;color:#2c3e5c">
         RC Log Viewer needs JavaScript (and WebGL) to parse logs and render the 3D replay.

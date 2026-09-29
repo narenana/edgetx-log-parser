@@ -90,13 +90,28 @@ function extractLogMetadata(bytes) {
   }
 }
 
+// Newest firmware line the vendored Rust parser accepts. Checked 2026-09-29
+// by patching real log headers: iNAV 9.0 through 9.x pass the header check
+// (10.0 is rejected); Betaflight 4.5.x passes, 4.6 and the date-versioned
+// 2025.12+ releases are rejected. Real logs tested: iNAV 9.0.0 and 9.0.1.
+// Keep the site copy (index.html FAQ, content/pages/*.json) in step.
+const FIRMWARE_CEILING = { Inav: '9.x', Betaflight: '4.5.x' }
+
+function unsupportedMessage(fwDisplay, version, ceiling) {
+  return (
+    `${fwDisplay} ${version} isn't supported by the parser yet ` +
+    `(latest supported: ${ceiling}). The blackbox-log Rust crate behind ` +
+    `the WASM module needs to be updated to recognise this firmware version.`
+  )
+}
+
 /**
  * Translate raw WASM error strings into something a human can act on.
  * We keep the raw message available via diag (worker posts it before
  * the error event), so the throwaway-friendly version doesn't lose
  * info — just stops scaring users with Rust enum dumps.
  */
-function friendlyErrorMessage(raw) {
+export function friendlyErrorMessage(raw) {
   if (!raw || typeof raw !== 'string') return String(raw)
   // Header parse error: UnsupportedFirmwareVersion(Inav(FirmwareVersion { major: 9, minor: 0, patch: 1 }))
   const m = raw.match(
@@ -104,14 +119,18 @@ function friendlyErrorMessage(raw) {
   )
   if (m) {
     const [, fw, maj, min, patch] = m
-    const ceiling =
-      fw === 'Inav' ? '8.x' : fw === 'Betaflight' ? '4.5.x' : 'this firmware'
+    const ceiling = FIRMWARE_CEILING[fw] || 'this firmware'
     const fwDisplay = fw === 'Inav' ? 'iNAV' : fw
-    return (
-      `${fwDisplay} ${maj}.${min}.${patch} isn't supported by the parser yet ` +
-      `(latest supported: ${ceiling}). The blackbox-log Rust crate behind ` +
-      `the WASM module needs to be updated to recognise this firmware version.`
-    )
+    return unsupportedMessage(fwDisplay, `${maj}.${min}.${patch}`, ceiling)
+  }
+  // Betaflight 2025.12+ uses date-based versions ("Betaflight 2025.12.1"),
+  // which the crate can't even parse:
+  // Header parse error: InvalidFirmware("Betaflight 2025.12.1 (a7932b92) SPEEDYBEEF405WING")
+  const inv = raw.match(/InvalidFirmware\("(Betaflight|INAV) (\d[\d.]*)/)
+  if (inv) {
+    const [, fw, version] = inv
+    const key = fw === 'INAV' ? 'Inav' : 'Betaflight'
+    return unsupportedMessage(fw === 'INAV' ? 'iNAV' : fw, version, FIRMWARE_CEILING[key])
   }
   return raw
 }
