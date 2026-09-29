@@ -431,7 +431,6 @@ const B2 = {
     let severity = null
     if (perCell < th.critical) severity = 'critical'
     else if (perCell < th.warning) severity = 'warning'
-    else if (perCell < th.info) severity = 'info'
     if (!severity) return null
     return {
       id: 'B2', cls: 'battery', severity, confidence: chemistry ? 0.85 : 0.6,

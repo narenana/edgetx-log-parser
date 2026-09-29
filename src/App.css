@@ -2243,3 +2243,19 @@ body{font-family:'DM Sans',system-ui,sans-serif}.family-app-nav{flex:0 0 auto}.h
   cursor: pointer;
 }
 .db-clean-badge:hover { border-color: rgba(158, 206, 106, 0.8); }
+
+.db-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.db-strip:hover { background: var(--bg3); }
+.db-strip-sub { flex: 1; color: var(--text3); font-size: 11px; }

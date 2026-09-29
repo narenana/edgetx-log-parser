@@ -80,9 +80,11 @@ export const TEMPLATES = {
     checks: ['Verify per-cell IR on a charger; retire or demote the pack if one cell reads far above its siblings.'],
   },
   B2: {
-    title: 'Deep discharge at landing',
-    summary: f => `The flight ended at ${n(f.evidence.end_v_per_cell, 2, ' V')}/cell${f.evidence.chemistry === 'liion' ? ' (Li-ion)' : ''} — below the healthy floor for this chemistry.`,
-    checks: ['Land earlier or set a capacity alarm; storage-charge promptly after deep discharges.'],
+    title: 'Battery low at landing',
+    summary: f => f.severity === 'critical'
+      ? `The flight ended deeply discharged at ${n(f.evidence.end_v_per_cell, 2, ' V')}/cell${f.evidence.chemistry === 'liion' ? ' (Li-ion)' : ''} — this level damages cells.`
+      : `The flight ended at ${n(f.evidence.end_v_per_cell, 2, ' V')}/cell${f.evidence.chemistry === 'liion' ? ' (Li-ion)' : ''} — lower than the comfortable floor for this chemistry.`,
+    checks: ['Land a little earlier or set a capacity alarm; storage-charge promptly after low landings.'],
   },
   B3: {
     title: 'Pack weaker than its sag model',

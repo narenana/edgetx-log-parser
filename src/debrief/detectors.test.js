@@ -324,10 +324,13 @@ describe('B1 internal resistance + B2 discharge, chemistry-aware', () => {
     rows: mkRows(300, 0.5, { 'Alt(m)': t => (t < 290 ? 60 : 1), 'RxBt(V)': t => (t > 290 ? perCell * 4 : 15.2) }),
     chem: { cells: 4, chemistry, perCellFull: chemistry === 'lipo' ? 4.2 : 4.05 },
   })
-  it('B2 boundaries on LiPo: 3.49 warning, 3.29 critical, 3.55 info', () => {
-    expect(find(landAt(3.49, 'lipo'), 'B2')?.severity).toBe('warning')
-    expect(find(landAt(3.29, 'lipo'), 'B2')?.severity).toBe('critical')
-    expect(find(landAt(3.55, 'lipo'), 'B2')?.severity).toBe('info')
+  it('B2 boundaries on LiPo: 3.39 warning, 3.19 critical', () => {
+    expect(find(landAt(3.39, 'lipo'), 'B2')?.severity).toBe('warning')
+    expect(find(landAt(3.19, 'lipo'), 'B2')?.severity).toBe('critical')
+  })
+  it('B2 guard: a NORMAL 3.55 V/cell LiPo landing fires NOTHING (owner-reported false positive)', () => {
+    expect(find(landAt(3.55, 'lipo'), 'B2')).toBeFalsy()
+    expect(find(landAt(3.45, 'lipo'), 'B2')).toBeFalsy()
   })
   it('B2 guard: 3.2 V/cell Li-ion landing fires NOTHING (the false-critical fix)', () => {
     expect(find(landAt(3.2, 'liion'), 'B2')).toBeFalsy()

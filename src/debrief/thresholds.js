@@ -67,11 +67,14 @@ export const T = {
   IR_WARN_MOHM: { lipo: 45, liion: 80 },
   IR_MIN_PUNCHES: 3,
   IR_PUNCH_MIN_DELTA_A: 5,
-  // B2: end-of-flight resting voltage per cell (V). Li-ion lands at
+  // B2: end-of-flight voltage per cell (V). 3.5–3.6 resting is a
+  // perfectly NORMAL LiPo landing — never flag it (owner feedback
+  // 2026-09-29: "landing at 3.55 V called deep discharge doesn't make
+  // sense"). Warn only where packs actually get hurt; Li-ion lands at
   // 3.0–3.3 V/cell by design.
   DISCHARGE: {
-    lipo:  { info: 3.6, warning: 3.5, critical: 3.3 },
-    liion: { info: 3.0, warning: 2.9, critical: 2.8 },
+    lipo:  { warning: 3.4, critical: 3.2 },
+    liion: { warning: 2.8, critical: 2.6 },
   },
   // B3: sag-model divergence — late-minus-early gap growth per cell (V).
   SAG_DIVERGENCE_PER_CELL_V: 0.25,

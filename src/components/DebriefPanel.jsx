@@ -100,10 +100,24 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
     try { await navigator.clipboard.writeText(`${fix.lat.toFixed(6)}, ${fix.lon.toFixed(6)}`) } catch { /* ignore */ }
   }, [])
 
+  const [selfOpen, setSelfOpen] = useState(false)
+
   if (!debrief) return null
-  // Clean flights: no standalone panel unless the StatsPanel badge asked
-  // for it (design: the ✓ badge is the entry point, this stays hidden).
-  if (debrief.clean && !forceOpen) return null
+  // Clean flights: the panel stays VISIBLE as a one-line strip and
+  // expands in place (owner feedback 2026-09-29 — the badge-only entry
+  // was "almost entirely hidden away").
+  if (debrief.clean && !forceOpen && !selfOpen) {
+    return (
+      <section className="debrief-panel" aria-label="Flight Debrief">
+        <button type="button" className="db-strip" onClick={() => { setSelfOpen(true); track('debrief_expanded') }}>
+          <span className="db-title">FLIGHT DEBRIEF</span>
+          <span className="db-chip ok">✓ Clean flight</span>
+          <span className="db-strip-sub">all {debrief.coverage.ran.length} checks passed · view details</span>
+          <span className="db-caret" aria-hidden="true">▸</span>
+        </button>
+      </section>
+    )
+  }
 
   const ctx = debrief.context
   const lastFix = debrief.local?.lastFix
@@ -121,8 +135,9 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
         <button type="button" className="db-copy" onClick={copyText}>
           {copied ? 'Copied ✓' : 'Copy as text'}
         </button>
-        {forceOpen && onClose && (
-          <button type="button" className="db-close" onClick={onClose} aria-label="Close debrief">✕</button>
+        {(forceOpen || selfOpen) && (
+          <button type="button" className="db-close"
+            onClick={() => { setSelfOpen(false); if (onClose) onClose() }} aria-label="Collapse debrief">✕</button>
         )}
       </div>
 

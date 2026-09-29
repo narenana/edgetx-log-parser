@@ -474,11 +474,7 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
               and the parse-time modal grid. Lives at the TOP of the right
               column so it sits above the chart panels and stays in view
               while the user scrolls through individual chart cards. */}
-          <StatsPanel
-            log={log}
-            debriefClean={!!log.debrief?.clean}
-            onOpenDebrief={() => setDebriefOpen(true)}
-          />
+          <StatsPanel log={log} />
           <DebriefPanel
             log={log}
             onJumpToTime={jumpToTime}
