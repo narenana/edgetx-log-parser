@@ -78,7 +78,9 @@ for (const name of files) {
   const errs = validatePayload(payload)
   if (errs.length) { console.log(`  ✗ payload invalid: ${errs.join(' | ')}`); failed++ }
   const pj = JSON.stringify(payload)
-  if (/\d+\.\d{3,}/.test(pj) || /lat|lon|coord|spark/i.test(pj)) {
+  // Key-precise leak check — substring matching burned us: "longest_s"
+  // contains "lon". Only actual JSON key names count.
+  if (/\d+\.\d{3,}/.test(pj) || /"(_?lat|_?lon|latitude|longitude|coords?|spark|points)"\s*:/i.test(pj)) {
     console.log('  ✗ payload leaks precision or local-only keys')
     failed++
   }
