@@ -1,5 +1,5 @@
 import FamilyNav from './FamilyNav'
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react'
 import { parseEdgeTXLog } from './utils/parseLog'
 import { parseBlackboxBuffer, looksLikeBlackbox } from './utils/parseBlackbox'
 import { loadLogFromUrl } from './utils/loadLogFromUrl'
@@ -63,6 +63,32 @@ const SAMPLES = {
     title: '5″ quad freestyle',
     sub: 'Betaflight · loops & rolls · 2:10',
   },
+}
+
+// The "Supported log formats" table and FAQ are static HTML in index.html,
+// in a SIBLING of #root (#lv-more), so createRoot().render() can't wipe
+// them and crawlers always see them in the rendered DOM. While the landing
+// is mounted we borrow that node into this slot so it scrolls with the
+// landing; when the landing unmounts (a log was loaded) the node goes back
+// after #root with `hidden` set. It is moved, never removed or re-rendered,
+// and React never renders children into the slot, so it can't clash with
+// reconciliation.
+function LandingMore() {
+  const slotRef = useRef(null)
+  useLayoutEffect(() => {
+    const node = document.getElementById('lv-more')
+    const slot = slotRef.current
+    if (!node || !slot) return undefined
+    node.hidden = false
+    slot.appendChild(node)
+    return () => {
+      node.hidden = true
+      const root = document.getElementById('root')
+      if (root) root.after(node)
+      else document.body.appendChild(node)
+    }
+  }, [])
+  return <div ref={slotRef} className="landing-more" />
 }
 
 // Read the user's saved theme choice. Default to 'light' for new visitors;
@@ -448,17 +474,19 @@ export default function App() {
                 </span>
               </div>
 
-              {/* h1 (not div) so the pre-JS static shell in index.html and
-                  the mounted app agree on the page's single H1. */}
+              {/* The page's single H1, worded the way pilots search, and the
+                  same text as the pre-JS shell's H1 in index.html (Google
+                  indexes the mounted DOM, so this is the H1 it sees). Keep
+                  the two in sync. */}
               <h1 className="drop-title">
-                Replay any flight,<br />
-                <span className="accent">right in your browser.</span>
+                Log viewer for <span className="accent">EdgeTX, iNAV and Betaflight</span> flight logs
               </h1>
 
+              <p className="landing-lead">Replay any flight, right in your browser.</p>
               <p className="landing-tag">
-                Drop an EdgeTX CSV or iNAV / Betaflight blackbox log and watch
-                the whole flight on a 3D globe — live telemetry, synced charts,
-                real terrain. Parsed on your machine; <strong>nothing uploaded</strong>.
+                Drop an EdgeTX CSV or an iNAV or Betaflight blackbox log. You get
+                live telemetry and synced charts, and a 3D globe replay when the
+                log has GPS. Parsed on your machine; <strong>nothing uploaded</strong>.
               </p>
 
               <div className="landing-cta">
@@ -469,7 +497,7 @@ export default function App() {
                   Open log files <span aria-hidden="true">→</span>
                 </button>
                 <span className="landing-cta-note">
-                  No upload · No signup · Free
+                  No upload · No login · Free
                 </span>
               </div>
 
@@ -518,16 +546,19 @@ export default function App() {
             </div>
 
             {/* Firmware-specific guides — internal links into the SEO
-                cluster (real static pages served under /log-viewer/). */}
+                cluster (real static pages served under /log-viewer/). The
+                anchors use the phrases pilots search for. */}
             <div className="landing-links">
               <span className="landing-links-label">Guides:</span>
-              <a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV</a>
-              <a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight</a>
-              <a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX</a>
-              <a href="https://www.narenana.com/log-viewer/open-bbl-file/">.bbl files</a>
-              <a href="https://www.narenana.com/log-viewer/guides/">all guides</a>
+              <a href="https://www.narenana.com/log-viewer/edgetx-log-viewer/">EdgeTX log viewer</a>
+              <a href="https://www.narenana.com/log-viewer/inav-blackbox-viewer/">iNAV log viewer</a>
+              <a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a>
+              <a href="https://www.narenana.com/log-viewer/open-bbl-file/">Open a .bbl file</a>
+              <a href="https://www.narenana.com/log-viewer/guides/">All guides</a>
             </div>
           </div>
+          {/* Formats table + FAQ from index.html, below the fold. */}
+          <LandingMore />
         </div>
       )}
 

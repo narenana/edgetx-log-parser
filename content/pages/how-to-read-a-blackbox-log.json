@@ -21,7 +21,7 @@
     },
     {
       "heading": "Firmware-specific fields and where to go next",
-      "html": "<p>The categories above are universal, but the exact column names and available fields depend on which firmware wrote the log. Betaflight and iNAV both emit blackbox in the same file types (<code>.bbl</code>, <code>.bfl</code>, <code>.txt</code>), but iNAV exposes more navigation and GPS-related fields when a GPS module is present, while a GPS-less Betaflight quad log is all gyro/RC/PID/motor/battery.</p><p>For a field-by-field walkthrough tuned to your firmware, the dedicated <a href=\"https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/\">Betaflight blackbox viewer</a> and <a href=\"https://www.narenana.com/log-viewer/inav-blackbox-viewer/\">iNAV blackbox viewer</a> pages go deeper than this general guide. If you're reading a log specifically to work out why a craft went down, follow the <a href=\"https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/\">analyze a crash log</a> workflow instead — it reorders these same charts around the moment of failure.</p>"
+      "html": "<p>The categories above are universal, but the exact column names and available fields depend on which firmware wrote the log. Betaflight and iNAV both emit blackbox in the same file types (<code>.bbl</code>, <code>.bfl</code>, <code>.txt</code>), but iNAV exposes more navigation and GPS-related fields when a GPS module is present, while a GPS-less Betaflight quad log is all gyro/RC/PID/motor/battery.</p><p>For a field-by-field walkthrough tuned to your firmware, the dedicated <a href=\"https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/\">Betaflight blackbox viewer</a> and <a href=\"https://www.narenana.com/log-viewer/inav-blackbox-viewer/\">iNAV log viewer</a> pages go deeper than this general guide. If you're reading a log specifically to work out why a craft went down, follow the <a href=\"https://www.narenana.com/log-viewer/guides/analyze-a-crash-log/\">analyze a crash log</a> workflow instead — it reorders these same charts around the moment of failure.</p>"
     }
   ],
   "faqs": [
@@ -60,7 +60,7 @@
       "href": "https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/"
     },
     {
-      "text": "iNAV blackbox viewer",
+      "text": "iNAV log viewer",
       "href": "https://www.narenana.com/log-viewer/inav-blackbox-viewer/"
     },
     {
