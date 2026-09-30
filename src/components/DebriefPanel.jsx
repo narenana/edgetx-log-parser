@@ -2,6 +2,12 @@ import { useMemo, useState, useCallback } from 'react'
 import { TEMPLATES, checksFor, debriefAsText } from '../debrief/templates.js'
 import { SEVERITY_RANK } from '../debrief/detectors.js'
 import { track } from '../utils/analytics'
+// Narration tier is web-only: Electron builds compile it out entirely
+// (design invariant #7 — no /api/debrief string in the desktop bundle).
+const IS_WEB = import.meta.env.VITE_BUILD_TARGET === 'web'
+const NarrationSection = IS_WEB
+  ? (await import('./NarrationSection.jsx')).default
+  : null
 
 /**
  * Flight Debrief panel — design rev 2 §7. Deterministic findings as
@@ -209,6 +215,8 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
           )
         })}
       </ul>
+
+      {NarrationSection && <NarrationSection debrief={debrief} />}
 
       <div className="db-foot">
         <span>
