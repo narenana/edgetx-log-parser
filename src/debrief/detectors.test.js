@@ -60,7 +60,7 @@ function run(over = {}) {
     source: over.source || 'blackbox',
     rows,
     stats: over.stats || mkStats(rows),
-    events: [],
+    events: over.events || [],
     slow: over.slow ?? null,
     main: over.main ?? null,
     meta: { ...META, ...(over.meta || {}) },
@@ -522,5 +522,25 @@ describe('L0 link profile + B0 power profile (always-on cards)', () => {
     expect(f.evidence.at_throttle_pct).toBeGreaterThan(80)
     expect(f.evidence.max_current_a).toBeGreaterThan(20)
     expect(f.spark.xUnit).toBe('pct')
+  })
+})
+
+describe('B0 auto-launch immunity', () => {
+  it('ignores full-stick idle before takeoff (iNAV auto-launch)', () => {
+    const rows = []
+    let i = 0
+    // pre-launch: 6s of full stick, motor idle (2A) — must NOT define the curve
+    for (let t = 0; t < 6; t += 0.5) rows.push({ _i: i++, _tSec: t, 'Curr(A)': 2, _throttle: 100, _lat: 0, _lon: 0, 'Alt(m)': 0 })
+    // real flight from takeoff: throttle sweeps, current tracks it honestly
+    for (let t = 6; t <= 200; t += 0.5) {
+      const thr = 20 + ((t * 3) % 76)
+      rows.push({ _i: i++, _tSec: t, 'Curr(A)': thr * 0.3, _throttle: thr, _lat: (t - 6) / 111320, _lon: 0, 'Alt(m)': 60 })
+    }
+    const events = [{ type: 'takeoff', index: 12 }]
+    const d = run({ source: 'edgetx-csv', rows, stats: { ...mkStats(rows), duration: 200 }, events })
+    const f = find(d, 'B0')
+    expect(f).toBeTruthy()
+    // full bucket should reflect real full-stick flight (~28A), not the 2A idle
+    expect(f.evidence.full_throttle_current_a).toBeGreaterThan(20)
   })
 })

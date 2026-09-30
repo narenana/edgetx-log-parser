@@ -733,9 +733,26 @@ const B0 = {
     if (ctx.stats.duration < T.MIN_FLIGHT_S) return null
     const B = Math.ceil(100 / THROTTLE_BUCKET_PCT)
     const hi = new Array(B).fill(-Infinity), n = new Array(B).fill(0)
-    for (const r of ctx.rows) {
-      const thr = r._throttle, cur = r['Curr(A)']
-      if (typeof thr !== 'number' || typeof cur !== 'number' || isNaN(thr) || isNaN(cur)) continue
+    // Radio current telemetry lags the stick by ~a second, so a punch’s
+    // current spike gets logged against the LOWER stick that follows it
+    // (observed: 24 A attributed to 81% while full stick read 4 A).
+    // Attribute each reading to the PEAK throttle of the preceding
+    // window instead. Also start at takeoff: iNAV auto-launch idles the
+    // motor at full stick, painting fake full-throttle/low-current points.
+    const LAG_S = 1.5
+    const takeoff = (ctx.events || []).find(e => e.type === 'takeoff')
+    const startI = takeoff ? takeoff.index : 0
+    const rows = ctx.rows
+    for (let i = startI; i < rows.length; i++) {
+      const r = rows[i]
+      const cur = r['Curr(A)']
+      if (typeof cur !== 'number' || isNaN(cur)) continue
+      let thr = null
+      for (let j = i; j >= startI && r._tSec - rows[j]._tSec <= LAG_S; j--) {
+        const t = rows[j]._throttle
+        if (typeof t === 'number' && !isNaN(t) && (thr == null || t > thr)) thr = t
+      }
+      if (thr == null) continue
       const b = Math.min(B - 1, Math.floor(thr / THROTTLE_BUCKET_PCT))
       n[b]++
       if (cur > hi[b]) hi[b] = cur

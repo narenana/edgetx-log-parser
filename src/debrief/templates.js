@@ -140,7 +140,18 @@ export const TEMPLATES = {
   },
   B0: {
     title: 'Power vs throttle',
-    summary: f => `Peak draw ${n(f.evidence.max_current_a, 1, ' A')} at ~${n(f.evidence.at_throttle_pct, 0, '%')} throttle${f.evidence.full_throttle_current_a != null ? ` (${n(f.evidence.full_throttle_current_a, 1, ' A')} at full)` : ''}.`,
+    summary: f => {
+      const e = f.evidence
+      let s = `Peak draw ${n(e.max_current_a, 1, ' A')} at ~${n(e.at_throttle_pct, 0, '%')} throttle${e.full_throttle_current_a != null ? ` (${n(e.full_throttle_current_a, 1, ' A')} at full stick)` : ''}.`
+      // Prop unloading: on a fixed wing, full throttle in fast cruise
+      // draws LESS than a mid-throttle punch from slow flight — so the
+      // curve dipping at the top is expected, not a fault. Only flag it
+      // when the dip is pronounced, so the card explains what looks odd.
+      if (e.full_throttle_current_a != null && e.full_throttle_current_a < e.max_current_a * 0.6) {
+        s += ` Full-stick current is lower than the peak — normal for a wing, where the prop unloads at speed (throttle here is your stick, not motor load).`
+      }
+      return s
+    },
     checks: [],
   },
   X1: {
