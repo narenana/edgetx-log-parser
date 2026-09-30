@@ -399,3 +399,65 @@ describe('parseFirmware + scanLogTail', () => {
     expect(scanLogTail(buf).endMarker).toBe(false)
   })
 })
+
+// ── R2 loss geometry (slant-range hypotenuse + pattern) ───────────────
+describe('R2 loss geometry', () => {
+  // Out-and-back flight: 0 → 2 km → 0 over 400 s at 100 m AGL, link
+  // healthy except where the scenario places loss windows.
+  const geoRows = lossAt => {
+    const rows = []
+    let i = 0
+    for (let t = 0; t <= 400; t += 0.5) {
+      const frac = t <= 200 ? t / 200 : (400 - t) / 400 * 2
+      const distM = 2000 * frac
+      rows.push({
+        _i: i++, _tSec: t,
+        _lat: distM / 111320, _lon: 0,
+        'Alt(m)': 100,
+        'RQly(%)': lossAt(t, distM) ? 0 : 98,
+        'RxBt(V)': 15.8,
+      })
+    }
+    return rows
+  }
+  const runGeo = rows => run({ source: 'edgetx-csv', rows })
+
+  it('losses at the envelope edge → range_boundary', () => {
+    const d = runGeo(geoRows((t, dist) => dist > 1900 && t < 210 && Math.floor(t) % 20 < 1))
+    const f = find(d, 'R2')
+    expect(f).toBeTruthy()
+    expect(f.evidence.pattern).toBe('range_boundary')
+    expect(f.evidence.max_slant_m).toBeGreaterThan(1900)
+  })
+
+  it('losses close to home while the flight went far → close_in', () => {
+    const d = runGeo(geoRows((t, dist) => dist < 260 && t > 350 && Math.floor(t) % 10 < 1))
+    const f = find(d, 'R2')
+    expect(f).toBeTruthy()
+    expect(f.evidence.pattern).toBe('close_in')
+  })
+
+  it('slant is a true hypotenuse: altitude counts', () => {
+    const rows = geoRows(() => false).map(r => ({ ...r, 'Alt(m)': 1500 }))
+    rows.forEach(r => { if (r._tSec > 390) r['RQly(%)'] = 0 })
+    const f = find(runGeo(rows), 'R2')
+    // near-home horizontally, but 1.5 km UP → slant keeps it out of close_in
+    expect(f.evidence.pattern).not.toBe('close_in')
+    expect(f.evidence.loss_slant_m).toBeGreaterThan(1400)
+  })
+
+  it('no GPS → R2 fires without geometry keys', () => {
+    const rows = geoRows((t) => t > 390).map(({ _lat, _lon, ...r }) => ({ ...r, _lat: null, _lon: null }))
+    const f = find(runGeo(rows), 'R2')
+    expect(f).toBeTruthy()
+    expect(f.evidence.pattern).toBeUndefined()
+  })
+
+  it('R2 spark is the LQ-vs-distance profile (x in metres, not seconds)', () => {
+    const d = runGeo(geoRows((t, dist) => dist > 1900 && t < 210 && Math.floor(t) % 20 < 1))
+    const f = find(d, 'R2')
+    expect(f.spark?.label).toMatch(/vs distance/)
+    const xs = f.spark.points.map(p => p[0])
+    expect(Math.max(...xs)).toBeGreaterThan(1000) // metres scale
+  })
+})

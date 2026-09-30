@@ -64,6 +64,56 @@ const slowSeries = (slow, name) => {
 
 const hasSlowField = (slow, name) => !!slow && slow.names.indexOf(name) >= 0
 
+// Slant range (m) from launch to a row: the hypotenuse of horizontal
+// distance and AGL altitude — "how far away was it, really".
+const slantAt = (row, home) => {
+  if (row._lat == null || home == null) return null
+  const dLat = (row._lat - home._lat) * 111320
+  const dLon = (row._lon - home._lon) * 111320 * Math.cos(home._lat * Math.PI / 180)
+  const h = Math.hypot(dLat, dLon)
+  const a = typeof row['Alt(m)'] === 'number' && !isNaN(row['Alt(m)']) ? Math.max(0, row['Alt(m)']) : 0
+  return Math.hypot(h, a)
+}
+
+// Last GPS-bearing row at or before time t — the last place we KNEW it was.
+const lastFixBefore = (rows, t) => {
+  let best = null
+  for (const r of rows) {
+    if (r._tSec > t) break
+    if (r._lat != null) best = r
+  }
+  return best
+}
+
+// Link quality vs slant distance, bucketed — NOT a time series: the
+// average link reading at each distance band (the flight’s own link-
+// budget curve). x = bucket centre in metres, y = avg LQ%/RSSI.
+export function lqDistanceProfile(rows, home, key) {
+  if (!home) return null
+  const B = 14
+  let maxSlant = 0
+  const samples = []
+  for (const r of rows) {
+    const s = slantAt(r, home)
+    const v = r[key]
+    if (s == null || typeof v !== 'number' || isNaN(v)) continue
+    if (s > maxSlant) maxSlant = s
+    samples.push([s, v])
+  }
+  if (samples.length < 20 || maxSlant < 100) return null
+  const width = maxSlant / B
+  const sum = new Array(B).fill(0), n = new Array(B).fill(0)
+  for (const [s, v] of samples) {
+    const b = Math.min(B - 1, Math.floor(s / width))
+    sum[b] += v; n[b]++
+  }
+  const points = []
+  for (let b = 0; b < B; b++) {
+    if (n[b] >= 3) points.push([Math.round((b + 0.5) * width), sum[b] / n[b]])
+  }
+  return points.length >= 4 ? points : null
+}
+
 // Bounded sparkline slice for the local evidence card. Never enters the
 // AI payload (payload.js strips spark) — local render only.
 const spark = (label, unit, t, v, tA = null, tB = null, marks = []) => {
@@ -310,10 +360,50 @@ const R2 = {
     if (start != null && t[t.length - 1] - start >= T.RX_LOSS_MIN_S) windows.push([start, t[t.length - 1]])
     if (!windows.length) return null
     const longest = windows.reduce((a, w) => Math.max(a, w[1] - w[0]), 0)
+    // ── loss geometry: WHERE in space did the link die? Hypotenuse from
+    // launch to the last known position at each loss start, judged
+    // against the flight’s own maximum slant range.
+    const evidence = { window_count: windows.length, longest_s: longest }
+    let geoSpark = null
+    const home = ctx.rows.find(r => r._lat != null)
+    if (home) {
+      let maxSlant = 0
+      const sT = [], sV = []
+      for (const r of ctx.rows) {
+        const s = slantAt(r, home)
+        if (s == null) continue
+        if (s > maxSlant) maxSlant = s
+        sT.push(r._tSec); sV.push(s)
+      }
+      const lossSlants = windows
+        .map(([a]) => lastFixBefore(ctx.rows, a))
+        .filter(Boolean)
+        .map(r => slantAt(r, home))
+        .filter(s => s != null)
+      if (lossSlants.length && maxSlant > 0) {
+        const med = median(lossSlants)
+        const ratio = med / maxSlant
+        let pattern = 'mixed'
+        if (ratio >= T.RANGE_BOUNDARY_RATIO) pattern = 'range_boundary'
+        else if (ratio <= T.CLOSE_IN_RATIO || med <= T.CLOSE_IN_ABS_M) pattern = 'close_in'
+        evidence.loss_slant_m = med
+        evidence.max_slant_m = maxSlant
+        evidence.slant_ratio = ratio
+        evidence.pattern = pattern
+        // Prefer the link-budget curve (avg LQ per distance band);
+        // fall back to the slant-range time series.
+        const lqKey = rowSeries(ctx.rows, 'RQly(%)').v.length ? 'RQly(%)' : '1RSS(dB)'
+        const prof = lqDistanceProfile(ctx.rows, home, lqKey)
+        geoSpark = prof
+          ? { label: (lqKey === 'RQly(%)' ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: lqKey === 'RQly(%)' ? '%' : 'dB', points: prof, marks: [] }
+          : spark('Slant range from launch', 'm', sT, sV)
+      }
+    }
     return {
       id: 'R2', cls: 'link', severity: 'critical', confidence: 0.9,
       t: windows[0],
-      evidence: { window_count: windows.length, longest_s: longest },
+      evidence,
+      spark: geoSpark,
     }
   },
 }
@@ -339,15 +429,17 @@ const R3 = {
     const drop = (flightMed - tailMed) / Math.max(1, Math.abs(flightMed))
     if (drop < T.LINK_DROP_FRACTION) return null
     // Far-out flying degrades links by physics; that's a notice, not a warning.
-    const far = ctx.stats.maxDistFromHomeKm > 0 &&
-      (lastValid(ctx.rows, 'GSpd(kmh)') != null) &&
-      ctx.rows.length > 0 && (() => {
+    const far = (() => {
         const home = ctx.rows.find(r => r._lat != null)
         const last = [...ctx.rows].reverse().find(r => r._lat != null)
         if (!home || !last) return false
-        const dLat = (last._lat - home._lat) * 111.32
-        const dLon = (last._lon - home._lon) * 111.32 * Math.cos(home._lat * Math.PI / 180)
-        return Math.hypot(dLat, dLon) > ctx.stats.maxDistFromHomeKm * 0.7
+        let maxSlant = 0
+        for (const r of ctx.rows) {
+          const s = slantAt(r, home)
+          if (s != null && s > maxSlant) maxSlant = s
+        }
+        const s = slantAt(last, home)
+        return s != null && maxSlant > 0 && s > maxSlant * 0.7
       })()
     return {
       id: 'R3', cls: 'link', severity: far ? 'notice' : 'warning', confidence: 0.7,
@@ -356,7 +448,7 @@ const R3 = {
         metric: isQly ? 'lq' : 'rssi',
         flight_median: flightMed, late_median: tailMed, distance_correlated: far,
       },
-      spark: spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v),
+      spark: (() => { const home = ctx.rows.find(r => r._lat != null); const prof = home ? lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)') : null; return prof ? { label: (isQly ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: isQly ? '%' : 'dB', points: prof, marks: [] } : spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v) })(),
     }
   },
 }

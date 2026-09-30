@@ -25,7 +25,7 @@ export const EVIDENCE_KEYS = {
   E5: ['impedance_baseline_mohm', 'impedance_late_mohm'],
   E6: ['dip_v', 'recovered_v', 'cells'],
   R1: ['count', 'first_phase', 'airborne'],
-  R2: ['window_count', 'longest_s'],
+  R2: ['window_count', 'longest_s', 'loss_slant_m', 'max_slant_m', 'slant_ratio', 'pattern'],
   R3: ['metric', 'flight_median', 'late_median', 'distance_correlated'],
   R4: ['window_count', 'longest_s', 'median_rate'],
   B1: ['ir_per_cell_mohm', 'punch_count', 'chemistry'],
@@ -40,6 +40,7 @@ export const EVIDENCE_KEYS = {
 const EVIDENCE_ENUMS = {
   metric: ['lq', 'rssi'],
   chemistry: ['lipo', 'liion', 'unknown'],
+  pattern: ['range_boundary', 'close_in', 'mixed'],
 }
 
 const FW_FAMILIES = ['INAV', 'Betaflight', 'EmuFlight']
@@ -57,6 +58,7 @@ const KEY_QUANT = {
   duration_s: T.Q.t_s, longest_s: T.Q.t_s, high_vib_total_s: T.Q.t_s,
   flight_median: 1, late_median: 1, median_rate: 1, vib_median: 1,
   mah_used: 10,
+  loss_slant_m: T.Q.dist_m, max_slant_m: T.Q.dist_m, slant_ratio: 0.05,
 }
 
 /** Build the outbound payload from a runDebrief() result. Strips spark

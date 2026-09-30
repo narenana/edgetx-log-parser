@@ -61,8 +61,35 @@ export const TEMPLATES = {
   },
   R2: {
     title: 'RC signal lost',
-    summary: f => `The receiver reported no signal ${f.evidence.window_count > 1 ? `${f.evidence.window_count} times, longest` : 'for'} ${n(f.evidence.longest_s, 1, ' s')}.`,
-    checks: ['Check antenna placement and condition on both ends.', 'If this happened at range, compare against the R3 link-quality trend.'],
+    summary: f => {
+      const e = f.evidence
+      let s = `The receiver reported no signal ${e.window_count > 1 ? `${e.window_count} times, longest` : 'for'} ${n(e.longest_s, 1, ' s')}.`
+      if (e.pattern === 'range_boundary') {
+        s += ` The losses sit at ~${n(e.loss_slant_m, 0, ' m')} slant range — right at the edge of this flight's envelope (max ${n(e.max_slant_m, 0, ' m')}). That's the link running out of legs, not a fault.`
+      } else if (e.pattern === 'close_in') {
+        s += ` The losses happened at only ~${n(e.loss_slant_m, 0, ' m')} slant range while this flight reached ${n(e.max_slant_m, 0, ' m')} — far inside the envelope. Distance is NOT the cause.`
+      } else if (e.pattern === 'mixed') {
+        s += ` Losses are scattered across ranges (median ~${n(e.loss_slant_m, 0, ' m')} of a ${n(e.max_slant_m, 0, ' m')} envelope) — no single distance boundary explains them.`
+      }
+      return s
+    },
+    checks: f => {
+      const p = f.evidence?.pattern
+      if (p === 'range_boundary') {
+        return [
+          'This is your practical range envelope at these settings — turn back earlier, raise TX power, or improve antennas before flying farther.',
+          'Check the fade margin in the link-quality-vs-distance curve on this card: a steep cliff means little margin left.',
+        ]
+      }
+      if (p === 'close_in') {
+        return [
+          'Distance ruled out — inspect the receiver antenna for damage, pinching, or placement flush against carbon.',
+          'Check whether losses coincide with particular attitudes (banked turns shading the antenna) or a location on the field (interference source).',
+          'Verify the TX module seat and antenna are secure.',
+        ]
+      }
+      return ['Check antenna placement and condition on both ends.', 'Compare against the link-quality-vs-distance curve on this card.']
+    },
   },
   R3: {
     title: 'Link quality degrading',
@@ -120,9 +147,12 @@ export const TEMPLATES = {
   },
 }
 
-/** Assemble the check-list for a finding, injecting board advice. */
+/** Assemble the check-list for a finding, injecting board advice.
+ *  `checks` may be a static array or a function of the finding
+ *  (pattern-aware lists like R2's loss-geometry advice). */
 export function checksFor(finding, context) {
-  const base = TEMPLATES[finding.id]?.checks || []
+  const raw = TEMPLATES[finding.id]?.checks
+  const base = (typeof raw === 'function' ? raw(finding, context) : raw) || []
   if (finding.id === 'E4' && context?.target && BOARD_ADVICE[context.target]) {
     return [BOARD_ADVICE[context.target], ...base]
   }
