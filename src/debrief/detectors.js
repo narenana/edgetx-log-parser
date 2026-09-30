@@ -122,7 +122,7 @@ const spark = (label, unit, t, v, tA = null, tB = null, marks = []) => {
   const step = Math.max(1, Math.ceil(idx.length / T.SPARK_MAX_POINTS))
   const pts = []
   for (let k = 0; k < idx.length; k += step) pts.push([t[idx[k]], v[idx[k]]])
-  return pts.length >= 2 ? { label, unit, points: pts, marks } : null
+  return pts.length >= 2 ? { label, unit, xUnit: 's', points: pts, marks } : null
 }
 
 const lastValid = (rows, key, windowS = Infinity) => {
@@ -395,7 +395,7 @@ const R2 = {
         const lqKey = rowSeries(ctx.rows, 'RQly(%)').v.length ? 'RQly(%)' : '1RSS(dB)'
         const prof = lqDistanceProfile(ctx.rows, home, lqKey)
         geoSpark = prof
-          ? { label: (lqKey === 'RQly(%)' ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: lqKey === 'RQly(%)' ? '%' : 'dB', points: prof, marks: [] }
+          ? { label: (lqKey === 'RQly(%)' ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: lqKey === 'RQly(%)' ? '%' : 'dB', xUnit: 'm', points: prof, marks: [] }
           : spark('Slant range from launch', 'm', sT, sV)
       }
     }
@@ -448,7 +448,7 @@ const R3 = {
         metric: isQly ? 'lq' : 'rssi',
         flight_median: flightMed, late_median: tailMed, distance_correlated: far,
       },
-      spark: (() => { const home = ctx.rows.find(r => r._lat != null); const prof = home ? lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)') : null; return prof ? { label: (isQly ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: isQly ? '%' : 'dB', points: prof, marks: [] } : spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v) })(),
+      spark: (() => { const home = ctx.rows.find(r => r._lat != null); const prof = home ? lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)') : null; return prof ? { label: (isQly ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: isQly ? '%' : 'dB', xUnit: 'm', points: prof, marks: [] } : spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v) })(),
     }
   },
 }

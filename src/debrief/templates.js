@@ -147,6 +147,72 @@ export const TEMPLATES = {
   },
 }
 
+/**
+ * Evidence-key presentation: human label + formatter per key. The raw
+ * snake_case names were leaking into the cards ("loss slant m
+ * 2147.42") — every key renders through this table, with a humanizing
+ * fallback for anything new.
+ */
+const num = (v, d = 0) => (+v).toLocaleString(undefined, { maximumFractionDigits: d })
+const M = (label, fmt) => ({ label, fmt })
+const dist = v => (v >= 1000 ? `${(v / 1000).toFixed(2)} km` : `${num(v)} m`)
+export const EVIDENCE_META = {
+  end_marker: M('Log footer present', v => (v ? 'yes' : 'no')),
+  dropped_main: M('Corrupt tail frames removed', v => num(v)),
+  dropped_gps: M('Corrupt GPS frames removed', v => num(v)),
+  pad_bytes: M('Trailing pad bytes', v => num(v)),
+  alt_agl_at_end: M('Altitude at cutoff', v => `${num(v)} m`),
+  gspd_at_end: M('Ground speed at cutoff', v => `${num(v)} km/h`),
+  sag_vbat_final_v: M('Final battery reading', v => `${(+v).toFixed(2)} V`),
+  temp_step_c: M('Instant temperature jump', v => `${num(v)} °C`),
+  invalid_flag_count: M('Corrupted status flags', v => num(v)),
+  ends_midair: M('Ends mid-air', v => (v ? 'yes' : 'no')),
+  unterminated: M('Unterminated recording', v => (v ? 'yes' : 'no')),
+  death_rattle: M('Electrical death rattle', v => (v ? 'yes' : 'no')),
+  vbat_stable_before: M('Battery steady before cutoff', v => (v ? 'yes' : 'no')),
+  vbat_sigma_v: M('Battery noise before cutoff', v => `±${(+v).toFixed(2)} V`),
+  amps_at_cutoff: M('Current at cutoff', v => `${(+v).toFixed(1)} A`),
+  impedance_baseline_mohm: M('Impedance, baseline', v => `${num(v)} mΩ`),
+  impedance_late_mohm: M('Impedance, late flight', v => `${num(v)} mΩ`),
+  dip_v: M('Dip voltage', v => `${(+v).toFixed(1)} V`),
+  recovered_v: M('Recovered to', v => `${(+v).toFixed(1)} V`),
+  cells: M('Cells', v => `${num(v)}S`),
+  count: M('Times entered', v => num(v)),
+  first_phase: M('First failsafe phase', v => num(v)),
+  airborne: M('While airborne', v => (v ? 'yes' : 'no')),
+  window_count: M('Loss windows', v => num(v)),
+  longest_s: M('Longest loss', v => `${(+v).toFixed(1)} s`),
+  loss_slant_m: M('Loss distance (slant)', dist),
+  max_slant_m: M('Flight max slant range', dist),
+  slant_ratio: M('Loss point in envelope', v => `${Math.round(v * 100)} %`),
+  pattern: M('Pattern', v => ({ range_boundary: 'range boundary', close_in: 'close in', mixed: 'mixed' }[v] || v)),
+  metric: M('Link metric', v => (v === 'lq' ? 'link quality' : 'RSSI')),
+  flight_median: M('Flight median', v => num(v)),
+  late_median: M('Late-flight median', v => num(v)),
+  distance_correlated: M('Tracks distance', v => (v ? 'yes' : 'no')),
+  median_rate: M('Median update rate', v => `${num(v)} Hz`),
+  ir_per_cell_mohm: M('Internal resistance / cell', v => `${num(v)} mΩ`),
+  punch_count: M('Throttle punches measured', v => num(v)),
+  chemistry: M('Chemistry', v => ({ lipo: 'LiPo', liion: 'Li-ion' }[v] || v)),
+  end_v_per_cell: M('Landing voltage / cell', v => `${(+v).toFixed(2)} V`),
+  gap_growth_per_cell_v: M('Sag-model gap growth / cell', v => `${(+v).toFixed(2)} V`),
+  duration_s: M('Duration', v => mmss(v)),
+  mah_used: M('Capacity used', v => `${num(v)} mAh`),
+  avg_current_a: M('Average current', v => `${(+v).toFixed(1)} A`),
+  high_vib_total_s: M('High-vibration time', v => `${num(v)} s`),
+  vib_median: M('Vibration baseline', v => num(v)),
+  skipped_count: M('Checks skipped', v => num(v)),
+}
+export function formatEvidence(key, value) {
+  const meta = EVIDENCE_META[key]
+  if (meta) {
+    try { return { label: meta.label, text: meta.fmt(value) } } catch { /* fall through */ }
+  }
+  const label = key.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())
+  const text = typeof value === 'number' ? num(value, 2) : typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value)
+  return { label, text }
+}
+
 /** Assemble the check-list for a finding, injecting board advice.
  *  `checks` may be a static array or a function of the finding
  *  (pattern-aware lists like R2's loss-geometry advice). */
