@@ -133,6 +133,16 @@ export const TEMPLATES = {
     summary: f => `High vibration while the sticks were quiet, ${f.evidence.window_count} window${f.evidence.window_count > 1 ? 's' : ''} (experimental check).`,
     checks: ['Review filter/PID settings; look for a damaged prop or loose mount.'],
   },
+  L0: {
+    title: 'Link health vs distance',
+    summary: f => `Worst link reading near the far edge (${f.evidence.max_slant_m >= 1000 ? (f.evidence.max_slant_m / 1000).toFixed(2) + ' km' : Math.round(f.evidence.max_slant_m) + ' m'} slant) was ${n(f.evidence.edge_min_lq, 0)} — the chart shows the worst and average reading at each distance band.`,
+    checks: [],
+  },
+  B0: {
+    title: 'Power vs throttle',
+    summary: f => `Peak draw ${n(f.evidence.max_current_a, 1, ' A')} at ~${n(f.evidence.at_throttle_pct, 0, '%')} throttle${f.evidence.full_throttle_current_a != null ? ` (${n(f.evidence.full_throttle_current_a, 1, ' A')} at full)` : ''}.`,
+    checks: [],
+  },
   X1: {
     title: 'Clean flight',
     summary: () => 'Every check this log supports came back clean.',
@@ -202,6 +212,10 @@ export const EVIDENCE_META = {
   high_vib_total_s: M('High-vibration time', v => `${num(v)} s`),
   vib_median: M('Vibration baseline', v => num(v)),
   skipped_count: M('Checks skipped', v => num(v)),
+  edge_min_lq: M('Worst link at far edge', v => num(v)),
+  max_current_a: M('Peak current', v => `${(+v).toFixed(1)} A`),
+  at_throttle_pct: M('At throttle', v => `${num(v)} %`),
+  full_throttle_current_a: M('Current at full throttle', v => `${(+v).toFixed(1)} A`),
 }
 export function formatEvidence(key, value) {
   const meta = EVIDENCE_META[key]

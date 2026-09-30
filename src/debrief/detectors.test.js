@@ -461,3 +461,66 @@ describe('R2 loss geometry', () => {
     expect(Math.max(...xs)).toBeGreaterThan(1000) // metres scale
   })
 })
+
+describe('LQ-vs-distance profile: min is the headline', () => {
+  it('a momentary dropout plunges the min series while the average stays polite', async () => {
+    const { lqDistanceProfile } = await import('./detectors.js')
+    const rows = []
+    let i = 0
+    for (let t = 0; t <= 400; t += 0.5) {
+      const distM = 2000 * (t / 400)
+      // healthy 95% everywhere, except three momentary 0% dropouts ~1 km out
+      const dropout = distM > 950 && distM < 1050 && Math.floor(t) % 7 === 0
+      rows.push({ _i: i++, _tSec: t, _lat: distM / 111320, _lon: 0, 'Alt(m)': 0, 'RQly(%)': dropout ? 0 : 95 })
+    }
+    const home = rows.find(r => r._lat != null)
+    const prof = lqDistanceProfile(rows, home, 'RQly(%)')
+    expect(prof).toBeTruthy()
+    const bucketAt = pts => pts.find(([x]) => Math.abs(x - 1000) < 150)
+    expect(bucketAt(prof.min)[1]).toBe(0)              // the problem is visible
+    expect(bucketAt(prof.avg)[1]).toBeGreaterThan(80)  // the average hides it
+  })
+})
+
+describe('L0 link profile + B0 power profile (always-on cards)', () => {
+  const richRows = () => {
+    const rows = []
+    let i = 0
+    for (let t = 0; t <= 300; t += 0.5) {
+      const distM = 1500 * (t / 300)
+      rows.push({
+        _i: i++, _tSec: t,
+        _lat: distM / 111320, _lon: 0, 'Alt(m)': 80,
+        'RQly(%)': 95 - distM / 100,
+        'RxBt(V)': 15.8,
+        // throttle sweeps 10..95% so ≥4 buckets qualify; current rises
+        // with throttle, plus a spike burst near full throttle
+        'Curr(A)': 2 + ((10 + (t % 53) * 1.6) / 100) * 20 + ((t % 53) * 1.6 > 80 ? 8 : 0),
+        _throttle: Math.min(95, 10 + (t % 53) * 1.6),
+      })
+    }
+    return rows
+  }
+  it('L0 fires on a healthy flight with GPS + LQ, with banded profile spark', () => {
+    const d = run({ source: 'edgetx-csv', rows: richRows() })
+    const f = find(d, 'L0')
+    expect(f).toBeTruthy()
+    expect(f.severity).toBe('info')
+    expect(f.spark.bands?.length).toBeGreaterThan(1)
+    expect(f.spark.series?.length).toBe(2)
+  })
+  it('L0 suppressed when R2 carries the same chart', () => {
+    const rows = richRows().map(r => ({ ...r, 'RQly(%)': r._tSec > 290 ? 0 : r['RQly(%)'] }))
+    const d = run({ source: 'edgetx-csv', rows })
+    expect(find(d, 'R2')).toBeTruthy()
+    expect(find(d, 'L0')).toBeFalsy()
+  })
+  it('B0 max-current-vs-throttle finds the peak bucket', () => {
+    const d = run({ source: 'edgetx-csv', rows: richRows() })
+    const f = find(d, 'B0')
+    expect(f).toBeTruthy()
+    expect(f.evidence.at_throttle_pct).toBeGreaterThan(80)
+    expect(f.evidence.max_current_a).toBeGreaterThan(20)
+    expect(f.spark.xUnit).toBe('pct')
+  })
+})

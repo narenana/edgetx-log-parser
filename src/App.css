@@ -2348,3 +2348,12 @@ body{font-family:'DM Sans',system-ui,sans-serif}.family-app-nav{flex:0 0 auto}.h
 }
 .db-evidence dt { color: var(--text3); }
 .db-evidence dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* debrief chart: legend + muted context series */
+.db-chart-legend { display: inline-flex; gap: 10px; margin-left: auto; font-size: 10px; font-weight: 500; color: var(--text2); }
+.db-chart-key { display: inline-flex; align-items: center; gap: 4px; }
+.db-chart-key i { width: 10px; height: 2px; background: var(--cyan); display: inline-block; }
+.db-chart-key.muted { color: var(--text3); }
+.db-chart-key.muted i { background: var(--text3); opacity: 0.6; }
+.db-chart-line.muted { stroke: var(--text3); opacity: 0.45; stroke-width: 1.5; }
+.db-chart-band { font-size: 7.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; }

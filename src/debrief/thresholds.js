@@ -113,3 +113,19 @@ export const T = {
   SPARK_MAX_POINTS: 160,
   SPARK_CONTEXT_S: 5,
 }
+
+// Appended — link-quality status bands + power-profile buckets.
+// LQ bands follow ELRS/CRSF community practice: ≥70 % healthy, 40–70 %
+// stressed (turn around / gain altitude), <40 % failsafe territory.
+// RSSI (dB) equivalents for logs without an LQ column.
+export const LQ_BANDS = [
+  { from: 70, level: 'good', label: 'healthy' },
+  { from: 40, level: 'warn', label: 'stressed' },
+  { from: -Infinity, level: 'crit', label: 'critical' },
+]
+export const RSSI_BANDS = [
+  { from: -85, level: 'good', label: 'healthy' },
+  { from: -95, level: 'warn', label: 'stressed' },
+  { from: -Infinity, level: 'crit', label: 'critical' },
+]
+export const THROTTLE_BUCKET_PCT = 10

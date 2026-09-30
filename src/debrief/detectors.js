@@ -21,7 +21,7 @@
  *               evidence: {numbers/bools/enums only}, spark? }
  * Severity ladder: info < notice < warning < critical.
  */
-import { T } from './thresholds.js'
+import { T, LQ_BANDS, RSSI_BANDS, THROTTLE_BUCKET_PCT } from './thresholds.js'
 
 export const SEVERITY_RANK = { info: 0, notice: 1, warning: 2, critical: 3 }
 
@@ -103,16 +103,44 @@ export function lqDistanceProfile(rows, home, key) {
   if (samples.length < 20 || maxSlant < 100) return null
   const width = maxSlant / B
   const sum = new Array(B).fill(0), n = new Array(B).fill(0)
+  const lo = new Array(B).fill(Infinity)
   for (const [s, v] of samples) {
     const b = Math.min(B - 1, Math.floor(s / width))
     sum[b] += v; n[b]++
+    if (v < lo[b]) lo[b] = v
   }
-  const points = []
+  // Min is the headline: an average hides a momentary dropout inside
+  // an otherwise-healthy bucket; the worst reading at each distance
+  // is the safety-relevant number. Avg stays as context.
+  const minPts = [], avgPts = []
   for (let b = 0; b < B; b++) {
-    if (n[b] >= 3) points.push([Math.round((b + 0.5) * width), sum[b] / n[b]])
+    if (n[b] >= 3) {
+      const x = Math.round((b + 0.5) * width)
+      minPts.push([x, lo[b]])
+      avgPts.push([x, sum[b] / n[b]])
+    }
   }
-  return points.length >= 4 ? points : null
+  return minPts.length >= 4 ? { min: minPts, avg: avgPts } : null
 }
+
+// Status bands for a link metric (y-ranges the chart tints so the
+// worrying region is explicit, with labels — never color alone).
+// Bands only for scales we understand: LQ in %, or RSSI in negative
+// dBm (EdgeTX). Blackbox 'rssi' is 0..1023 — no bands rather than
+// wrong ones.
+const bandsFor = (isQly, sample) => {
+  if (isQly) return LQ_BANDS
+  return typeof sample === 'number' && sample <= 0 ? RSSI_BANDS : []
+}
+
+const profileSpark = (prof, isQly) => ({
+  label: (isQly ? 'Link quality' : 'RSSI') + ' vs distance',
+  unit: isQly ? '%' : 'dB',
+  xUnit: 'm',
+  points: prof.min,
+  series: [{ name: 'worst (min)', points: prof.min }, { name: 'average', points: prof.avg, muted: true }],
+  bands: bandsFor(isQly, prof.min[0]?.[1]),
+})
 
 // Bounded sparkline slice for the local evidence card. Never enters the
 // AI payload (payload.js strips spark) — local render only.
@@ -395,7 +423,7 @@ const R2 = {
         const lqKey = rowSeries(ctx.rows, 'RQly(%)').v.length ? 'RQly(%)' : '1RSS(dB)'
         const prof = lqDistanceProfile(ctx.rows, home, lqKey)
         geoSpark = prof
-          ? { label: (lqKey === 'RQly(%)' ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: lqKey === 'RQly(%)' ? '%' : 'dB', xUnit: 'm', points: prof, marks: [] }
+          ? profileSpark(prof, lqKey === 'RQly(%)')
           : spark('Slant range from launch', 'm', sT, sV)
       }
     }
@@ -448,7 +476,7 @@ const R3 = {
         metric: isQly ? 'lq' : 'rssi',
         flight_median: flightMed, late_median: tailMed, distance_correlated: far,
       },
-      spark: (() => { const home = ctx.rows.find(r => r._lat != null); const prof = home ? lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)') : null; return prof ? { label: (isQly ? 'Avg link quality' : 'Avg RSSI') + ' vs distance', unit: isQly ? '%' : 'dB', xUnit: 'm', points: prof, marks: [] } : spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v) })(),
+      spark: (() => { const home = ctx.rows.find(r => r._lat != null); const prof = home ? lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)') : null; return prof ? profileSpark(prof, isQly) : spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v) })(),
     }
   },
 }
@@ -673,7 +701,66 @@ const M2 = {
   },
 }
 
-export const DETECTORS = [E1, E2, E3, E5, E6, R1, R2, R3, R4, B1, B2, B3, B4, M1, M2]
+const L0 = {
+  id: 'L0', cls: 'link',
+  requires: ctx => ctx.rows.some(r => r._lat != null) &&
+    (rowSeries(ctx.rows, 'RQly(%)').v.length > 0 || rowSeries(ctx.rows, '1RSS(dB)').v.length > 0),
+  run(ctx) {
+    if (ctx.stats.duration < T.MIN_FLIGHT_S) return null
+    const home = ctx.rows.find(r => r._lat != null)
+    const isQly = rowSeries(ctx.rows, 'RQly(%)').v.length > 0
+    const prof = lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)')
+    if (!prof) return null
+    let maxSlant = 0
+    for (const r of ctx.rows) {
+      const s = slantAt(r, home)
+      if (s != null && s > maxSlant) maxSlant = s
+    }
+    const tail = prof.min.slice(-2)
+    const edgeMin = tail.length ? Math.min(...tail.map(p => p[1])) : null
+    return {
+      id: 'L0', cls: 'link', severity: 'info', confidence: 1, t: null,
+      evidence: { max_slant_m: maxSlant, edge_min_lq: edgeMin },
+      spark: profileSpark(prof, isQly),
+    }
+  },
+}
+
+const B0 = {
+  id: 'B0', cls: 'battery',
+  requires: ctx => ctx.rows.some(r => r['Curr(A)'] > 0) && ctx.rows.some(r => r._throttle != null),
+  run(ctx) {
+    if (ctx.stats.duration < T.MIN_FLIGHT_S) return null
+    const B = Math.ceil(100 / THROTTLE_BUCKET_PCT)
+    const hi = new Array(B).fill(-Infinity), n = new Array(B).fill(0)
+    for (const r of ctx.rows) {
+      const thr = r._throttle, cur = r['Curr(A)']
+      if (typeof thr !== 'number' || typeof cur !== 'number' || isNaN(thr) || isNaN(cur)) continue
+      const b = Math.min(B - 1, Math.floor(thr / THROTTLE_BUCKET_PCT))
+      n[b]++
+      if (cur > hi[b]) hi[b] = cur
+    }
+    const points = []
+    for (let b = 0; b < B; b++) {
+      if (n[b] >= 3 && hi[b] > -Infinity) points.push([Math.round((b + 0.5) * THROTTLE_BUCKET_PCT), hi[b]])
+    }
+    if (points.length < 4) return null
+    let peak = points[0]
+    for (const p of points) if (p[1] > peak[1]) peak = p
+    const full = points.filter(([x]) => x >= 85)
+    return {
+      id: 'B0', cls: 'battery', severity: 'info', confidence: 1, t: null,
+      evidence: {
+        max_current_a: peak[1],
+        at_throttle_pct: peak[0],
+        full_throttle_current_a: full.length ? full[full.length - 1][1] : null,
+      },
+      spark: { label: 'Max current vs throttle', unit: 'A', xUnit: 'pct', points, series: [{ name: 'max', points }] },
+    }
+  },
+}
+
+export const DETECTORS = [L0, B0, E1, E2, E3, E5, E6, R1, R2, R3, R4, B1, B2, B3, B4, M1, M2]
 
 // ── composite scenarios (the deterministic "synthesis" layer) ──────────
 // Rules combining detector outputs into named findings. Reviewed like

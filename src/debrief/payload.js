@@ -10,7 +10,7 @@
  */
 import { T } from './thresholds.js'
 
-export const FINDING_IDS = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'R1', 'R2', 'R3', 'R4', 'B1', 'B2', 'B3', 'B4', 'M1', 'M2', 'X1', 'X2']
+export const FINDING_IDS = ['L0', 'B0', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'R1', 'R2', 'R3', 'R4', 'B1', 'B2', 'B3', 'B4', 'M1', 'M2', 'X1', 'X2']
 export const CLASSES = ['electrical', 'link', 'battery', 'mechanical', 'meta']
 export const SEVERITIES = ['info', 'notice', 'warning', 'critical']
 
@@ -35,6 +35,8 @@ export const EVIDENCE_KEYS = {
   M1: ['high_vib_total_s', 'longest_s', 'vib_median'],
   M2: ['window_count', 'longest_s'],
   X1: [], X2: ['skipped_count'],
+  L0: ['max_slant_m', 'edge_min_lq'],
+  B0: ['max_current_a', 'at_throttle_pct', 'full_throttle_current_a'],
 }
 // The few string values allowed in evidence, as closed enums.
 const EVIDENCE_ENUMS = {
@@ -59,6 +61,7 @@ const KEY_QUANT = {
   flight_median: 1, late_median: 1, median_rate: 1, vib_median: 1,
   mah_used: 10,
   loss_slant_m: T.Q.dist_m, max_slant_m: T.Q.dist_m, slant_ratio: 0.05,
+  edge_min_lq: 1, max_current_a: T.Q.curr_a, full_throttle_current_a: T.Q.curr_a, at_throttle_pct: 5,
 }
 
 /** Build the outbound payload from a runDebrief() result. Strips spark
