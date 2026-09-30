@@ -2214,8 +2214,9 @@ body{font-family:'DM Sans',system-ui,sans-serif}.family-app-nav{flex:0 0 auto}.h
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 340px;
-  overflow-y: auto;
+  /* No inner scroll — a scroll region inside the column's scroll was a
+     wheel trap (owner: "impossible to use"). Rows are one-line when
+     collapsed, so the panel flows with the page. */
 }
 .db-row { border-bottom: 1px solid var(--border); }
 .db-row:last-child { border-bottom: none; }
@@ -2258,15 +2259,6 @@ body{font-family:'DM Sans',system-ui,sans-serif}.family-app-nav{flex:0 0 auto}.h
 .db-caret { color: var(--text3); flex: none; }
 .db-detail { padding: 2px 12px 12px 36px; }
 .db-summary { margin: 4px 0 8px; font-size: 12.5px; line-height: 1.55; color: var(--text2); }
-.db-spark { color: var(--cyan); margin: 6px 0; }
-.db-spark svg { display: block; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
-.db-spark-cap {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  color: var(--text3);
-  margin-top: 2px;
-}
 .db-lastfix {
   display: flex;
   flex-direction: column;
@@ -2291,16 +2283,6 @@ body{font-family:'DM Sans',system-ui,sans-serif}.family-app-nav{flex:0 0 auto}.h
 }
 .db-lastfix-btns button:hover, .db-lastfix-btns a:hover { color: var(--text); }
 .db-lastfix-note { font-size: 10px; color: var(--text3); }
-.db-evidence {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 3px 12px;
-  margin: 6px 0;
-  font-size: 11px;
-}
-.db-evidence div { display: flex; justify-content: space-between; gap: 6px; }
-.db-evidence dt { color: var(--text3); }
-.db-evidence dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; }
 .db-checks { margin: 6px 0; padding-left: 16px; font-size: 12px; line-height: 1.55; color: var(--text2); }
 .db-checks li { margin-bottom: 4px; }
 .db-row-actions { display: flex; gap: 8px; margin-top: 6px; }
@@ -2355,3 +2337,118 @@ body{font-family:'DM Sans',system-ui,sans-serif}.family-app-nav{flex:0 0 auto}.h
 }
 .db-strip:hover { background: var(--bg3); }
 .db-strip-sub { flex: 1; color: var(--text3); font-size: 11px; }
+
+/* ── Debrief narration (D2) ─────────────────────────────────────────── */
+.db-narrate { border-top: 1px solid var(--border); padding: 8px 10px; }
+.db-narrate-cta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.db-narrate-btn {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--blue);
+  background: var(--blue);
+  color: #fff;
+  cursor: pointer;
+}
+.db-narrate-btn:hover { filter: brightness(1.1); }
+.db-narrate-link {
+  font-size: 12px;
+  background: none;
+  border: none;
+  color: var(--blue);
+  cursor: pointer;
+  padding: 4px 0;
+}
+.db-narrate-view {
+  font-size: 11px;
+  background: none;
+  border: none;
+  color: var(--text3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.db-narrate-busy { font-size: 12px; color: var(--text3); padding: 4px 0; }
+.db-narration { margin-top: 8px; }
+.db-narration-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.db-narration-text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text2);
+  white-space: pre-wrap;
+}
+.db-consent {
+  margin-top: 8px;
+  border: 1px solid var(--border-bright);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg);
+}
+.db-consent-copy { margin: 0 0 8px; font-size: 12px; line-height: 1.55; color: var(--text2); }
+.db-consent-json {
+  margin: 0 0 8px;
+  padding: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text2);
+}
+.db-consent-btns { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.db-consent-ts { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text2); }
+
+/* ── Debrief chart (axes, ticks, units — replaces the bare sparkline) ── */
+.db-chart { margin: 8px 0; }
+.db-chart-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 3px;
+}
+.db-chart-dot { width: 8px; height: 8px; border-radius: 2px; background: var(--cyan); flex: none; }
+.db-chart-unit { color: var(--text3); font-weight: 500; }
+.db-chart svg { display: block; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.db-chart-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 3; }
+.db-chart-axis { stroke: var(--border-bright); stroke-width: 1; }
+.db-chart-tick { fill: var(--text3); font-size: 8.5px; font-variant-numeric: tabular-nums; }
+.db-chart-line { fill: none; stroke: var(--cyan); stroke-width: 2; stroke-linejoin: round; }
+.db-chart-area { fill: var(--cyan); opacity: 0.12; stroke: none; }
+.db-chart-pt { fill: var(--cyan); stroke: var(--bg); stroke-width: 1.5; }
+.db-chart-xlabel { font-size: 9px; color: var(--text3); text-align: right; margin-top: 2px; }
+
+/* evidence table: aligned label/value rows, no raw snake_case */
+.db-evidence {
+  display: block;
+  margin: 8px 0;
+  font-size: 11.5px;
+  border-top: 1px solid var(--border);
+}
+.db-evidence div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.db-evidence dt { color: var(--text3); }
+.db-evidence dd { margin: 0; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* debrief chart: legend + muted context series */
+.db-chart-legend { display: inline-flex; gap: 10px; margin-left: auto; font-size: 10px; font-weight: 500; color: var(--text2); }
+.db-chart-key { display: inline-flex; align-items: center; gap: 4px; }
+.db-chart-key i { width: 10px; height: 2px; background: var(--cyan); display: inline-block; }
+.db-chart-key.muted { color: var(--text3); }
+.db-chart-key.muted i { background: var(--text3); opacity: 0.6; }
+.db-chart-line.muted { stroke: var(--text3); opacity: 0.45; stroke-width: 1.5; }
+.db-chart-band { font-size: 7.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; }

@@ -1,7 +1,14 @@
 import { useMemo, useState, useCallback } from 'react'
-import { TEMPLATES, checksFor, debriefAsText } from '../debrief/templates.js'
+import { TEMPLATES, checksFor, debriefAsText, formatEvidence } from '../debrief/templates.js'
+import DebriefChart from './DebriefChart.jsx'
 import { SEVERITY_RANK } from '../debrief/detectors.js'
 import { track } from '../utils/analytics'
+// Narration tier is web-only: Electron builds compile it out entirely
+// (design invariant #7 — no /api/debrief string in the desktop bundle).
+const IS_WEB = import.meta.env.VITE_BUILD_TARGET === 'web'
+const NarrationSection = IS_WEB
+  ? (await import('./NarrationSection.jsx')).default
+  : null
 
 /**
  * Flight Debrief panel — design rev 2 §7. Deterministic findings as
@@ -14,36 +21,13 @@ import { track } from '../utils/analytics'
 const SEV_ICON = { critical: '⛔', warning: '⚠️', notice: '▲', info: 'ℹ' }
 const SEV_LABEL = { critical: 'CRITICAL', warning: 'WARNING', notice: 'NOTICE', info: 'INFO' }
 
-function Sparkline({ spark }) {
-  if (!spark || !spark.points || spark.points.length < 2) return null
-  const W = 260, H = 44, PAD = 3
-  const ts = spark.points.map(p => p[0])
-  const vs = spark.points.map(p => p[1])
-  const t0 = Math.min(...ts), t1 = Math.max(...ts)
-  const v0 = Math.min(...vs), v1 = Math.max(...vs)
-  const sx = t => PAD + ((t - t0) / Math.max(1e-9, t1 - t0)) * (W - 2 * PAD)
-  const sy = v => H - PAD - ((v - v0) / Math.max(1e-9, v1 - v0)) * (H - 2 * PAD)
-  const d = spark.points.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join('')
-  return (
-    <div className="db-spark">
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img"
-        aria-label={`${spark.label} trace`}>
-        <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="db-spark-cap">
-        <span>{spark.label}{spark.unit ? ` (${spark.unit})` : ''}</span>
-        <span>{v0.toFixed(1)} – {v1.toFixed(1)}</span>
-      </div>
-    </div>
-  )
-}
 
 const fmtT = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`
 
 function evidencePairs(f) {
   return Object.entries(f.evidence || {})
     .filter(([, v]) => v != null)
-    .map(([k, v]) => [k.replace(/_/g, ' '), typeof v === 'number' ? +v.toFixed(2) : String(v)])
+    .map(([k, v]) => formatEvidence(k, v))
 }
 
 export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) {
@@ -164,7 +148,7 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
               {open && (
                 <div className="db-detail">
                   <p className="db-summary">{t.summary(f, ctx)}</p>
-                  {f.spark && <Sparkline spark={f.spark} />}
+                  {f.spark && <DebriefChart spark={f.spark} />}
                   {showFix && (
                     <div className="db-lastfix">
                       <span className="db-lastfix-label">LAST KNOWN POSITION</span>
@@ -183,8 +167,8 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
                   )}
                   {pairs.length > 0 && (
                     <dl className="db-evidence">
-                      {pairs.map(([k, v]) => (
-                        <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
+                      {pairs.map(pair => (
+                        <div key={pair.label}><dt>{pair.label}</dt><dd>{pair.text}</dd></div>
                       ))}
                     </dl>
                   )}
@@ -209,6 +193,8 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
           )
         })}
       </ul>
+
+      {NarrationSection && <NarrationSection debrief={debrief} />}
 
       <div className="db-foot">
         <span>

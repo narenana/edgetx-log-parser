@@ -40,6 +40,13 @@ export function runDebrief(ctx) {
     errors.push({ id: 'scenarios', error_name: e?.name || 'Error' })
   }
 
+  // L0 (always-on link profile) is redundant when an R2/R3 card is
+  // already carrying the same chart — keep one copy only.
+  if (findings.some(f => f.id === 'R2' || f.id === 'R3')) {
+    const i = findings.findIndex(f => f.id === 'L0')
+    if (i >= 0) findings.splice(i, 1)
+  }
+
   const clean = !findings.some(f => SEVERITY_RANK[f.severity] >= SEVERITY_RANK.warning)
 
   // Meta findings: the clean-flight verdict and the coverage note.

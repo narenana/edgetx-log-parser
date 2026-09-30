@@ -21,7 +21,7 @@
  *               evidence: {numbers/bools/enums only}, spark? }
  * Severity ladder: info < notice < warning < critical.
  */
-import { T } from './thresholds.js'
+import { T, LQ_BANDS, RSSI_BANDS, THROTTLE_BUCKET_PCT } from './thresholds.js'
 
 export const SEVERITY_RANK = { info: 0, notice: 1, warning: 2, critical: 3 }
 
@@ -64,6 +64,84 @@ const slowSeries = (slow, name) => {
 
 const hasSlowField = (slow, name) => !!slow && slow.names.indexOf(name) >= 0
 
+// Slant range (m) from launch to a row: the hypotenuse of horizontal
+// distance and AGL altitude — "how far away was it, really".
+const slantAt = (row, home) => {
+  if (row._lat == null || home == null) return null
+  const dLat = (row._lat - home._lat) * 111320
+  const dLon = (row._lon - home._lon) * 111320 * Math.cos(home._lat * Math.PI / 180)
+  const h = Math.hypot(dLat, dLon)
+  const a = typeof row['Alt(m)'] === 'number' && !isNaN(row['Alt(m)']) ? Math.max(0, row['Alt(m)']) : 0
+  return Math.hypot(h, a)
+}
+
+// Last GPS-bearing row at or before time t — the last place we KNEW it was.
+const lastFixBefore = (rows, t) => {
+  let best = null
+  for (const r of rows) {
+    if (r._tSec > t) break
+    if (r._lat != null) best = r
+  }
+  return best
+}
+
+// Link quality vs slant distance, bucketed — NOT a time series: the
+// average link reading at each distance band (the flight’s own link-
+// budget curve). x = bucket centre in metres, y = avg LQ%/RSSI.
+export function lqDistanceProfile(rows, home, key) {
+  if (!home) return null
+  const B = 14
+  let maxSlant = 0
+  const samples = []
+  for (const r of rows) {
+    const s = slantAt(r, home)
+    const v = r[key]
+    if (s == null || typeof v !== 'number' || isNaN(v)) continue
+    if (s > maxSlant) maxSlant = s
+    samples.push([s, v])
+  }
+  if (samples.length < 20 || maxSlant < 100) return null
+  const width = maxSlant / B
+  const sum = new Array(B).fill(0), n = new Array(B).fill(0)
+  const lo = new Array(B).fill(Infinity)
+  for (const [s, v] of samples) {
+    const b = Math.min(B - 1, Math.floor(s / width))
+    sum[b] += v; n[b]++
+    if (v < lo[b]) lo[b] = v
+  }
+  // Min is the headline: an average hides a momentary dropout inside
+  // an otherwise-healthy bucket; the worst reading at each distance
+  // is the safety-relevant number. Avg stays as context.
+  const minPts = [], avgPts = []
+  for (let b = 0; b < B; b++) {
+    if (n[b] >= 3) {
+      const x = Math.round((b + 0.5) * width)
+      minPts.push([x, lo[b]])
+      avgPts.push([x, sum[b] / n[b]])
+    }
+  }
+  return minPts.length >= 4 ? { min: minPts, avg: avgPts } : null
+}
+
+// Status bands for a link metric (y-ranges the chart tints so the
+// worrying region is explicit, with labels — never color alone).
+// Bands only for scales we understand: LQ in %, or RSSI in negative
+// dBm (EdgeTX). Blackbox 'rssi' is 0..1023 — no bands rather than
+// wrong ones.
+const bandsFor = (isQly, sample) => {
+  if (isQly) return LQ_BANDS
+  return typeof sample === 'number' && sample <= 0 ? RSSI_BANDS : []
+}
+
+const profileSpark = (prof, isQly) => ({
+  label: (isQly ? 'Link quality' : 'RSSI') + ' vs distance',
+  unit: isQly ? '%' : 'dB',
+  xUnit: 'm',
+  points: prof.min,
+  series: [{ name: 'worst (min)', points: prof.min }, { name: 'average', points: prof.avg, muted: true }],
+  bands: bandsFor(isQly, prof.min[0]?.[1]),
+})
+
 // Bounded sparkline slice for the local evidence card. Never enters the
 // AI payload (payload.js strips spark) — local render only.
 const spark = (label, unit, t, v, tA = null, tB = null, marks = []) => {
@@ -72,7 +150,7 @@ const spark = (label, unit, t, v, tA = null, tB = null, marks = []) => {
   const step = Math.max(1, Math.ceil(idx.length / T.SPARK_MAX_POINTS))
   const pts = []
   for (let k = 0; k < idx.length; k += step) pts.push([t[idx[k]], v[idx[k]]])
-  return pts.length >= 2 ? { label, unit, points: pts, marks } : null
+  return pts.length >= 2 ? { label, unit, xUnit: 's', points: pts, marks } : null
 }
 
 const lastValid = (rows, key, windowS = Infinity) => {
@@ -310,10 +388,50 @@ const R2 = {
     if (start != null && t[t.length - 1] - start >= T.RX_LOSS_MIN_S) windows.push([start, t[t.length - 1]])
     if (!windows.length) return null
     const longest = windows.reduce((a, w) => Math.max(a, w[1] - w[0]), 0)
+    // ── loss geometry: WHERE in space did the link die? Hypotenuse from
+    // launch to the last known position at each loss start, judged
+    // against the flight’s own maximum slant range.
+    const evidence = { window_count: windows.length, longest_s: longest }
+    let geoSpark = null
+    const home = ctx.rows.find(r => r._lat != null)
+    if (home) {
+      let maxSlant = 0
+      const sT = [], sV = []
+      for (const r of ctx.rows) {
+        const s = slantAt(r, home)
+        if (s == null) continue
+        if (s > maxSlant) maxSlant = s
+        sT.push(r._tSec); sV.push(s)
+      }
+      const lossSlants = windows
+        .map(([a]) => lastFixBefore(ctx.rows, a))
+        .filter(Boolean)
+        .map(r => slantAt(r, home))
+        .filter(s => s != null)
+      if (lossSlants.length && maxSlant > 0) {
+        const med = median(lossSlants)
+        const ratio = med / maxSlant
+        let pattern = 'mixed'
+        if (ratio >= T.RANGE_BOUNDARY_RATIO) pattern = 'range_boundary'
+        else if (ratio <= T.CLOSE_IN_RATIO || med <= T.CLOSE_IN_ABS_M) pattern = 'close_in'
+        evidence.loss_slant_m = med
+        evidence.max_slant_m = maxSlant
+        evidence.slant_ratio = ratio
+        evidence.pattern = pattern
+        // Prefer the link-budget curve (avg LQ per distance band);
+        // fall back to the slant-range time series.
+        const lqKey = rowSeries(ctx.rows, 'RQly(%)').v.length ? 'RQly(%)' : '1RSS(dB)'
+        const prof = lqDistanceProfile(ctx.rows, home, lqKey)
+        geoSpark = prof
+          ? profileSpark(prof, lqKey === 'RQly(%)')
+          : spark('Slant range from launch', 'm', sT, sV)
+      }
+    }
     return {
       id: 'R2', cls: 'link', severity: 'critical', confidence: 0.9,
       t: windows[0],
-      evidence: { window_count: windows.length, longest_s: longest },
+      evidence,
+      spark: geoSpark,
     }
   },
 }
@@ -339,15 +457,17 @@ const R3 = {
     const drop = (flightMed - tailMed) / Math.max(1, Math.abs(flightMed))
     if (drop < T.LINK_DROP_FRACTION) return null
     // Far-out flying degrades links by physics; that's a notice, not a warning.
-    const far = ctx.stats.maxDistFromHomeKm > 0 &&
-      (lastValid(ctx.rows, 'GSpd(kmh)') != null) &&
-      ctx.rows.length > 0 && (() => {
+    const far = (() => {
         const home = ctx.rows.find(r => r._lat != null)
         const last = [...ctx.rows].reverse().find(r => r._lat != null)
         if (!home || !last) return false
-        const dLat = (last._lat - home._lat) * 111.32
-        const dLon = (last._lon - home._lon) * 111.32 * Math.cos(home._lat * Math.PI / 180)
-        return Math.hypot(dLat, dLon) > ctx.stats.maxDistFromHomeKm * 0.7
+        let maxSlant = 0
+        for (const r of ctx.rows) {
+          const s = slantAt(r, home)
+          if (s != null && s > maxSlant) maxSlant = s
+        }
+        const s = slantAt(last, home)
+        return s != null && maxSlant > 0 && s > maxSlant * 0.7
       })()
     return {
       id: 'R3', cls: 'link', severity: far ? 'notice' : 'warning', confidence: 0.7,
@@ -356,7 +476,7 @@ const R3 = {
         metric: isQly ? 'lq' : 'rssi',
         flight_median: flightMed, late_median: tailMed, distance_correlated: far,
       },
-      spark: spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v),
+      spark: (() => { const home = ctx.rows.find(r => r._lat != null); const prof = home ? lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)') : null; return prof ? profileSpark(prof, isQly) : spark(isQly ? 'Link quality' : 'RSSI', isQly ? '%' : 'dB', use.t, use.v) })(),
     }
   },
 }
@@ -581,7 +701,83 @@ const M2 = {
   },
 }
 
-export const DETECTORS = [E1, E2, E3, E5, E6, R1, R2, R3, R4, B1, B2, B3, B4, M1, M2]
+const L0 = {
+  id: 'L0', cls: 'link',
+  requires: ctx => ctx.rows.some(r => r._lat != null) &&
+    (rowSeries(ctx.rows, 'RQly(%)').v.length > 0 || rowSeries(ctx.rows, '1RSS(dB)').v.length > 0),
+  run(ctx) {
+    if (ctx.stats.duration < T.MIN_FLIGHT_S) return null
+    const home = ctx.rows.find(r => r._lat != null)
+    const isQly = rowSeries(ctx.rows, 'RQly(%)').v.length > 0
+    const prof = lqDistanceProfile(ctx.rows, home, isQly ? 'RQly(%)' : '1RSS(dB)')
+    if (!prof) return null
+    let maxSlant = 0
+    for (const r of ctx.rows) {
+      const s = slantAt(r, home)
+      if (s != null && s > maxSlant) maxSlant = s
+    }
+    const tail = prof.min.slice(-2)
+    const edgeMin = tail.length ? Math.min(...tail.map(p => p[1])) : null
+    return {
+      id: 'L0', cls: 'link', severity: 'info', confidence: 1, t: null,
+      evidence: { max_slant_m: maxSlant, edge_min_lq: edgeMin },
+      spark: profileSpark(prof, isQly),
+    }
+  },
+}
+
+const B0 = {
+  id: 'B0', cls: 'battery',
+  requires: ctx => ctx.rows.some(r => r['Curr(A)'] > 0) && ctx.rows.some(r => r._throttle != null),
+  run(ctx) {
+    if (ctx.stats.duration < T.MIN_FLIGHT_S) return null
+    const B = Math.ceil(100 / THROTTLE_BUCKET_PCT)
+    const hi = new Array(B).fill(-Infinity), n = new Array(B).fill(0)
+    // Radio current telemetry lags the stick by ~a second, so a punch’s
+    // current spike gets logged against the LOWER stick that follows it
+    // (observed: 24 A attributed to 81% while full stick read 4 A).
+    // Attribute each reading to the PEAK throttle of the preceding
+    // window instead. Also start at takeoff: iNAV auto-launch idles the
+    // motor at full stick, painting fake full-throttle/low-current points.
+    const LAG_S = 1.5
+    const takeoff = (ctx.events || []).find(e => e.type === 'takeoff')
+    const startI = takeoff ? takeoff.index : 0
+    const rows = ctx.rows
+    for (let i = startI; i < rows.length; i++) {
+      const r = rows[i]
+      const cur = r['Curr(A)']
+      if (typeof cur !== 'number' || isNaN(cur)) continue
+      let thr = null
+      for (let j = i; j >= startI && r._tSec - rows[j]._tSec <= LAG_S; j--) {
+        const t = rows[j]._throttle
+        if (typeof t === 'number' && !isNaN(t) && (thr == null || t > thr)) thr = t
+      }
+      if (thr == null) continue
+      const b = Math.min(B - 1, Math.floor(thr / THROTTLE_BUCKET_PCT))
+      n[b]++
+      if (cur > hi[b]) hi[b] = cur
+    }
+    const points = []
+    for (let b = 0; b < B; b++) {
+      if (n[b] >= 3 && hi[b] > -Infinity) points.push([Math.round((b + 0.5) * THROTTLE_BUCKET_PCT), hi[b]])
+    }
+    if (points.length < 4) return null
+    let peak = points[0]
+    for (const p of points) if (p[1] > peak[1]) peak = p
+    const full = points.filter(([x]) => x >= 85)
+    return {
+      id: 'B0', cls: 'battery', severity: 'info', confidence: 1, t: null,
+      evidence: {
+        max_current_a: peak[1],
+        at_throttle_pct: peak[0],
+        full_throttle_current_a: full.length ? full[full.length - 1][1] : null,
+      },
+      spark: { label: 'Max current vs throttle', unit: 'A', xUnit: 'pct', points, series: [{ name: 'max', points }] },
+    }
+  },
+}
+
+export const DETECTORS = [L0, B0, E1, E2, E3, E5, E6, R1, R2, R3, R4, B1, B2, B3, B4, M1, M2]
 
 // ── composite scenarios (the deterministic "synthesis" layer) ──────────
 // Rules combining detector outputs into named findings. Reviewed like

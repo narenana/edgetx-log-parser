@@ -54,6 +54,16 @@ export const T = {
   LINK_DROP_FRACTION: 0.4,
   LINK_WINDOW_S: 30,
   LINK_MIN_FLIGHT_S: 30,
+  // R2 loss geometry: slant range = hypotenuse from launch to the last
+  // known position at loss (√(horizontal² + altitude²)). Losses whose
+  // median slant sits at ≥ RANGE_BOUNDARY of the flight's max slant are
+  // the link running out of legs (expected physics at the envelope
+  // edge); losses at ≤ CLOSE_IN of max — or under CLOSE_IN_ABS_M
+  // outright — are NOT range-limited and point at antennas, shading,
+  // or interference.
+  RANGE_BOUNDARY_RATIO: 0.8,
+  CLOSE_IN_RATIO: 0.5,
+  CLOSE_IN_ABS_M: 300,
   // R4: RC update-rate collapse threshold (fraction of median) and
   // minimum duration (s).
   RC_RATE_FRACTION: 0.25,
@@ -103,3 +113,19 @@ export const T = {
   SPARK_MAX_POINTS: 160,
   SPARK_CONTEXT_S: 5,
 }
+
+// Appended — link-quality status bands + power-profile buckets.
+// LQ bands follow ELRS/CRSF community practice: ≥70 % healthy, 40–70 %
+// stressed (turn around / gain altitude), <40 % failsafe territory.
+// RSSI (dB) equivalents for logs without an LQ column.
+export const LQ_BANDS = [
+  { from: 70, level: 'good', label: 'healthy' },
+  { from: 40, level: 'warn', label: 'stressed' },
+  { from: -Infinity, level: 'crit', label: 'critical' },
+]
+export const RSSI_BANDS = [
+  { from: -85, level: 'good', label: 'healthy' },
+  { from: -95, level: 'warn', label: 'stressed' },
+  { from: -Infinity, level: 'crit', label: 'critical' },
+]
+export const THROTTLE_BUCKET_PCT = 10

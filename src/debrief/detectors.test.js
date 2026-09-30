@@ -60,7 +60,7 @@ function run(over = {}) {
     source: over.source || 'blackbox',
     rows,
     stats: over.stats || mkStats(rows),
-    events: [],
+    events: over.events || [],
     slow: over.slow ?? null,
     main: over.main ?? null,
     meta: { ...META, ...(over.meta || {}) },
@@ -397,5 +397,150 @@ describe('parseFirmware + scanLogTail', () => {
   it('no marker in padding-only tail', () => {
     const buf = new Uint8Array(4096).fill(0xff)
     expect(scanLogTail(buf).endMarker).toBe(false)
+  })
+})
+
+// ── R2 loss geometry (slant-range hypotenuse + pattern) ───────────────
+describe('R2 loss geometry', () => {
+  // Out-and-back flight: 0 → 2 km → 0 over 400 s at 100 m AGL, link
+  // healthy except where the scenario places loss windows.
+  const geoRows = lossAt => {
+    const rows = []
+    let i = 0
+    for (let t = 0; t <= 400; t += 0.5) {
+      const frac = t <= 200 ? t / 200 : (400 - t) / 400 * 2
+      const distM = 2000 * frac
+      rows.push({
+        _i: i++, _tSec: t,
+        _lat: distM / 111320, _lon: 0,
+        'Alt(m)': 100,
+        'RQly(%)': lossAt(t, distM) ? 0 : 98,
+        'RxBt(V)': 15.8,
+      })
+    }
+    return rows
+  }
+  const runGeo = rows => run({ source: 'edgetx-csv', rows })
+
+  it('losses at the envelope edge → range_boundary', () => {
+    const d = runGeo(geoRows((t, dist) => dist > 1900 && t < 210 && Math.floor(t) % 20 < 1))
+    const f = find(d, 'R2')
+    expect(f).toBeTruthy()
+    expect(f.evidence.pattern).toBe('range_boundary')
+    expect(f.evidence.max_slant_m).toBeGreaterThan(1900)
+  })
+
+  it('losses close to home while the flight went far → close_in', () => {
+    const d = runGeo(geoRows((t, dist) => dist < 260 && t > 350 && Math.floor(t) % 10 < 1))
+    const f = find(d, 'R2')
+    expect(f).toBeTruthy()
+    expect(f.evidence.pattern).toBe('close_in')
+  })
+
+  it('slant is a true hypotenuse: altitude counts', () => {
+    const rows = geoRows(() => false).map(r => ({ ...r, 'Alt(m)': 1500 }))
+    rows.forEach(r => { if (r._tSec > 390) r['RQly(%)'] = 0 })
+    const f = find(runGeo(rows), 'R2')
+    // near-home horizontally, but 1.5 km UP → slant keeps it out of close_in
+    expect(f.evidence.pattern).not.toBe('close_in')
+    expect(f.evidence.loss_slant_m).toBeGreaterThan(1400)
+  })
+
+  it('no GPS → R2 fires without geometry keys', () => {
+    const rows = geoRows((t) => t > 390).map(({ _lat, _lon, ...r }) => ({ ...r, _lat: null, _lon: null }))
+    const f = find(runGeo(rows), 'R2')
+    expect(f).toBeTruthy()
+    expect(f.evidence.pattern).toBeUndefined()
+  })
+
+  it('R2 spark is the LQ-vs-distance profile (x in metres, not seconds)', () => {
+    const d = runGeo(geoRows((t, dist) => dist > 1900 && t < 210 && Math.floor(t) % 20 < 1))
+    const f = find(d, 'R2')
+    expect(f.spark?.label).toMatch(/vs distance/)
+    const xs = f.spark.points.map(p => p[0])
+    expect(Math.max(...xs)).toBeGreaterThan(1000) // metres scale
+  })
+})
+
+describe('LQ-vs-distance profile: min is the headline', () => {
+  it('a momentary dropout plunges the min series while the average stays polite', async () => {
+    const { lqDistanceProfile } = await import('./detectors.js')
+    const rows = []
+    let i = 0
+    for (let t = 0; t <= 400; t += 0.5) {
+      const distM = 2000 * (t / 400)
+      // healthy 95% everywhere, except three momentary 0% dropouts ~1 km out
+      const dropout = distM > 950 && distM < 1050 && Math.floor(t) % 7 === 0
+      rows.push({ _i: i++, _tSec: t, _lat: distM / 111320, _lon: 0, 'Alt(m)': 0, 'RQly(%)': dropout ? 0 : 95 })
+    }
+    const home = rows.find(r => r._lat != null)
+    const prof = lqDistanceProfile(rows, home, 'RQly(%)')
+    expect(prof).toBeTruthy()
+    const bucketAt = pts => pts.find(([x]) => Math.abs(x - 1000) < 150)
+    expect(bucketAt(prof.min)[1]).toBe(0)              // the problem is visible
+    expect(bucketAt(prof.avg)[1]).toBeGreaterThan(80)  // the average hides it
+  })
+})
+
+describe('L0 link profile + B0 power profile (always-on cards)', () => {
+  const richRows = () => {
+    const rows = []
+    let i = 0
+    for (let t = 0; t <= 300; t += 0.5) {
+      const distM = 1500 * (t / 300)
+      rows.push({
+        _i: i++, _tSec: t,
+        _lat: distM / 111320, _lon: 0, 'Alt(m)': 80,
+        'RQly(%)': 95 - distM / 100,
+        'RxBt(V)': 15.8,
+        // throttle sweeps 10..95% so ≥4 buckets qualify; current rises
+        // with throttle, plus a spike burst near full throttle
+        'Curr(A)': 2 + ((10 + (t % 53) * 1.6) / 100) * 20 + ((t % 53) * 1.6 > 80 ? 8 : 0),
+        _throttle: Math.min(95, 10 + (t % 53) * 1.6),
+      })
+    }
+    return rows
+  }
+  it('L0 fires on a healthy flight with GPS + LQ, with banded profile spark', () => {
+    const d = run({ source: 'edgetx-csv', rows: richRows() })
+    const f = find(d, 'L0')
+    expect(f).toBeTruthy()
+    expect(f.severity).toBe('info')
+    expect(f.spark.bands?.length).toBeGreaterThan(1)
+    expect(f.spark.series?.length).toBe(2)
+  })
+  it('L0 suppressed when R2 carries the same chart', () => {
+    const rows = richRows().map(r => ({ ...r, 'RQly(%)': r._tSec > 290 ? 0 : r['RQly(%)'] }))
+    const d = run({ source: 'edgetx-csv', rows })
+    expect(find(d, 'R2')).toBeTruthy()
+    expect(find(d, 'L0')).toBeFalsy()
+  })
+  it('B0 max-current-vs-throttle finds the peak bucket', () => {
+    const d = run({ source: 'edgetx-csv', rows: richRows() })
+    const f = find(d, 'B0')
+    expect(f).toBeTruthy()
+    expect(f.evidence.at_throttle_pct).toBeGreaterThan(80)
+    expect(f.evidence.max_current_a).toBeGreaterThan(20)
+    expect(f.spark.xUnit).toBe('pct')
+  })
+})
+
+describe('B0 auto-launch immunity', () => {
+  it('ignores full-stick idle before takeoff (iNAV auto-launch)', () => {
+    const rows = []
+    let i = 0
+    // pre-launch: 6s of full stick, motor idle (2A) — must NOT define the curve
+    for (let t = 0; t < 6; t += 0.5) rows.push({ _i: i++, _tSec: t, 'Curr(A)': 2, _throttle: 100, _lat: 0, _lon: 0, 'Alt(m)': 0 })
+    // real flight from takeoff: throttle sweeps, current tracks it honestly
+    for (let t = 6; t <= 200; t += 0.5) {
+      const thr = 20 + ((t * 3) % 76)
+      rows.push({ _i: i++, _tSec: t, 'Curr(A)': thr * 0.3, _throttle: thr, _lat: (t - 6) / 111320, _lon: 0, 'Alt(m)': 60 })
+    }
+    const events = [{ type: 'takeoff', index: 12 }]
+    const d = run({ source: 'edgetx-csv', rows, stats: { ...mkStats(rows), duration: 200 }, events })
+    const f = find(d, 'B0')
+    expect(f).toBeTruthy()
+    // full bucket should reflect real full-stick flight (~28A), not the 2A idle
+    expect(f.evidence.full_throttle_current_a).toBeGreaterThan(20)
   })
 })
