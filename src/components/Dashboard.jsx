@@ -8,7 +8,7 @@ import DebriefPanel from './DebriefPanel'
 import { reportDebriefErrors } from '../utils/sentry'
 import { SEVERITY_RANK } from '../debrief/detectors.js'
 import FullscreenButton from './FullscreenButton'
-import { track } from '../utils/analytics'
+import { track, usageBeacon } from '../utils/analytics'
 
 // FlightSummaryModal is now rendered at the App level so it can be
 // shown during async blackbox parsing (before the log object exists)
@@ -184,6 +184,8 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
       event_count: events?.length ?? 0,
     })
     track('debrief_shown', { any_warning: !!log.debrief && !log.debrief.clean })
+    usageBeacon('log_summary', log.hasGPS ? 'gps' : 'nogps')
+    if (log.debrief) usageBeacon('debrief_shown', log.debrief.clean ? 'clean' : 'warning')
     if (log.debrief?.errors?.length) reportDebriefErrors(log.debrief.errors)
   }, [log.filename]) // eslint-disable-line react-hooks/exhaustive-deps
 

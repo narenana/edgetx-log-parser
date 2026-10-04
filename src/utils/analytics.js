@@ -164,6 +164,32 @@ export function track(eventName, params) {
   }
 }
 
+/**
+ * First-party anonymous usage counter. Fires a fire-and-forget beacon
+ * to the narenana Worker's /api/usage, which tallies it in D1. This is
+ * NOT GA: it sends only a known event name + a known dimension value
+ * (format, reason bucket) — no cookies, no client id, no IP stored, no
+ * filename, no log content. Because it carries nothing personal it runs
+ * REGARDLESS of GA consent, which is the whole point: the counts are
+ * complete, not undercounted by consent declines, and real-time. The
+ * log itself never leaves the machine — only "a blackbox log loaded".
+ *
+ * Web build only (desktop has no server); silently no-ops if the beacon
+ * API is unavailable.
+ */
+const USAGE_ENDPOINT = import.meta.env.VITE_USAGE_API || 'https://www.narenana.com/api/usage'
+export function usageBeacon(event, dim = '') {
+  if (!IS_WEB) return
+  try {
+    const body = JSON.stringify({ e: event, dim })
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(USAGE_ENDPOINT, new Blob([body], { type: 'text/plain' }))
+    } else {
+      fetch(USAGE_ENDPOINT, { method: 'POST', body, keepalive: true, headers: { 'content-type': 'text/plain' } }).catch(() => {})
+    }
+  } catch { /* never let telemetry break the app */ }
+}
+
 // Backwards-compatible alias — used to be the single init entry point.
 // Kept so existing call sites compile while we transition. New code
 // should call bootGaDegraded() from main.jsx and rely on setConsent.

@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useLayoutEffect, useRef, lazy, Suspen
 import { parseEdgeTXLog } from './utils/parseLog'
 import { parseBlackboxBuffer, looksLikeBlackbox } from './utils/parseBlackbox'
 import { loadLogFromUrl } from './utils/loadLogFromUrl'
-import { initAnalytics, getConsent, track } from './utils/analytics'
+import { initAnalytics, getConsent, track, usageBeacon } from './utils/analytics'
 import ConsentBanner from './components/ConsentBanner'
 import ThemeToggle from './components/ThemeToggle'
 import FlightSummaryModal from './components/FlightSummaryModal'
@@ -101,6 +101,16 @@ function readInitialTheme() {
     if (saved === 'light' || saved === 'dark') return saved
   } catch { /* private mode etc. */ }
   return 'light'
+}
+
+// Map a parse error to a coarse, non-identifying reason bucket for the
+// first-party usage counter (never the raw message — it can embed text).
+function failReasonBucket(e) {
+  const m = String(e?.message || e).toLowerCase()
+  if (m.includes('header') || m.includes('truncated') || m.includes('unsupported firmware')) return 'no_header'
+  if (m.includes('empty') || m.includes('no main frames') || m.includes('no data')) return 'empty'
+  if (m.includes('corrupt')) return 'corrupt'
+  return 'other'
 }
 
 export default function App() {
@@ -205,6 +215,7 @@ export default function App() {
             },
           )
           track('log_loaded', { source: 'file', format: 'blackbox' })
+          usageBeacon('log_loaded', 'blackbox')
         } else if (looksBinBlackbox) {
           // Extension says blackbox but the magic header is missing — do
           // NOT fall through to the CSV parser on binary bytes (which
@@ -214,6 +225,7 @@ export default function App() {
           // Text decoding only on the CSV path — blackbox is binary.
           const text = new TextDecoder('utf-8').decode(u8)
           log = parseEdgeTXLog(text, file.name)
+          usageBeacon('log_loaded', 'edgetx-csv')
         }
         results.push(log)
       } catch (e) {
@@ -223,6 +235,7 @@ export default function App() {
           ext: (file.name.split('.').pop() || '').toLowerCase().slice(0, 8),
           message: String(e?.message || e).slice(0, 120),
         })
+        usageBeacon('parse_failed', failReasonBucket(e))
         setError(`Failed to parse ${file.name}: ${e.message}`)
       } finally {
         setParsing(null)
@@ -230,6 +243,7 @@ export default function App() {
     }
     if (!anyMatched && files.length) {
       track('parse_failed', { reason: 'unsupported_type' })
+      usageBeacon('parse_failed', 'unsupported_type')
       setError('Unsupported file type. Drop an EdgeTX .csv or an iNAV / Betaflight blackbox (.bbl, .bfl, .txt).')
     }
     if (results.length) {
@@ -250,6 +264,7 @@ export default function App() {
     try {
       const log = await loadLogFromUrl(sample.url, { displayName: sample.displayName })
       track('log_loaded', { source: 'sample', sample_type: kind })
+      usageBeacon('log_loaded', 'sample')
       appendLog(log)
     } catch (e) {
       setError(`Failed to load ${kind} sample: ${e.message}`)
