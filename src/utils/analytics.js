@@ -178,8 +178,16 @@ export function track(eventName, params) {
  * API is unavailable.
  */
 const USAGE_ENDPOINT = import.meta.env.VITE_USAGE_API || 'https://www.narenana.com/api/usage'
+// Dedupe identical beacons fired within a short window — a React effect
+// re-run or an unload-timing replay must not double-count. Legitimate
+// repeats (loading another log) are seconds apart and still counted.
+const _beaconSeen = new Map()
 export function usageBeacon(event, dim = '') {
   if (!IS_WEB) return
+  const key = event + '\u0000' + dim
+  const now = Date.now()
+  if (now - (_beaconSeen.get(key) || 0) < 3000) return
+  _beaconSeen.set(key, now)
   try {
     const body = JSON.stringify({ e: event, dim })
     if (navigator.sendBeacon) {
