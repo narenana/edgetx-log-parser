@@ -45,8 +45,27 @@ const IS_WEB = import.meta.env.VITE_BUILD_TARGET === 'web'
 let initialized = false
 let consentGranted = false
 
+/**
+ * Never report from local dev builds or automated/headless browsers.
+ * A local production-mode build (e.g. a CI / Playwright run on
+ * localhost) carries the real DSN and was flooding prod Sentry with
+ * headless-WebGL failures and test noise (release=local, 0 users). Real
+ * users are neither on a localhost host nor flagged navigator.webdriver,
+ * so this keeps the prod project clean without losing any real signal.
+ */
+function isLocalOrAutomated() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.webdriver) return true
+    const h = (typeof location !== 'undefined' && location.hostname) || ''
+    return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' ||
+      h.endsWith('.local') || h.endsWith('.localhost') || h.endsWith('.test')
+  } catch {
+    return false
+  }
+}
+
 export function isSentryAvailable() {
-  return IS_WEB && !!DSN
+  return IS_WEB && !!DSN && !isLocalOrAutomated()
 }
 
 /**
