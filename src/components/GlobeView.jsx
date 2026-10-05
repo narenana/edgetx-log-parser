@@ -524,13 +524,25 @@ export default function GlobeView({
     viewer.scene.skyAtmosphere.show = true
     viewer.scene.globe.showGroundAtmosphere = true
 
-    // Sun-based terrain shading — gives the 3D terrain real relief instead
-    // of a flat-lit drape. Pin the clock to a fixed mid-afternoon instant so
-    // the light stays warm and consistent (default would track real "now").
-    // The aircraft/path use time-independent CallbackProperties, so freezing
-    // the clock here only fixes the sun angle — it doesn't touch playback.
+    // Sun-based shading + the sun ANGLE. Pin the clock so the light stays warm
+    // and consistent (the default would track the real "now"). The aircraft and
+    // path use time-independent CallbackProperties, so freezing the clock only
+    // fixes the sun — it doesn't touch playback.
+    //
+    // Critically: place the sun at ~local mid-afternoon at the FLIGHT'S
+    // longitude, not a fixed UTC instant. The old fixed 21:30Z was afternoon
+    // only in the Americas; for an Asian / Indian flight that's ~3 a.m. local,
+    // so the atmosphere rendered a black NIGHT sky. Local solar time ≈
+    // UTC + lon/15, so for local ~15:00 we want UTC = 15 - lon/15.
     viewer.scene.globe.enableLighting = true
-    viewer.clock.currentTime = Cesium.JulianDate.fromIso8601('2024-09-15T21:30:00Z')
+    const sunLon = gpsRows.length ? gpsRows[0]._lon : 0
+    let sunUtcH = (15 - sunLon / 15) % 24
+    if (sunUtcH < 0) sunUtcH += 24
+    const sunHH = Math.floor(sunUtcH)
+    const sunMM = Math.floor((sunUtcH - sunHH) * 60)
+    viewer.clock.currentTime = Cesium.JulianDate.fromIso8601(
+      `2024-09-15T${String(sunHH).padStart(2, '0')}:${String(sunMM).padStart(2, '0')}:00Z`,
+    )
 
     // Disable inertia — zoom/pan/orbit should stop the instant the user releases input
     const ssc = viewer.scene.screenSpaceCameraController
@@ -542,10 +554,21 @@ export default function GlobeView({
     Cesium.ArcGisMapServerImageryProvider
       .fromUrl('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer')
       .then(p => viewer.imageryLayers.addImageryProvider(p))
-      .catch(() =>
-        Cesium.OpenStreetMapImageryProvider.fromUrl('https://tile.openstreetmap.org/')
-          .then(p => viewer.imageryLayers.addImageryProvider(p))
-      )
+      .catch((err) => {
+        // OpenStreetMapImageryProvider has NO .fromUrl() — it's a plain
+        // constructor. The old .fromUrl() call threw a TypeError, so whenever
+        // ArcGIS imagery failed (blocked origin, outage, rate limit) the globe
+        // was left with no imagery at all — a black sphere. Construct it
+        // directly so the fallback actually works.
+        console.warn('ArcGIS imagery failed, falling back to OSM:', err?.message)
+        try {
+          viewer.imageryLayers.addImageryProvider(
+            new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }),
+          )
+        } catch (e2) {
+          console.error('OSM imagery fallback failed:', e2?.message)
+        }
+      })
 
     // ── Flight path: FM-coloured past + faded gray future ────────────────
     // Thin (1 px) polyline rendered at the SMOOTHED vertex density so
