@@ -1,50 +1,62 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildPayload } from '../debrief/payload.js'
 import {
-  getNarrationConsent, setNarrationConsent,
+  setNarrationConsent,
   requestNarration, renderTurnstile,
 } from '../debrief/narrate.js'
-import { track } from '../utils/analytics'
+import { track, usageBeacon } from '../utils/analytics'
 
 /**
- * "Explain this flight" — the D2 AI narration tier inside the Debrief
- * panel. Renders nothing at all in desktop builds (tree-shaken via the
- * build-target guard in DebriefPanel) and self-disables offline. The
- * deterministic cards above never depend on this.
+ * "AI Flight Analysis" — the D2 AI narration tier, surfaced as a
+ * prominent hero card at the TOP of the Debrief panel.
+ *
+ * Flow (design rev 4, 2026-10-05): one click goes STRAIGHT to the
+ * summary — no interstitial payload-JSON wall (that read as confusing).
+ * What's sent is disclosed in one plain-English line, with the exact
+ * JSON available on demand behind a "what's sent?" toggle. Turnstile (if
+ * ever enabled server-side) renders inline only when the server asks for
+ * it. Renders nothing in desktop builds (tree-shaken via the build-target
+ * guard in DebriefPanel) and self-disables offline. The deterministic
+ * cards below never depend on this.
  */
 export default function NarrationSection({ debrief }) {
   const payload = useMemo(() => buildPayload(debrief), [debrief])
   const payloadPretty = useMemo(() => JSON.stringify(payload, null, 2), [payload])
-  const [sheet, setSheet] = useState(false)        // consent / payload sheet
+  const [showJson, setShowJson] = useState(false)  // transparency toggle (opt-in)
   const [challenge, setChallenge] = useState(null) // sitekey while Turnstile pending
   const [narration, setNarration] = useState('')
   const [state, setState] = useState('idle')       // idle | busy | done | resting
   const tsRef = useRef(null)
 
   // The Turnstile widget can only mount AFTER React has committed the
-  // sheet (the ref doesn't exist in the same tick the challenge state
+  // container (the ref doesn't exist in the same tick the challenge state
   // is set — rendering synchronously raced it and nothing appeared).
   useEffect(() => {
-    if (challenge && sheet && tsRef.current) {
+    if (challenge && tsRef.current) {
       tsRef.current.innerHTML = ''
       renderTurnstile(tsRef.current, challenge, tok => run(tok))
     }
-  }, [challenge, sheet]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [challenge]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const online = typeof navigator === 'undefined' || navigator.onLine !== false
-  if (!online && state === 'idle') return null
 
   const run = async turnstile => {
     setState('busy')
+    setNarration('')
     setChallenge(null)
+    // Using the feature is the consent — remember it so nothing re-prompts.
+    setNarrationConsent(true)
     track('narration_requested')
+    usageBeacon('narration_requested')
     const res = await requestNarration(payload, { turnstile, onText: setNarration })
     if (res.ok) {
       setState('done')
       track('narration_completed', { cached: !!res.usage?.cached })
+      usageBeacon('narration_completed', res.usage?.cached ? 'cached' : 'fresh')
     } else if (res.reason === 'challenge') {
+      // Server wants a bot-check (only when Turnstile is configured).
+      // Render it inline; the solve callback re-runs run(token).
       setChallenge(res.sitekey || null)
-      setSheet(true)
       setState('idle')
     } else {
       setState('resting')
@@ -52,79 +64,78 @@ export default function NarrationSection({ debrief }) {
     }
   }
 
-  const onExplain = () => {
-    if (!getNarrationConsent()) { setSheet(true); return }
-    run()
-  }
-  const accept = () => {
-    setNarrationConsent(true)
-    setSheet(false)
-    run()
-  }
+  // Offline with nothing to show: hide the whole card rather than offer a
+  // button that can only fail.
+  if (!online && state === 'idle') return null
+
+  const cta = debrief.clean ? 'Summarize this flight' : 'Explain what went wrong'
+  const pitch = debrief.clean
+    ? 'Turn this flight’s numbers into a plain-English summary you can share.'
+    : 'Get a plain-English breakdown of what the data shows — and why.'
 
   return (
-    <div className="db-narrate">
-      {state === 'idle' && (
-        <div className="db-narrate-cta">
-          <button
-            type="button"
-            className={debrief.clean ? 'db-narrate-link' : 'db-narrate-btn'}
-            onClick={onExplain}
-          >
-            {debrief.clean ? 'Write a plain-English summary' : '✦ Explain this flight'}
-          </button>
-          <button type="button" className="db-narrate-view" onClick={() => setSheet(s => !s)}>
-            view what will be sent
-          </button>
-        </div>
-      )}
-      {state === 'busy' && <div className="db-narrate-busy">Writing the debrief…</div>}
-      {(state === 'busy' || state === 'done') && narration && (
-        <div className="db-narration">
-          <div className="db-narration-label">AI NARRATION — generated from the findings above</div>
-          <div className="db-narration-text">{narration}</div>
-        </div>
-      )}
-      {state === 'resting' && (
-        <div className="db-narrate-busy">
-          AI narration is resting (offline, busy, or over today's free budget) — the findings above are the full analysis.
-        </div>
-      )}
+    <div className="db-ai">
+      <div className="db-ai-head">
+        <span className="db-ai-spark" aria-hidden="true">✦</span>
+        <span className="db-ai-title">AI Flight Analysis</span>
+        <span className="db-ai-tag">beta</span>
+      </div>
 
-      {sheet && (
-        <div className="db-consent">
-          <p className="db-consent-copy">
-            To write the narration, this exact summary — <b>never your log file</b> — is sent
-            to narenana's server (Cloudflare Workers AI). No GPS positions, no file, no
-            filename — just the numbers below. Like any web request, the server sees your IP;
-            generated narrations are cached for 30 days keyed by these numbers.
-          </p>
-          <pre className="db-consent-json">{payloadPretty}</pre>
-          {challenge != null && (
-            <div className="db-consent-ts">
+      {state === 'idle' && (
+        <div className="db-ai-idle">
+          <p className="db-ai-pitch">{pitch}</p>
+
+          {challenge == null ? (
+            <button type="button" className="db-ai-cta" onClick={() => run()}>
+              <span className="db-ai-cta-spark" aria-hidden="true">✦</span>
+              {cta}
+            </button>
+          ) : (
+            <div className="db-ai-ts">
               <span>Quick bot check — first time only:</span>
               <div ref={tsRef} />
             </div>
           )}
-          {challenge == null && (
-            <div className="db-consent-btns">
-              <button type="button" className="db-narrate-btn" onClick={accept}>
-                Send &amp; remember on this device
+
+          <p className="db-ai-note">
+            Sends an anonymous summary of these numbers — <b>never your log file</b>,
+            no GPS, no filename — to narenana’s AI (Cloudflare Workers AI).{' '}
+            <button type="button" className="db-ai-what" onClick={() => setShowJson(s => !s)}>
+              {showJson ? 'hide' : 'what’s sent?'}
+            </button>
+          </p>
+          {showJson && <pre className="db-ai-json">{payloadPretty}</pre>}
+        </div>
+      )}
+
+      {state === 'busy' && !narration && (
+        <div className="db-ai-loading">
+          <span className="db-ai-dots" aria-hidden="true"><i /><i /><i /></span>
+          Reading your flight data…
+        </div>
+      )}
+
+      {(state === 'busy' || state === 'done') && narration && (
+        <div className="db-ai-output">
+          <div className="db-ai-text">
+            {narration}
+            {state === 'busy' && <span className="db-ai-caret" aria-hidden="true" />}
+          </div>
+          {state === 'done' && (
+            <div className="db-ai-outfoot">
+              <span>✦ Written by AI from the findings below</span>
+              <button type="button" className="db-ai-what" onClick={() => run()}>
+                regenerate
               </button>
-              <button type="button" className="db-narrate-link" onClick={() => setSheet(false)}>
-                Not now
-              </button>
-              {getNarrationConsent() && (
-                <button
-                  type="button"
-                  className="db-narrate-view"
-                  onClick={() => { setNarrationConsent(false); setSheet(false) }}
-                >
-                  Forget my consent
-                </button>
-              )}
             </div>
           )}
+        </div>
+      )}
+
+      {state === 'resting' && (
+        <div className="db-ai-resting">
+          AI analysis is resting (offline, busy, or over today’s free budget).
+          The findings below are the full breakdown.
         </div>
       )}
     </div>

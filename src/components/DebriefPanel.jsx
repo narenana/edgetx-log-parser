@@ -93,6 +93,7 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
   if (debrief.clean && !forceOpen && !selfOpen) {
     return (
       <section className="debrief-panel" aria-label="Flight Debrief">
+        {NarrationSection && <NarrationSection debrief={debrief} />}
         <button type="button" className="db-strip" onClick={() => { setSelfOpen(true); track('debrief_expanded') }}>
           <span className="db-title">FLIGHT DEBRIEF</span>
           <span className="db-chip ok">✓ Clean flight</span>
@@ -124,6 +125,8 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
             onClick={() => { setSelfOpen(false); if (onClose) onClose() }} aria-label="Collapse debrief">✕</button>
         )}
       </div>
+
+      {NarrationSection && <NarrationSection debrief={debrief} />}
 
       <ul className="db-list">
         {findings.map(f => {
@@ -193,8 +196,6 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
           )
         })}
       </ul>
-
-      {NarrationSection && <NarrationSection debrief={debrief} />}
 
       <div className="db-foot">
         <span>
