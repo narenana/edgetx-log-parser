@@ -383,6 +383,17 @@ export default function GlobeView({
   // sits on top of the 3D terrain instead of at sea level (underground).
   // Starts 0 (flat-ellipsoid equivalent); set once terrain sampling resolves.
   const baseElevRef = useRef(0)
+  // Absolute ellipsoid altitude for a telemetry row = launch-terrain elevation
+  // (baseElevRef — 0 until terrain sampling resolves, then updated in place) +
+  // the row's home-relative / AGL altitude. Signed, NOT clamped to >=0: with 3D
+  // terrain a flight can legitimately drop below its launch elevation (diving
+  // off a rim into a canyon) and the aircraft should follow it down.
+  // Defined at COMPONENT scope — not inside the scene-building effect — so the
+  // camera-mode handlers (toggleAuto / ensureManual) can share it too; they
+  // previously referenced it out of the effect's scope and threw
+  // "absAlt is not defined" on every camera auto/manual toggle on a GPS flight.
+  const absAlt = (row) =>
+    baseElevRef.current + (Number.isFinite(row['Alt(m)']) ? row['Alt(m)'] : 0)
   const autoRef       = useRef(true)
   const glbUrlRef     = useRef(null)
   const [autoMode, setAutoMode] = useState(true)
@@ -553,14 +564,9 @@ export default function GlobeView({
     // segment; the (n-1)*steps+1 length invariant holds either way, so
     // every downstream index mapping is untouched.
     const SMOOTH_STEPS = gpsCadence.sparse ? 24 : 8
-    // Absolute ellipsoid altitude for a row = launch-terrain elevation +
-    // the row's AGL / home-relative altitude. baseElevRef is 0 until terrain
-    // sampling resolves, then pathPositions is recomputed in place.
-    // Altitude is honoured signed (NOT clamped to ≥0): with 3D terrain a
-    // flight can legitimately drop BELOW its launch elevation — e.g. diving
-    // off a rim into a canyon — and the aircraft should follow it down.
-    const absAlt = (row) =>
-      baseElevRef.current + (Number.isFinite(row['Alt(m)']) ? row['Alt(m)'] : 0)
+    // absAlt (absolute ellipsoid altitude per row) is defined at COMPONENT
+    // scope near baseElevRef so the camera-mode handlers can share it; it
+    // reads baseElevRef.current at call time, so behaviour here is unchanged.
     const computePathPositions = () =>
       gpsCadence.sparse
         ? hermitePathGeodetic(pathRows, SMOOTH_STEPS, absAlt)
