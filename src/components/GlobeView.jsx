@@ -864,14 +864,13 @@ export default function GlobeView({
     addDot(gpsRows[gpsRows.length - 1], '#f7768e')
 
     // ── 3D aircraft model ──────────────────────────────────────────────────────
-    // Prefer the bundled desert-camo UAV wing (public/models/wing.glb —
-    // the same proven GLB the fpvsim project flies: one clean camo
-    // material, ~0.28 MB. Its nose already sits on glTF -Z with +Y up
-    // and wings on X, so the existing HPR math applies unchanged; we
-    // only recentre it on the origin and scale the wingspan to 10 m.
-    // Falls back to the procedural GLB if the file is missing (e.g.
-    // desktop builds pre-asset-sync).
-    const EXTERNAL_MODEL_URL = './models/wing.glb'
+    // Fly a proper GA aircraft (public/models/plane.glb — the Cessna-style
+    // single from the Nanawing asset library: one PBR material + textures,
+    // ~0.57 MB, ~11 m span). Same axis convention as the old UAV wing
+    // (fuselage on Z, wings on X, +Y up), so the HPR math below applies.
+    // Falls back to the procedural GLB if the file is missing (e.g. desktop
+    // builds pre-asset-sync).
+    const EXTERNAL_MODEL_URL = './models/plane.glb'
     let cancelled = false
     let aircraftEntity = null
 
@@ -988,13 +987,12 @@ export default function GlobeView({
       // spike to 1.0 every 1.1 s. Port and starboard are 250 ms out of
       // phase so the flashes alternate.
       //
-      // Offset axes follow CESIUM's model frame (not glTF):
-      //   +X = forward (Cesium maps glTF +Z forward → its own +X)
-      //   +Y = right   (Cesium maps glTF +X right   → its own +Y)
-      //   +Z = up      (Cesium maps glTF +Y up      → its own +Z)
-      // glTF wingtip (±4.85, 0.30, -0.4) → Cesium (-0.4, ±4.85, 0.30).
-      const LEFT_WT  = new Cesium.Cartesian3(-0.4, -4.85, 0.30)
-      const RIGHT_WT = new Cesium.Cartesian3(-0.4,  4.85, 0.30)
+      // Offset axes follow CESIUM's model frame (not glTF): +X = forward,
+      // +Y = right, +Z = up. The GA plane spans ±5.5 m (X in glTF → Y in
+      // Cesium); its high wing sits ~1.3 m up (Y in glTF → Z in Cesium),
+      // roughly at centre fore/aft. (Tune against the model in preview.)
+      const LEFT_WT  = new Cesium.Cartesian3(-0.3, -5.5, 1.3)
+      const RIGHT_WT = new Cesium.Cartesian3(-0.3,  5.5, 1.3)
       // Direct refs to the aircraft pose state — strobe positions read
       // these instead of chaining through ac.position.getValue, which
       // had a sub-frame timing skew that drifted the strobes off the
