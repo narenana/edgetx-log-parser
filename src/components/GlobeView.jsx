@@ -988,11 +988,12 @@ export default function GlobeView({
       // phase so the flashes alternate.
       //
       // Offset axes follow CESIUM's model frame (not glTF): +X = forward,
-      // +Y = right, +Z = up. The GA plane spans ±5.5 m (X in glTF → Y in
-      // Cesium); its high wing sits ~1.3 m up (Y in glTF → Z in Cesium),
-      // roughly at centre fore/aft. (Tune against the model in preview.)
-      const LEFT_WT  = new Cesium.Cartesian3(-0.3, -5.5, 1.3)
-      const RIGHT_WT = new Cesium.Cartesian3(-0.3,  5.5, 1.3)
+      // +Y = right, +Z = up, with Cesium(x,y,z) = glTF(z,x,y). The plane's
+      // wingtip verts (measured from the GLB mesh) sit at glTF (±5.5, 2.19,
+      // 0.33) → Cesium (0.33, ±5.5, 2.19). The 2.19 up-offset is the key
+      // bit: it's a high-wing Cessna, so the lights ride near the top.
+      const LEFT_WT  = new Cesium.Cartesian3(0.33, -5.5, 2.19)
+      const RIGHT_WT = new Cesium.Cartesian3(0.33,  5.5, 2.19)
       // Direct refs to the aircraft pose state — strobe positions read
       // these instead of chaining through ac.position.getValue, which
       // had a sub-frame timing skew that drifted the strobes off the
