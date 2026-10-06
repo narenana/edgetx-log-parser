@@ -46,6 +46,10 @@ export const DEFAULT_CHASE_M = 300
 const TAIL_BASE_M = 150
 const ORBIT_BASE_M = 600
 const TOPDOWN_BASE_M = 800
+// Cinematic sits a touch further back and lower-angle than CHASE for a
+// film-like frame; the trailing azimuth lag (applied in GlobeView) does
+// the rest of the work.
+const CINEMATIC_BASE_M = 450
 
 const ORBIT_SWEEP_AMPL_DEG = 60
 const ORBIT_SWEEP_PERIOD_S = 12
@@ -99,6 +103,27 @@ export const CAMERA_VIEWS = {
         rangeM: ORBIT_BASE_M * userZoomFactor(smoothDistM),
       }
     },
+  },
+
+  // Loose trailing chase — the "replay" camera. compute() returns the
+  // IDEAL pose (directly behind the live nose, gentle downward tilt, a bit
+  // further back than CHASE). The `trailing` flag tells GlobeView to ease
+  // the AZIMUTH toward this heading with a frame-rate-independent lag, so
+  // the camera swings in behind the aircraft on turns instead of snapping.
+  // Only the azimuth trails — the lookAt target stays locked 1:1 to the
+  // aircraft and pitch/range are constants, so there is no target-position
+  // lerp and none of the speedFactor-amplified translation that caused the
+  // historical chase-cam lurch.
+  cinematic: {
+    name: 'CINEMATIC',
+    description: 'Loose trailing chase — swings in behind on turns with a gentle lag. Best for replay viewing.',
+    trailing: true,
+    compute: ({ aircraftHdgDeg, smoothDistM }) => ({
+      headingRad: ((aircraftHdgDeg ?? 0) + 180) * D2R,
+      pitchRad: -13 * D2R,
+      rangeM: CINEMATIC_BASE_M * userZoomFactor(smoothDistM),
+      trailing: true,
+    }),
   },
 
   // Bird's-eye view at a fixed offset above the aircraft. North-up. We

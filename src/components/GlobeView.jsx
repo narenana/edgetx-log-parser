@@ -19,6 +19,39 @@ const FM_COLORS = {
 }
 function fmColor(m) { return FM_COLORS[m] || '#7aa2f7' }
 
+// Interpolate between two angles (radians) along the shortest arc, so a
+// camera azimuth easing from 350° to 10° crosses 0° rather than unwinding
+// the long way round. Used by the cinematic trailing cam and the eased
+// camera-view transitions.
+function angLerp(a, b, t) {
+  let d = b - a
+  d = Math.atan2(Math.sin(d), Math.cos(d)) // wrap to (-π, π]
+  return a + d * t
+}
+// Smooth 0→1 ease for camera-view transitions (easeInOutCubic).
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+}
+// Duration of the blend when the user switches camera views.
+const CAM_TRANSITION_MS = 500
+// Time constant for the cinematic trailing-azimuth ease (seconds).
+const CINE_TAU_S = 0.55
+
+// The ga_single_c GLB (public/models/plane.glb) is authored nose-toward
+// +Z in glTF — i.e. +X in the Cesium model frame (Cesium(x,y,z)=glTF(z,x,y)).
+// Verified from the mesh: the −Z end carries the tall vertical fin + wide
+// horizontal stabiliser (the tail), the +Z end is the narrow cowl (the nose).
+// But the heading/pitch/roll math below was written for the legacy hand-built
+// wing whose nose was −Z (−X in Cesium model frame), so applied unchanged it
+// renders the Cessna 180° backwards. Post-multiplying every pose quaternion
+// by a 180° spin about the model's OWN up axis (Cesium model +Z) turns the
+// mesh around to face forward WITHOUT disturbing the attitude the HPR encodes
+// — pitch/roll stay correct because up stays up. Applied identically to the
+// aircraft model and the wingtip strobes so the lights stay glued to the tips.
+const MODEL_NOSE_FIX = Cesium.Quaternion.fromAxisAngle(
+  Cesium.Cartesian3.UNIT_Z, Math.PI,
+)
+
 // Respect the OS "reduce motion" preference: when set, the wingtip nav
 // lights are held at a steady baseline instead of strobing (WCAG 2.3.3).
 // Evaluated once at module load — good enough for this purpose.
@@ -101,6 +134,9 @@ function addWingtipStrobe(viewer, poseRefs, localOffset, color, phaseMs) {
       Cesium.Transforms.headingPitchRollQuaternion(
         pos, reusableHpr, undefined, undefined, reusableQuat,
       )
+      // Same nose-fix spin as the model entity, so the strobe offset is
+      // transformed by the identical orientation and stays on the wingtip.
+      Cesium.Quaternion.multiply(reusableQuat, MODEL_NOSE_FIX, reusableQuat)
       Cesium.Matrix3.fromQuaternion(reusableQuat, reusableMatrix)
       Cesium.Matrix3.multiplyByVector(reusableMatrix, localOffset, reusableDelta)
       return Cesium.Cartesian3.add(pos, reusableDelta, result || reusableResult)
@@ -404,6 +440,11 @@ export default function GlobeView({
   const [cameraView, setCameraView] = useState(() => parseCameraViewFromUrl() ?? 'chase')
   const cameraViewRef = useRef(cameraView)
   useEffect(() => { cameraViewRef.current = cameraView }, [cameraView])
+  // While > performance.now(), the vt-watcher rAF keeps requesting Cesium
+  // renders even when playback is paused, so a camera-view transition blend
+  // (and the cinematic trailing ease into it) animates to completion instead
+  // of freezing on the first painted frame. Set by the view-picker buttons.
+  const camAnimUntilRef = useRef(0)
   // FPS overlay, opt-in via `?fps=1`. Not shown unless explicitly enabled.
   const fpsEnabled = useMemo(() => {
     if (typeof window === 'undefined') return false
@@ -947,19 +988,24 @@ export default function GlobeView({
             Cesium.Cartesian3.fromDegrees(
               gpsRows[0]._lon, gpsRows[0]._lat, 0, undefined, _acFallbackPos,
             )
-          // Heading: compass-CW-from-north → +π/2 offset to compensate
-          // for our glTF nose pointing -Z (becomes -X in Cesium model
-          // frame). Pitch sign is negated (same nose-axis remap flips
-          // perceived pitch direction). Roll is positive=right-wing-down
-          // by aerospace convention; HPR's roll is the same direction
-          // when nose is at default +X, but with our +π/2 heading
-          // offset the roll axis flips → negate.
+          // Heading: compass-CW-from-north → +π/2 offset. Pitch/roll signs
+          // negated — these were all tuned for the legacy wing (nose -X in
+          // the Cesium model frame). The Cessna GLB is nose +X, so we spin
+          // the mesh 180° about its up axis via MODEL_NOSE_FIX (see the
+          // constant's note) to face it forward; that correction leaves the
+          // HPR attitude untouched, so these three lines stay as-is.
           _acHpr.heading = aircraftHdgRef.current * D2R + Math.PI / 2
           _acHpr.pitch = -aircraftPitchRef.current * D2R
           _acHpr.roll = -aircraftRollRef.current * D2R
-          return Cesium.Transforms.headingPitchRollQuaternion(
+          // Capture the return value, not `result`: when getValue is called
+          // without a result scratch (picking, __viewerState, __noseCheck),
+          // Cesium returns a fresh quaternion and leaves `result` undefined.
+          const q = Cesium.Transforms.headingPitchRollQuaternion(
             pos, _acHpr, undefined, undefined, result,
           )
+          // v_world = Q_hpr · (nose-fix · v_local): post-multiply so the
+          // 180° spin happens in the mesh's own frame.
+          return Cesium.Quaternion.multiply(q, MODEL_NOSE_FIX, q)
         }, false),
         model: {
           uri: url,
@@ -987,13 +1033,16 @@ export default function GlobeView({
       // spike to 1.0 every 1.1 s. Port and starboard are 250 ms out of
       // phase so the flashes alternate.
       //
-      // Offset axes follow CESIUM's model frame (not glTF): +X = forward,
-      // +Y = right, +Z = up, with Cesium(x,y,z) = glTF(z,x,y). The plane's
-      // wingtip verts (measured from the GLB mesh) sit at glTF (±5.5, 2.19,
-      // 0.33) → Cesium (0.33, ±5.5, 2.19). The 2.19 up-offset is the key
-      // bit: it's a high-wing Cessna, so the lights ride near the top.
-      const LEFT_WT  = new Cesium.Cartesian3(0.33, -5.5, 2.19)
-      const RIGHT_WT = new Cesium.Cartesian3(0.33,  5.5, 2.19)
+      // Offsets are in CESIUM's model frame, Cesium(x,y,z) = glTF(z,x,y), and
+      // are transformed by the SAME nose-fixed orientation as the model (so
+      // they ride the actual wingtips). In that corrected frame the nose is
+      // forward and up is +Z; by the right-hand rule the right/starboard wing
+      // is at −Y and the left/port wing at +Y. The wingtip verts (measured
+      // from the GLB mesh) sit at glTF (±5.5, 2.19, 0.33) → Cesium (0.33,
+      // ±5.5, 2.19); the 2.19 up-offset keeps the lights near the top of the
+      // high wing. Aviation rule: PORT = left = RED, STARBOARD = right = GREEN.
+      const LEFT_WT  = new Cesium.Cartesian3(0.33,  5.5, 2.19) // port  → red
+      const RIGHT_WT = new Cesium.Cartesian3(0.33, -5.5, 2.19) // starboard → green
       // Direct refs to the aircraft pose state — strobe positions read
       // these instead of chaining through ac.position.getValue, which
       // had a sub-frame timing skew that drifted the strobes off the
@@ -1048,7 +1097,15 @@ export default function GlobeView({
     })
 
     // ── Per-frame: trajectory heading + pitch + camera ────────────────────────
-    const smooth = { pos: null, hdg: 0, dist: 500 }
+    const smooth = {
+      pos: null, hdg: 0, dist: 500,
+      // Cinematic trailing-azimuth state (null = re-seed on next cine frame).
+      cineHdg: null,
+      // Eased camera-view transition state.
+      lastView: null,        // view key rendered last frame
+      lastDisplayed: null,   // { h, p, r } actually sent to lookAt last frame
+      trans: null,           // { from:{h,p,r}, startMs } while a blend runs
+    }
     // Reused per-frame scratch buffers for the manual-mode lookAtTransform
     // pattern — avoids allocating Cesium primitives at 60 fps.
     const manualOffsetScratch = new Cesium.Cartesian3()
@@ -1069,6 +1126,7 @@ export default function GlobeView({
           return `unknown view: ${name}. valid: ${Object.keys(CAMERA_VIEWS).join(', ')}`
         }
         setCameraView(next)
+        camAnimUntilRef.current = performance.now() + CAM_TRANSITION_MS + 120
         viewer.scene.requestRender()
         return next
       }
@@ -1375,8 +1433,14 @@ export default function GlobeView({
       // craft stops streaking out of view.
       const realNow = performance.now()
       let speedFactor = 1
+      // Wall-clock seconds since the last painted frame. Captured here
+      // because `smooth.lastReal` is overwritten just below, and the
+      // cinematic trailing-azimuth ease further down needs this frame's
+      // real delta for its frame-rate-independent smoothing.
+      const camDtReal =
+        smooth.lastReal != null ? (realNow - smooth.lastReal) / 1000 : 0
       if (smooth.lastReal != null && smooth.lastVt != null) {
-        const dReal = (realNow - smooth.lastReal) / 1000
+        const dReal = camDtReal
         const dVt = vt - smooth.lastVt
         if (dReal > 0) speedFactor = Math.max(1, Math.abs(dVt) / dReal)
       }
@@ -1400,6 +1464,11 @@ export default function GlobeView({
         if (!smooth.userDistOverride) {
           smooth.dist = targetDist
         }
+        // Re-init (fly-to complete / toggle back to auto): drop any
+        // in-flight view blend and re-seed the cinematic azimuth so the
+        // camera settles cleanly rather than easing from a stale pose.
+        smooth.trans = null
+        smooth.cineHdg = null
       } else if (speedFactor > 200) {
         // Big jump (scrub or initial seek) — teleport rather than chase.
         // Threshold raised from 50 → 200 so normal high-speed playback
@@ -1414,6 +1483,10 @@ export default function GlobeView({
         if (!smooth.userDistOverride) {
           smooth.dist = targetDist
         }
+        // A scrub is a hard cut — cancel any view-transition blend and
+        // re-seed the cinematic azimuth so the camera lands crisply.
+        smooth.trans = null
+        smooth.cineHdg = null
       } else {
         // Camera locks 1:1 to the aircraft pose every frame — no lerping
         // of position, heading, or distance. The historical smoothing was
@@ -1444,7 +1517,8 @@ export default function GlobeView({
       // state machine (heading deadband + dynamic distance) — every
       // other view ignores it and reads the live aircraft state, so
       // they react instantly to turns / dive-and-climb / scrubs.
-      const view = CAMERA_VIEWS[cameraViewRef.current] || CAMERA_VIEWS.chase
+      const curView = cameraViewRef.current
+      const view = CAMERA_VIEWS[curView] || CAMERA_VIEWS.chase
       const camParams = view.compute({
         aircraftHdgDeg: aircraftHdgRef.current,
         altM: alt,
@@ -1453,13 +1527,62 @@ export default function GlobeView({
         smoothHdgDeg: smooth.hdg,
         smoothDistM: smooth.dist,
       })
+
+      // ── Cinematic trailing azimuth ────────────────────────────────────
+      // The CINEMATIC view returns the IDEAL heading (straight behind the
+      // live nose). Rather than snap the camera azimuth there each frame,
+      // ease it with a frame-rate-independent exponential filter so the
+      // camera swings in behind on turns with a gentle lag. Only the
+      // AZIMUTH trails: the lookAt target is still `smooth.pos` (locked 1:1
+      // to the aircraft) and pitch/range are view constants, so a pure
+      // angular ease around a rock-solid target can't reproduce the old
+      // translation lurch. `dtReal` is wall-clock seconds this frame.
+      let wantHeading = camParams.headingRad
+      if (camParams.trailing) {
+        if (smooth.cineHdg == null) {
+          smooth.cineHdg = wantHeading // seed on first cinematic frame
+        } else {
+          const alpha = camDtReal > 0 ? 1 - Math.exp(-camDtReal / CINE_TAU_S) : 1
+          smooth.cineHdg = angLerp(smooth.cineHdg, wantHeading, alpha)
+        }
+        wantHeading = smooth.cineHdg
+      } else {
+        smooth.cineHdg = null // reset so a later cinematic entry re-seeds
+      }
+
+      // ── Eased camera-view transitions ─────────────────────────────────
+      // When the user switches views (CHASE → TOPDOWN, etc.) blend the
+      // heading / pitch / range from whatever we last displayed to the new
+      // view's pose over CAM_TRANSITION_MS instead of hard-snapping. This
+      // eases only the one-off switch — in steady state `disp` equals the
+      // view's own params exactly, so no per-frame lag is introduced into
+      // CHASE/ORBIT/etc. and the flicker fix is untouched.
+      const want = { h: wantHeading, p: camParams.pitchRad, r: camParams.rangeM }
+      if (
+        smooth.lastView != null &&
+        smooth.lastView !== curView &&
+        smooth.lastDisplayed
+      ) {
+        smooth.trans = { from: { ...smooth.lastDisplayed }, startMs: realNow }
+      }
+      smooth.lastView = curView
+
+      let disp = want
+      if (smooth.trans) {
+        const t = Math.min(1, (realNow - smooth.trans.startMs) / CAM_TRANSITION_MS)
+        const e = easeInOutCubic(t)
+        disp = {
+          h: angLerp(smooth.trans.from.h, want.h, e),
+          p: smooth.trans.from.p + (want.p - smooth.trans.from.p) * e,
+          r: smooth.trans.from.r + (want.r - smooth.trans.from.r) * e,
+        }
+        if (t >= 1) smooth.trans = null
+      }
+      smooth.lastDisplayed = { h: disp.h, p: disp.p, r: disp.r }
+
       viewer.camera.lookAt(
         smooth.pos,
-        new Cesium.HeadingPitchRange(
-          camParams.headingRad,
-          camParams.pitchRad,
-          camParams.rangeM,
-        )
+        new Cesium.HeadingPitchRange(disp.h, disp.p, disp.r)
       )
     })
 
@@ -1734,7 +1857,10 @@ export default function GlobeView({
     let lastVtSeen = null
     const vtWatch = () => {
       const vt = virtualTimeRef?.current
-      if (vt !== lastVtSeen) {
+      // Paint when playback advances vt, OR while a camera-view transition
+      // blend is still animating (camAnimUntilRef) so the ease completes
+      // even when playback is paused.
+      if (vt !== lastVtSeen || performance.now() < camAnimUntilRef.current) {
         viewer.scene.requestRender()
         lastVtSeen = vt
       }
@@ -1932,6 +2058,9 @@ export default function GlobeView({
             className={`cam-btn${cameraView === key ? ' active' : ''}`}
             onClick={() => {
               setCameraView(key)
+              // Keep Cesium painting through the eased transition even if
+              // playback is paused (see camAnimUntilRef / vtWatch).
+              camAnimUntilRef.current = performance.now() + CAM_TRANSITION_MS + 120
               // If user is in MANUAL, route through toggleAuto so the
               // lookAtTransform is properly released and smooth state
               // re-inits — picking a view implies "give me the auto
