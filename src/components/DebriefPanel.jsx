@@ -36,8 +36,15 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
   const [acked, setAcked] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem(ackKey) || '[]')) } catch { return new Set() }
   })
+  // Seed the evidence charts OPEN: any finding carrying a `spark` (the
+  // distance-vs-LQ and throttle-vs-current profiles, plus the time-series
+  // sparks) expands by default, alongside every critical finding. Previously
+  // only criticals auto-opened, so the correlation charts we built were a
+  // click deep inside each info row — the owner kept "losing" them.
   const [openIds, setOpenIds] = useState(() => new Set(
-    (debrief?.findings || []).filter(f => f.severity === 'critical').map(f => f.id),
+    (debrief?.findings || [])
+      .filter(f => f.severity === 'critical' || f.spark)
+      .map(f => f.id),
   ))
   const [copied, setCopied] = useState(false)
 
@@ -84,7 +91,14 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
     try { await navigator.clipboard.writeText(`${fix.lat.toFixed(6)}, ${fix.lon.toFixed(6)}`) } catch { /* ignore */ }
   }, [])
 
-  const [selfOpen, setSelfOpen] = useState(false)
+  // Clean flights normally collapse to a one-line strip. When a clean flight
+  // still carries evidence charts (the always-on distance-vs-LQ / throttle-vs-
+  // current profiles), open the panel on load so those plots are visible
+  // without hunting — surfacing them is the whole point of having built them.
+  // Clean flights with no charts keep the tidy one-line strip.
+  const [selfOpen, setSelfOpen] = useState(
+    () => (debrief?.findings || []).some(f => f.spark),
+  )
 
   if (!debrief) return null
   // Clean flights: the panel stays VISIBLE as a one-line strip and
