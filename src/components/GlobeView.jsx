@@ -5,7 +5,10 @@ import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { interpRows } from '../utils/interpRows'
 import { track } from '../utils/analytics'
 import { analyzeGpsCadence, dedupeFixes, hermitePathGeodetic } from '../utils/pathSmoothing.js'
-import { CAMERA_VIEWS, parseCameraViewFromUrl, DEFAULT_CHASE_M } from '../utils/cameraViews'
+import {
+  CAMERA_VIEWS, parseCameraViewFromUrl, DEFAULT_CHASE_M, CHASE_PITCH_DEG, frameForSky,
+} from '../utils/cameraViews'
+import { afternoonSunDate } from '../utils/daylight'
 
 // Cesium Ion token comes from Vite env (VITE_CESIUM_TOKEN). Empty token still
 // renders Bing-imagery fallback; a real token unlocks higher-res tiles + 3D Tiles.
@@ -512,25 +515,40 @@ export default function GlobeView({
     // 2) `maximumRenderTimeChange = Infinity` disables Cesium's clock-based
     //    auto-render — our vt watcher is the single source of truth for
     //    when to draw, so we don't want the internal clock racing it.
-    // 3) Sky atmosphere is back ON (owner request): at chase-camera
-    //    altitudes the horizon is in frame constantly, and a black void
-    //    above the terrain reads as broken. With requestRenderMode
-    //    limiting how often we draw, the scattering pass is affordable.
-    //    Fog stays off — it mainly softens distant terrain and costs a
-    //    full-scene pass.
     viewer.scene.requestRenderMode = true
     viewer.scene.maximumRenderTimeChange = Infinity
-    viewer.scene.fog.enabled = false
-    viewer.scene.skyAtmosphere.show = true
-    viewer.scene.globe.showGroundAtmosphere = true
+
+    // ── Daytime sky ───────────────────────────────────────────────────────────
+    // The follow views (cameraViews.js frameForSky) keep the horizon about a
+    // third of the way down, so the sky is a large part of every frame and has
+    // to read as a daytime sky, not space:
+    //   - Sky atmosphere (Rayleigh/Mie scattering) on, ground atmosphere on.
+    //   - No star box and no moon: they show through the thin upper sky as
+    //     dots on dark blue. The background behind the atmosphere is a pale
+    //     sky blue, so the zenith stays blue instead of fading to black.
+    //   - Fog on. Cesium's fog is evaluated in the globe shader (no extra
+    //     pass) and blends distant terrain into the atmosphere colour: real
+    //     aerial perspective toward the horizon, and it lets Cesium cull and
+    //     coarsen tiles near the horizon, which a low camera would otherwise
+    //     request by the hundred.
+    // The sun is the real sun for a fixed local afternoon at the flight's
+    // longitude (utils/daylight.js), so it is daytime over every field.
+    const scene = viewer.scene
+    scene.skyAtmosphere.show = true
+    scene.globe.showGroundAtmosphere = true
+    scene.skyBox.show = false
+    if (scene.moon) scene.moon.show = false
+    scene.backgroundColor = Cesium.Color.fromCssColorString('#9cc3e6')
+    scene.fog.enabled = true
+    if (typeof window !== 'undefined') window.__V = viewer // TEMP sky tuning
 
     // Sun-based terrain shading — gives the 3D terrain real relief instead
-    // of a flat-lit drape. Pin the clock to a fixed mid-afternoon instant so
-    // the light stays warm and consistent (default would track real "now").
-    // The aircraft/path use time-independent CallbackProperties, so freezing
-    // the clock here only fixes the sun angle — it doesn't touch playback.
-    viewer.scene.globe.enableLighting = true
-    viewer.clock.currentTime = Cesium.JulianDate.fromIso8601('2024-09-15T21:30:00Z')
+    // of a flat-lit drape. The clock is pinned (default would track real
+    // "now", and a night-time sun would leave the scene dark). The aircraft/
+    // path use time-independent CallbackProperties, so freezing the clock
+    // here only fixes the sun angle — it doesn't touch playback.
+    scene.globe.enableLighting = true
+    viewer.clock.currentTime = Cesium.JulianDate.fromDate(afternoonSunDate(gpsRows[0]?._lon))
 
     // Disable inertia — zoom/pan/orbit should stop the instant the user releases input
     const ssc = viewer.scene.screenSpaceCameraController
@@ -841,13 +859,12 @@ export default function GlobeView({
     addDot(gpsRows[gpsRows.length - 1], '#f7768e')
 
     // ── 3D aircraft model ──────────────────────────────────────────────────────
-    // Prefer the bundled desert-camo UAV wing (public/models/wing.glb —
-    // the same proven GLB the fpvsim project flies: one clean camo
-    // material, ~0.28 MB. Its nose already sits on glTF -Z with +Y up
-    // and wings on X, so the existing HPR math applies unchanged; we
-    // only recentre it on the origin and scale the wingspan to 10 m.
-    // Falls back to the procedural GLB if the file is missing (e.g.
-    // desktop builds pre-asset-sync).
+    // Prefer the bundled Nanawing One wing (public/models/wing.glb, built by
+    // scripts/build-wing-glb.mjs from the sim's flying-wing mesh: brand
+    // livery, orange winglets, nav-light beads, ~0.25 MB). Its nose sits on
+    // glTF -Z with +Y up and wings on X (10 m span, centred), so the HPR
+    // math below applies unchanged. Falls back to the procedural GLB if the
+    // file is missing (e.g. desktop builds pre-asset-sync).
     const EXTERNAL_MODEL_URL = './models/wing.glb'
     let cancelled = false
     let aircraftEntity = null
@@ -969,9 +986,18 @@ export default function GlobeView({
       //   +X = forward (Cesium maps glTF +Z forward → its own +X)
       //   +Y = right   (Cesium maps glTF +X right   → its own +Y)
       //   +Z = up      (Cesium maps glTF +Y up      → its own +Z)
-      // glTF wingtip (±4.85, 0.30, -0.4) → Cesium (-0.4, ±4.85, 0.30).
-      const LEFT_WT  = new Cesium.Cartesian3(-0.4, -4.85, 0.30)
-      const RIGHT_WT = new Cesium.Cartesian3(-0.4,  4.85, 0.30)
+      // glTF (x, y, z) → Cesium (z, x, y). The strobes sit on the nav-light
+      // beads of whichever model loaded:
+      //   wing.glb (scripts/build-wing-glb.mjs NAV_LIGHT_GLTF): glTF
+      //     (±5.0, 0.02, 1.2), the tip leading edges → Cesium (1.2, ±5.0, 0.02)
+      //   procedural fallback: glTF (±4.85, 0.30, -0.4) → (-0.4, ±4.85, 0.30)
+      const isBundledWing = url === EXTERNAL_MODEL_URL
+      const LEFT_WT = isBundledWing
+        ? new Cesium.Cartesian3(1.2, -5.0, 0.02)
+        : new Cesium.Cartesian3(-0.4, -4.85, 0.30)
+      const RIGHT_WT = isBundledWing
+        ? new Cesium.Cartesian3(1.2, 5.0, 0.02)
+        : new Cesium.Cartesian3(-0.4, 4.85, 0.30)
       // Direct refs to the aircraft pose state — strobe positions read
       // these instead of chaining through ac.position.getValue, which
       // had a sub-frame timing skew that drifted the strobes off the
@@ -1032,6 +1058,8 @@ export default function GlobeView({
     const manualOffsetScratch = new Cesium.Cartesian3()
     const manualTransformScratch = new Cesium.Matrix4()
     const manualTargetScratch = new Cesium.Cartesian3()
+    const aimUpScratch = new Cesium.Cartesian3()
+    const aimTargetScratch = new Cesium.Cartesian3()
 
     // ── Active camera view (Phase A of the camera-director feature) ──────────
     // The auto-mode camera block reads `cameraViewRef.current` (kept in sync
@@ -1284,6 +1312,14 @@ export default function GlobeView({
               manualTargetScratch,
             )
         const localOffset = Cesium.Cartesian3.clone(viewer.camera.position, manualOffsetScratch)
+        // First manual frame after an auto frame: the camera's local offset is
+        // still relative to the sky-framing aim point, `aimLiftM` above the
+        // aircraft. Re-express it relative to the aircraft (ENU up = +z) so
+        // the camera stays where it was instead of dropping by the lift.
+        if (smooth.aimLiftM) {
+          localOffset.z += smooth.aimLiftM
+          smooth.aimLiftM = 0
+        }
         const offMag = Math.hypot(localOffset.x, localOffset.y, localOffset.z)
         const MAX_MANUAL_OFFSET = 5000  // 5 km — generous orbit, well within INV-2 (10km)
         if (offMag > MAX_MANUAL_OFFSET || !Number.isFinite(offMag)) {
@@ -1431,12 +1467,28 @@ export default function GlobeView({
         smoothHdgDeg: smooth.hdg,
         smoothDistM: smooth.dist,
       })
+      // Sky framing: same camera position, view tilted up by aiming at a
+      // point straight above the aircraft (see frameForSky). The lift is
+      // remembered so a hand-over to manual orbit keeps the camera put.
+      const aim = view.sky
+        ? frameForSky(camParams, viewer.camera.frustum?.fovy)
+        : { pitchRad: camParams.pitchRad, rangeM: camParams.rangeM, liftM: 0 }
+      let lookTarget = smooth.pos
+      if (aim.liftM) {
+        const up = Cesium.Ellipsoid.WGS84.geodeticSurfaceNormal(smooth.pos, aimUpScratch)
+        lookTarget = Cesium.Cartesian3.add(
+          smooth.pos,
+          Cesium.Cartesian3.multiplyByScalar(up, aim.liftM, aimUpScratch),
+          aimTargetScratch,
+        )
+      }
+      smooth.aimLiftM = aim.liftM
       viewer.camera.lookAt(
-        smooth.pos,
+        lookTarget,
         new Cesium.HeadingPitchRange(
           camParams.headingRad,
-          camParams.pitchRad,
-          camParams.rangeM,
+          aim.pitchRad,
+          aim.rangeM,
         )
       )
     })
@@ -1775,7 +1827,9 @@ export default function GlobeView({
     if (!s) return
     if (!next) {
       // Going manual — handover via lookAtTransform (no trackedEntity, see
-      // releaseAuto comment for why).
+      // releaseAuto comment for why). The fresh transform is centred on the
+      // aircraft, so the sky-framing lift no longer applies.
+      s.smooth.aimLiftM = 0
       const r = curRowRef.current
       if (r && r._lat != null) {
         const alt = absAlt(r)
@@ -1785,7 +1839,7 @@ export default function GlobeView({
           tform,
           new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(s.smooth.hdg + 180),
-            Cesium.Math.toRadians(-18),
+            Cesium.Math.toRadians(CHASE_PITCH_DEG),
             Math.max(50, Math.min(5000, s.smooth.dist || DEFAULT_CHASE_M)),
           ),
         )
@@ -1811,6 +1865,7 @@ export default function GlobeView({
       setAutoMode(false)
       // Same lookAtTransform handover as the mousedown path — see the
       // comment on releaseAuto above for why we avoid viewer.trackedEntity.
+      s.smooth.aimLiftM = 0
       const r = curRowRef.current
       if (r && r._lat != null) {
         const alt = absAlt(r)
@@ -1820,7 +1875,7 @@ export default function GlobeView({
           tform,
           new Cesium.HeadingPitchRange(
             Cesium.Math.toRadians(s.smooth.hdg + 180),
-            Cesium.Math.toRadians(-18),
+            Cesium.Math.toRadians(CHASE_PITCH_DEG),
             Math.max(50, Math.min(5000, s.smooth.dist || DEFAULT_CHASE_M)),
           ),
         )
