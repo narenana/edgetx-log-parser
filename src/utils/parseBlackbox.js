@@ -146,12 +146,28 @@ export function looksLikeBlackbox(uint8) {
 
 const TARGET_MAIN_FRAMES = 8000
 const APPROX_BYTES_PER_FRAME = 60
-const WORKER_READY_TIMEOUT_MS = 4000
+// On a cold first page load the worker CHUNK itself is still being fetched
+// (under contention with the SW install + app chunks), so "ready" can take
+// several seconds. 4 s was too tight and tripped a premature main-thread
+// fallback; 8 s gives the spawn room while still bailing on a truly dead worker.
+const WORKER_READY_TIMEOUT_MS = 8000
+// No worker message (progress/diag/done) for this long ⇒ treat the parse as
+// stalled and reject, so the UI surfaces an error + can retry instead of
+// hanging on the loading overlay with no output and no error.
+const WORKER_PARSE_IDLE_TIMEOUT_MS = 45000
 
 // Singleton worker — survives across log loads so WASM init only pays
-// once. Created lazily on first parse.
+// once. Created lazily on first parse (or by prewarmBlackboxParser()).
 let workerInstance = null
 let workerReadyPromise = null
+
+function resetWorker() {
+  if (workerInstance) {
+    try { workerInstance.terminate() } catch (_) { /* already gone */ }
+  }
+  workerInstance = null
+  workerReadyPromise = null
+}
 
 function getWorker() {
   if (workerInstance) return { worker: workerInstance, ready: workerReadyPromise }
@@ -166,6 +182,12 @@ function getWorker() {
   workerReadyPromise = new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       w.removeEventListener('message', onReady)
+      // Don't cache a rejected promise on the singleton — that would make the
+      // worker permanently unavailable for the whole session (every later
+      // parse would re-await the same rejected promise and fall back to the
+      // UI-freezing main-thread parser). Drop it so the next parse spins up a
+      // fresh worker, which loads fast now the chunk is in the HTTP cache.
+      if (workerInstance === w) resetWorker()
       reject(new Error(`worker did not become ready in ${WORKER_READY_TIMEOUT_MS}ms`))
     }, WORKER_READY_TIMEOUT_MS)
     const onReady = e => {
@@ -179,6 +201,25 @@ function getWorker() {
   })
 
   return { worker: w, ready: workerReadyPromise }
+}
+
+// Spin up the worker and initialise its WASM BEFORE the first real parse, so
+// an upload doesn't pay the cold worker-spawn + WASM fetch on its critical
+// path. Call it the moment the user shows upload intent (drag-enter / opening
+// the file picker). Idempotent and best-effort: a failure just re-arms so the
+// real parse (which has its own fallbacks) can try again.
+let warmupArmed = false
+export function prewarmBlackboxParser() {
+  if (warmupArmed) return
+  warmupArmed = true
+  try {
+    const { worker, ready } = getWorker()
+    ready
+      .then(() => worker.postMessage({ type: 'warmup' }))
+      .catch(() => { warmupArmed = false })
+  } catch (_) {
+    warmupArmed = false
+  }
 }
 
 /**
@@ -294,30 +335,50 @@ function basename(filename) {
 
 function parseViaWorker(worker, bytes, filename, onProgress, onDiag) {
   return new Promise((resolve, reject) => {
+    let watchdog = null
+    const cleanup = () => {
+      if (watchdog) clearTimeout(watchdog)
+      worker.removeEventListener('message', handler)
+      worker.removeEventListener('error', errHandler)
+    }
+    // Re-armed on every message from the worker: the parse counts as stalled
+    // only when the worker goes SILENT (e.g. a WASM init that never resolves),
+    // not while it's steadily working through a large file (which emits
+    // progress/diag as it goes). On a stall we reject so the caller falls
+    // through to the C parser and the user sees an error instead of an
+    // overlay that spins forever with no output.
+    const arm = () => {
+      if (watchdog) clearTimeout(watchdog)
+      watchdog = setTimeout(() => {
+        cleanup()
+        if (workerInstance === worker) resetWorker()
+        reject(new Error('blackbox parse stalled (the parser stopped responding)'))
+      }, WORKER_PARSE_IDLE_TIMEOUT_MS)
+    }
     const handler = e => {
       const msg = e.data
       if (!msg) return
+      arm() // any activity from the worker resets the stall timer
       if (msg.type === 'progress') {
         if (onProgress) onProgress(msg.stage, msg.pct)
       } else if (msg.type === 'diag') {
         if (onDiag) onDiag(msg.message)
       } else if (msg.type === 'done') {
-        worker.removeEventListener('message', handler)
-        worker.removeEventListener('error', errHandler)
+        cleanup()
         resolve(msg.log)
       } else if (msg.type === 'error') {
-        worker.removeEventListener('message', handler)
-        worker.removeEventListener('error', errHandler)
+        cleanup()
         reject(new Error(msg.message))
       }
+      // 'warmed' / 'warmFailed' (from a prewarm ping) fall through — ignored.
     }
     const errHandler = e => {
-      worker.removeEventListener('message', handler)
-      worker.removeEventListener('error', errHandler)
+      cleanup()
       reject(new Error(e.message || 'Worker crashed'))
     }
     worker.addEventListener('message', handler)
     worker.addEventListener('error', errHandler)
+    arm() // guard the case where the worker never replies at all
     // Transfer the buffer to avoid copying — the main thread no longer
     // needs the bytes once the worker has them.
     worker.postMessage({ bytes, filename }, [bytes.buffer])

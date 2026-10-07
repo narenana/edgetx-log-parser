@@ -1,7 +1,7 @@
 import FamilyNav from './FamilyNav'
 import { useState, useCallback, useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react'
 import { parseEdgeTXLog } from './utils/parseLog'
-import { parseBlackboxBuffer, looksLikeBlackbox } from './utils/parseBlackbox'
+import { parseBlackboxBuffer, looksLikeBlackbox, prewarmBlackboxParser } from './utils/parseBlackbox'
 import { loadLogFromUrl } from './utils/loadLogFromUrl'
 import { initAnalytics, getConsent, track, usageBeacon } from './utils/analytics'
 import ConsentBanner from './components/ConsentBanner'
@@ -323,6 +323,10 @@ export default function App() {
   const onDragOver = e => {
     e.preventDefault()
     setIsDragOver(true)
+    // Upload is imminent — start spinning up the blackbox worker + WASM now so
+    // a dropped .txt/.bbl isn't parsed on a cold worker. No-op for CSV uploads
+    // beyond one idle worker. Guarded internally, so repeated dragover is cheap.
+    prewarmBlackboxParser()
   }
   const onDragLeave = () => setIsDragOver(false)
 
@@ -410,7 +414,15 @@ export default function App() {
         {activeLog && <button type="button" className="open-btn" data-share-page data-share-inline aria-haspopup="dialog">Share</button>}
         <ThemeToggle theme={theme} onToggle={toggleTheme} />
 
-        <button className="open-btn" onClick={() => fileInputRef.current.click()}>
+        <button
+          className="open-btn"
+          onClick={() => {
+            // Warm the blackbox worker while the OS file picker is open, so a
+            // chosen .txt/.bbl parses on a ready worker rather than a cold one.
+            prewarmBlackboxParser()
+            fileInputRef.current.click()
+          }}
+        >
           Open logs
         </button>
         <input
@@ -507,7 +519,12 @@ export default function App() {
               <div className="landing-cta">
                 <button
                   className="drop-btn drop-btn-primary"
-                  onClick={() => fileInputRef.current.click()}
+                  onClick={() => {
+                    // Primary first-time entry point — warm the blackbox worker
+                    // while the file picker is open so the first parse is ready.
+                    prewarmBlackboxParser()
+                    fileInputRef.current.click()
+                  }}
                 >
                   Open log files <span aria-hidden="true">→</span>
                 </button>

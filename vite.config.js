@@ -110,10 +110,17 @@ export default defineConfig(() => {
       // Versioned family imports resolve to the active precache revision offline.
       ignoreURLParametersMatching: [/^v$/, /^utm_/, /^fbclid$/],
       // App shell + sample log. CSV included so the demo button works offline.
+      // `wasm` included so the blackbox parsers (Rust ~125 KB, C ~62 KB) are
+      // in the precache on every load. Without it, the FIRST blackbox parse on
+      // a fresh page load fetched the WASM cold from the network, racing the
+      // service-worker install storm — which failed silently, so the parse
+      // produced no output until a second attempt (WASM then in the HTTP
+      // cache). The large Cesium WASM stays out via the `cesium/**/*` ignore
+      // below, so this only adds the two small blackbox modules.
       // Exclude /cesium/* — Cesium.js alone is 5.84 MB and would force every
       // visitor to precache it before ever opening the globe. We lazy-cache
       // it via runtimeCaching below.
-      globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,csv,woff2}'],
+      globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,csv,woff2,wasm}'],
       // og-card.jpg is for link scrapers, not app users — keep it out of
       // every visitor's precache.
       globIgnores: ['cesium/**/*', 'og-card.jpg'],

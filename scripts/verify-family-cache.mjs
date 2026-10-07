@@ -9,3 +9,23 @@ for (const file of ['share.js', 'share.css', 'preview-links.js', 'shell.css', 'f
   assert.ok(entry, `${file} must have a content revision in the precache`)
 }
 console.log('Shared family assets have content-revisioned offline cache entries.')
+
+// Blackbox parsers (iNAV/Betaflight .txt/.bbl/.bfl) run in a Web Worker and
+// fetch their WASM lazily. If the WASM is NOT in the SW precache, the FIRST
+// blackbox parse on a fresh page load races a cold network fetch against the
+// service-worker install and fails silently — no output, no error — until a
+// second attempt (the WASM is then in the HTTP cache). This is the regression
+// guard for that fix: fail the build if either parser's WASM ever drops out of
+// the precache (e.g. someone edits the workbox globPatterns in vite.config).
+for (const [name, re] of [
+  ['Rust (blackbox_parser_bg)', /url:"assets\/blackbox_parser_bg-[^"]+\.wasm"/],
+  ['C fallback (blackbox)', /url:"assets\/blackbox-[^"]+\.wasm"/],
+]) {
+  assert.ok(
+    re.test(sw),
+    `blackbox ${name} WASM must be in the SW precache — otherwise the first ` +
+      'blackbox parse on a fresh load fails silently. Check the workbox ' +
+      'globPatterns in vite.config.js (it must include `wasm`).',
+  )
+}
+console.log('Blackbox parser WASM is in the offline precache.')

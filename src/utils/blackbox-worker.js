@@ -39,11 +39,35 @@ let initPromise = null
 function ensureInit() {
   // wasm-bindgen 0.2.100+ deprecated the bare-URL form; the object form
   // is the supported path forward.
-  if (!initPromise) initPromise = init({ module_or_path: wasmUrl })
+  if (!initPromise) {
+    // On a fresh page load the WASM fetch can fail transiently (racing the
+    // service-worker install, a flaky network). If we cached the rejected
+    // promise, the worker would be permanently broken for the whole session
+    // — every later parse would reject off the stale promise. Clear it on
+    // failure so the NEXT message retries the init from scratch.
+    initPromise = init({ module_or_path: wasmUrl }).catch(err => {
+      initPromise = null
+      throw err
+    })
+  }
   return initPromise
 }
 
 self.addEventListener('message', async e => {
+  // Warmup ping (sent right after the user shows upload intent): initialise
+  // the WASM now so the real parse message finds it ready. Never carries
+  // bytes — just primes init. Failures are swallowed; the real parse will
+  // retry and surface any error through its own path.
+  if (e.data && e.data.type === 'warmup') {
+    try {
+      await ensureInit()
+      self.postMessage({ type: 'warmed' })
+    } catch (_) {
+      self.postMessage({ type: 'warmFailed' })
+    }
+    return
+  }
+
   const { bytes, filename } = e.data
   const t0 = performance.now()
   const diag = msg => {
