@@ -7,6 +7,7 @@ const EVENT_STYLES = {
   rth_off: { icon: '⚐', label: 'RTH off', color: '#ff9e64' },
   land:    { icon: '▼', label: 'LND',     color: '#7dcfff' },
   debrief: { icon: '⛔', label: 'Finding', color: '#f7768e' },
+  highlight: { icon: '★', label: 'Highlight', color: '#ffb000' },
 }
 
 export default function FlightModeBar({
@@ -72,7 +73,9 @@ export default function FlightModeBar({
           const style = EVENT_STYLES[ev.type]
           if (!style) return null
           const t = rows[ev.index]?._tSec ?? 0
-          const label = `${style.label} at T+${Math.floor(t / 60)}:${String(Math.round(t) % 60).padStart(2, '0')}`
+          // A highlight marker carries its own label ("Fastest 134 km/h"); the
+          // built-in events fall back to the style's short label.
+          const label = `${ev.label || style.label} · T+${Math.floor(t / 60)}:${String(Math.round(t) % 60).padStart(2, '0')}`
           return (
             <button
               key={`ev-${i}`}

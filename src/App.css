@@ -625,7 +625,48 @@ body {
   flex-direction: column;
   border-right: 1px solid var(--border);
   overflow: hidden;
+  position: relative; /* anchors the highlight-chips overlay */
 }
+
+/* ── Flight-highlight chips (overlay, top-left of the stage) ──────────────── */
+.hl-chips {
+  position: absolute;
+  top: 52px;   /* clear the fullscreen button that sits top-left of the stage */
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+  max-width: 45%;
+}
+.hl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px 4px 7px;
+  background: var(--hud-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 4px var(--shadow-overlay);
+  transition: color 0.15s, border-color 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+.hl-chip:hover {
+  color: var(--text);
+  border-color: var(--border-bright);
+  transform: translateX(2px);
+}
+.hl-chip:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.hl-chip-ico { color: var(--orange); font-size: 12px; line-height: 1; }
+.hl-chip-label { color: var(--text2); }
+.hl-chip:hover .hl-chip-label { color: var(--text); }
+.hl-chip-val { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.hl-chip-unit { color: var(--text3); font-weight: 600; margin-left: 1px; font-size: 10px; }
 
 .map-wrap {
   flex: 1;
@@ -1016,10 +1057,56 @@ body {
   flex: none;
   width: clamp(380px, 40%, 620px);
   overflow-y: auto;
-  padding: 6px 10px 10px;
+  /* Padding moved onto .insights-body so the sticky tab bar sits flush to
+     the top of the scroll area. */
+  padding: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+
+/* ── Tabbed insights panel (Phase 1) — replaces the right-column scroll ──
+   A sticky tab bar (Summary / Charts) over a scrolling body. Lives inside
+   .dashboard-right, which is the scroll container on desktop; on mobile the
+   column releases its clamp and the page scrolls, and the bar sticks to the
+   viewport instead — both work with position: sticky. */
+.insights-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+.insights-tab {
+  flex: 1;
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* overlap the tabs' bottom border so active underline meets it */
+  color: var(--text2);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 9px 10px 8px;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: color 0.12s, background 0.12s;
+}
+.insights-tab:hover { background: var(--hover-bg); color: var(--text); }
+.insights-tab.active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+.insights-tab:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+.insights-body { padding: 6px 10px 10px; }
+.insights-pane[hidden] { display: none; }
 
 /* Sticky playback dock. Always pinned to the bottom of the viewport
    regardless of size — short landscape views (e.g. tablet landscape)
@@ -1423,7 +1510,7 @@ body {
  * ─────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 1280px) {
-  .dashboard-right { padding: 4px 6px 8px; }
+  .insights-body { padding: 4px 6px 8px; }
   .chart-panel { padding: 6px 8px 4px; margin-bottom: 6px; }
   .stat-item { padding: 5px 8px; }
 }
@@ -1446,8 +1533,9 @@ body {
     flex: none;
     width: auto;   /* release the desktop clamp in the stacked layout */
     overflow: visible;
-    padding: 8px 10px 10px;
+    padding: 0;    /* body padding lives on .insights-body */
   }
+  .insights-body { padding: 8px 10px 10px; }
   .dashboard { overflow: visible; }
 
   /* Globe / map fill the full viewport width but a fixed slice of height. */

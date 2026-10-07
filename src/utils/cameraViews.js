@@ -43,16 +43,28 @@ export const DEFAULT_CHASE_M = 300
 // Per-view base ranges at zoom-factor = 1 (i.e. when smoothDistM ===
 // DEFAULT_CHASE_M). When the user wheels, each view's actual rangeM is
 // scaled by smoothDistM / DEFAULT_CHASE_M.
-const TAIL_BASE_M = 150
-const ORBIT_BASE_M = 600
+// TAIL is the "formation / on-the-wing" view — pulled much closer and lower
+// than CHASE so the five views read as genuinely distinct (owner: tail/chase/
+// cinematic felt too alike).
+const TAIL_BASE_M = 110
+const ORBIT_BASE_M = 480
 const TOPDOWN_BASE_M = 800
-// Cinematic sits a touch further back and lower-angle than CHASE for a
-// film-like frame; the trailing azimuth lag (applied in GlobeView) does
-// the rest of the work.
-const CINEMATIC_BASE_M = 450
+// Cinematic sits a touch CLOSER than CHASE and lower-angle for an intimate,
+// film-like frame where the aircraft is clearly the subject; the trailing
+// azimuth lag (applied in GlobeView) does the rest. (Was 450 m — the owner
+// reported the aircraft read too small / too far to make out.)
+const CINEMATIC_BASE_M = 240
 
-const ORBIT_SWEEP_AMPL_DEG = 60
-const ORBIT_SWEEP_PERIOD_S = 12
+// ORBIT now CIRCLES the aircraft continuously (owner: "orbit mode doesn't
+// orbit" — the old ±60° sine sweep only rocked side-to-side, and being driven
+// by virtual time it froze whenever playback was paused). It's driven by REAL
+// time (`realMs`) so it keeps revolving even when paused, one full turn every
+// ORBIT_PERIOD_S. GlobeView keeps the scene rendering while ORBIT is active.
+const ORBIT_PERIOD_S = 18
+const ORBIT_RATE_DEG_S = 360 / ORBIT_PERIOD_S
+// CINEMATIC frames the aircraft from the rear QUARTER (not straight behind
+// like CHASE/TAIL) for its own 3/4 look, on top of the trailing swing.
+const CINEMATIC_OFFSET_DEG = 28
 
 // Returns the user's zoom factor (smoothDistM / DEFAULT_CHASE_M),
 // clamped to a sane positive range so that arithmetic on rangeM can't
@@ -79,30 +91,27 @@ export const CAMERA_VIEWS = {
   // during high-speed straight-line stretches; can feel hectic in turns.
   tail: {
     name: 'TAIL',
-    description: 'Close behind at low elevation — chase-plane feel.',
+    description: 'Tight formation — close behind and nearly level, on its wing.',
     compute: ({ aircraftHdgDeg, smoothDistM }) => ({
       headingRad: ((aircraftHdgDeg ?? 0) + 180) * D2R,
-      pitchRad: -5 * D2R,
+      pitchRad: -2 * D2R,
       rangeM: TAIL_BASE_M * userZoomFactor(smoothDistM),
     }),
   },
 
-  // Slow side-to-side azimuth sweep at a moderate elevation, revealing
-  // the aircraft from each flank in turn. The sweep is a pure sine of
-  // virtual time, so it stays smooth under any playback speed.
+  // Continuously CIRCLES the aircraft, revealing it from every side. Driven
+  // by real wall-clock time (`realMs`), world-referenced, so it keeps turning
+  // whether playback is running or paused. GlobeView keeps rendering while
+  // this view is active so the revolution is visible at rest.
   orbit: {
     name: 'ORBIT',
-    description: 'Slow ±60° flank sweep, 12 s period.',
-    compute: ({ aircraftHdgDeg, vtSec, smoothDistM }) => {
-      const az =
-        ORBIT_SWEEP_AMPL_DEG *
-        Math.sin(((vtSec ?? 0) * Math.PI * 2) / ORBIT_SWEEP_PERIOD_S)
-      return {
-        headingRad: ((aircraftHdgDeg ?? 0) + 180 + az) * D2R,
-        pitchRad: -35 * D2R,
-        rangeM: ORBIT_BASE_M * userZoomFactor(smoothDistM),
-      }
-    },
+    description: 'Circles the aircraft — one full revolution every 18 s, even when paused.',
+    orbiting: true,
+    compute: ({ realMs, smoothDistM }) => ({
+      headingRad: (((realMs ?? 0) / 1000 * ORBIT_RATE_DEG_S) % 360) * D2R,
+      pitchRad: -28 * D2R,
+      rangeM: ORBIT_BASE_M * userZoomFactor(smoothDistM),
+    }),
   },
 
   // Loose trailing chase — the "replay" camera. compute() returns the
@@ -119,8 +128,8 @@ export const CAMERA_VIEWS = {
     description: 'Loose trailing chase — swings in behind on turns with a gentle lag. Best for replay viewing.',
     trailing: true,
     compute: ({ aircraftHdgDeg, smoothDistM }) => ({
-      headingRad: ((aircraftHdgDeg ?? 0) + 180) * D2R,
-      pitchRad: -13 * D2R,
+      headingRad: ((aircraftHdgDeg ?? 0) + 180 + CINEMATIC_OFFSET_DEG) * D2R,
+      pitchRad: -11 * D2R,
       rangeM: CINEMATIC_BASE_M * userZoomFactor(smoothDistM),
       trailing: true,
     }),

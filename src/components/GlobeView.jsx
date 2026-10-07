@@ -574,10 +574,14 @@ export default function GlobeView({
     // longitude, not a fixed UTC instant. The old fixed 21:30Z was afternoon
     // only in the Americas; for an Asian / Indian flight that's ~3 a.m. local,
     // so the atmosphere rendered a black NIGHT sky. Local solar time ≈
-    // UTC + lon/15, so for local ~15:00 we want UTC = 15 - lon/15.
+    // UTC + lon/15, so for local ~13:00 we want UTC = 13 - lon/15. 13:00 (vs
+    // the old 15:00) keeps the sun HIGH so the aircraft's TOP — the surface the
+    // chase/cinematic cameras look down on — stays lit instead of falling into
+    // shadow and reading black, while the slight off-noon angle still gives the
+    // body a real light→dark gradient down its sides.
     viewer.scene.globe.enableLighting = true
     const sunLon = gpsRows.length ? gpsRows[0]._lon : 0
-    let sunUtcH = (15 - sunLon / 15) % 24
+    let sunUtcH = (13 - sunLon / 15) % 24
     if (sunUtcH < 0) sunUtcH += 24
     const sunHH = Math.floor(sunUtcH)
     const sunMM = Math.floor((sunUtcH - sunHH) * 60)
@@ -1015,14 +1019,25 @@ export default function GlobeView({
           // is monotonic now (and we no longer use trackedEntity, so the old
           // bounding-sphere fly-away is moot), and a modest on-screen floor is
           // worth far more than a ~15px speck at 700m chase.
-          minimumPixelSize: 64,
+          minimumPixelSize: 90,
           maximumScale: 8000,
-          // Brighten the model (default lighting leaves it a dark blob over
-          // bright satellite imagery) and outline it so the eye locks onto the
-          // aircraft even against busy terrain.
-          lightColor: new Cesium.Cartesian3(2.1, 2.1, 2.1),
-          silhouetteColor: Cesium.Color.WHITE.withAlpha(0.85),
-          silhouetteSize: 1.5,
+          // Moderate lift on the sun contribution so the lit (top) surfaces
+          // read bright against terrain without washing to flat white.
+          lightColor: new Cesium.Cartesian3(1.5, 1.5, 1.5),
+          // NO silhouette. Cesium's silhouette render path renders the model
+          // in a separate pass and, combined with the dark outline colour we
+          // used, made the aircraft read as a dark navy fill. Dropping it lets
+          // the lit white/green livery + nav lights stand out on their own.
+          //
+          // Shade floor is baked into the GLB material itself: emissiveFactor
+          // (0.5) × emissiveTexture (= the base-colour atlas). So every face
+          // emits a fraction of its OWN colour — the white body never drops
+          // below light-grey and the green trim never goes black, at any
+          // camera angle or in a shaded canyon — while the sun still paints
+          // the brighter top and a soft light→dark gradient. This lives in the
+          // material (not a runtime CustomShader) on purpose: the Entity
+          // ModelVisualizer wipes primitive.customShader every frame, but
+          // never touches the GLB material. See scripts note / bake_emissive.
         },
       })
 
@@ -1075,6 +1090,10 @@ export default function GlobeView({
           return aircraftEntity.show ? 'aircraft ON' : 'aircraft OFF'
         }
       }
+
+      // The aircraft's shade floor lives in the GLB material (emissiveFactor ×
+      // base-colour atlas) — see the model block above — so no runtime shader
+      // or ambient wiring is needed here.
     }).catch(err => console.error('aircraft GLB build failed:', err))
 
     // Altitude stem
@@ -1524,6 +1543,7 @@ export default function GlobeView({
         altM: alt,
         spdMs,
         vtSec: vt,
+        realMs: realNow, // wall-clock — ORBIT revolves on this, even when paused
         smoothHdgDeg: smooth.hdg,
         smoothDistM: smooth.dist,
       })
@@ -1845,24 +1865,36 @@ export default function GlobeView({
       resizeObserver.observe(wrap)
     }
 
-    // ── vt watcher: trigger Cesium render whenever virtualTimeRef advances ──
-    // With requestRenderMode=true Cesium only paints on explicit request.
-    // During PLAY virtualTimeRef advances every Dashboard rAF tick, so we
-    // mirror that: a tiny watcher rAF here fires `scene.requestRender()`
-    // whenever vt changes since the last check. During PAUSE vt is static
-    // and no renders are requested — Cesium goes idle and GPU usage drops
-    // to ~zero. Camera drag, scrub, mode toggle all auto-trigger via
-    // Cesium's own input listeners, so they stay smooth too.
+    // ── vt watcher: steady ~60 fps renders during play ───────────────────
+    // `requestRenderMode = true` (set at init) paints only on demand, so a
+    // PAUSED scene idles the GPU to ~zero. During PLAY we must paint smoothly.
+    // Two traps we avoid:
+    //   (1) Requesting a render only when a vt-CHANGE is detected is phase-
+    //       sensitive against the Dashboard playback rAF (a frame's vt-advance
+    //       can be seen a frame late), which stutters.
+    //   (2) Letting Cesium paint every display frame (requestRenderMode=false)
+    //       runs the per-frame pose/path callbacks at the monitor's refresh —
+    //       120/144 Hz on high-refresh displays — which pegs the main thread
+    //       and freezes the tab (confirmed in testing).
+    // So: keep requestRenderMode ON and drive renders ourselves on a TIMER at
+    // ~60 fps while vt is advancing (or a camera-view blend is animating). This
+    // is steady and phase-independent, and capped so it never overloads.
+    const MIN_FRAME_MS = 15 // ~66 fps ceiling → locks to 60 on a 60 Hz panel
     let vtWatchRaf = 0
     let lastVtSeen = null
+    let lastRenderMs = 0
     const vtWatch = () => {
       const vt = virtualTimeRef?.current
-      // Paint when playback advances vt, OR while a camera-view transition
-      // blend is still animating (camAnimUntilRef) so the ease completes
-      // even when playback is paused.
-      if (vt !== lastVtSeen || performance.now() < camAnimUntilRef.current) {
+      const now = performance.now()
+      const playing = vt !== lastVtSeen
+      if (playing) lastVtSeen = vt
+      // ORBIT revolves on wall-clock time, so it must keep painting even when
+      // playback is paused (otherwise the camera sits frozen between vt-ticks).
+      const animating = playing || now < camAnimUntilRef.current ||
+        cameraViewRef.current === 'orbit'
+      if (animating && now - lastRenderMs >= MIN_FRAME_MS) {
         viewer.scene.requestRender()
-        lastVtSeen = vt
+        lastRenderMs = now
       }
       vtWatchRaf = requestAnimationFrame(vtWatch)
     }

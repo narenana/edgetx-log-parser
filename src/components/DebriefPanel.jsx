@@ -30,7 +30,7 @@ function evidencePairs(f) {
     .map(([k, v]) => formatEvidence(k, v))
 }
 
-export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) {
+export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose, statsSlot = null }) {
   const debrief = log.debrief
   const ackKey = `debrief-ack:${log.filename}`
   const [acked, setAcked] = useState(() => {
@@ -108,6 +108,7 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
     return (
       <section className="debrief-panel" aria-label="Flight Debrief">
         {NarrationSection && <NarrationSection debrief={debrief} />}
+        {statsSlot}
         <button type="button" className="db-strip" onClick={() => { setSelfOpen(true); track('debrief_expanded') }}>
           <span className="db-title">FLIGHT DEBRIEF</span>
           <span className="db-chip ok">✓ Clean flight</span>
@@ -141,6 +142,7 @@ export default function DebriefPanel({ log, onJumpToTime, forceOpen, onClose }) 
       </div>
 
       {NarrationSection && <NarrationSection debrief={debrief} />}
+      {statsSlot}
 
       <ul className="db-list">
         {findings.map(f => {

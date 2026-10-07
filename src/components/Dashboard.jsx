@@ -5,6 +5,9 @@ import SyncedChart from './SyncedChart'
 import FlightModeBar from './FlightModeBar'
 import StatsPanel from './StatsPanel'
 import DebriefPanel from './DebriefPanel'
+import InsightsPanel from './InsightsPanel'
+import HighlightChips from './HighlightChips'
+import { computeHighlights } from '../utils/flightHighlights'
 import { reportDebriefErrors } from '../utils/sentry'
 import { SEVERITY_RANK } from '../debrief/detectors.js'
 import FullscreenButton from './FullscreenButton'
@@ -169,6 +172,28 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
         return { type: 'debrief', index: idx }
       })
   }, [log.debrief, rows])
+
+  // ── Flight highlights (map-view chips) ──────────────────────────────────────
+  // Notable moments (argmax of each supported metric). Clicking a chip seeks to
+  // ~10 s before the moment, plays the approach at 1×, and leaves a labelled
+  // marker on the flight-mode bar at the moment itself.
+  const highlights = useMemo(() => computeHighlights(log), [log])
+  const [highlightMarks, setHighlightMarks] = useState([])
+  const playHighlight = useCallback(h => {
+    const startT = Math.max(0, h.tSec - 10)
+    let idx = rows.findIndex(r => r._tSec >= startT)
+    if (idx < 0) idx = rows.length - 1
+    setCursorIndex(idx)
+    virtualTimeRef.current = rows[idx]._tSec
+    setSpeed(1)
+    setPlaying(true)
+    // mark the moment itself (dedupe by key so repeat clicks don't stack)
+    setHighlightMarks(prev =>
+      prev.some(m => m.key === h.key)
+        ? prev
+        : [...prev, { type: 'highlight', index: h.index, label: `${h.label} ${h.value} ${h.unit}`, key: h.key }],
+    )
+  }, [rows])
 
   // ── Per-log analytics summary (privacy-safe aggregates only) ────────────────
   // Fired once per loaded log. No GPS, no flight content — just shape metrics
@@ -426,6 +451,7 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
     <div className="dashboard">
       <div className="dashboard-main">
         <div className="dashboard-left">
+          <HighlightChips highlights={highlights} onPlay={playHighlight} />
           {viewMode === 2 ? (
             /* ── 3D Globe view ── */
             log.hasGPS ? (
@@ -472,24 +498,36 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
         </div>
 
         <div className="dashboard-right">
-          {/* Combined flight stats — union of the previous below-viz panel
-              and the parse-time modal grid. Lives at the TOP of the right
-              column so it sits above the chart panels and stays in view
-              while the user scrolls through individual chart cards. */}
-          <StatsPanel log={log} />
-          <DebriefPanel
-            log={log}
-            onJumpToTime={jumpToTime}
-            forceOpen={debriefOpen}
-            onClose={() => setDebriefOpen(false)}
+          {/* Phase 1: the old mega-scroll (stats → debrief → 5 stacked charts)
+              is split into a tabbed panel. SUMMARY leads with the AI read
+              (hero), then the flight stats (passed into DebriefPanel's
+              statsSlot so they sit between the AI card and the findings),
+              then the debrief findings. CHARTS holds the stacked synced
+              time-series charts. Both tabs read the same prop-driven
+              `cursorIndex` / `handleCursor`, so the playhead stays in sync
+              across a tab switch. */}
+          <InsightsPanel
+            summary={
+              <DebriefPanel
+                log={log}
+                onJumpToTime={jumpToTime}
+                forceOpen={debriefOpen}
+                onClose={() => setDebriefOpen(false)}
+                statsSlot={<StatsPanel log={log} />}
+              />
+            }
+            charts={
+              <>
+                <SyncedChart title="Attitude" datasets={attitudeDatasets} labels={labels} yLabel="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
+                <SyncedChart title="Altitude & Vertical Speed" datasets={altDatasets} labels={labels} yLabel="m" y1Label="m/s" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
+                <SyncedChart title="Speed & Heading" datasets={speedDatasets} labels={labels} yLabel="km/h" y1Label="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
+                {batteryDatasets.length > 0 && (
+                  <SyncedChart title="Battery" datasets={batteryDatasets} labels={labels} yLabel="V" y1Label="A" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
+                )}
+                <SyncedChart title="Signal" datasets={signalDatasets} labels={labels} yLabel="dBm" y1Label="%" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
+              </>
+            }
           />
-          <SyncedChart title="Attitude" datasets={attitudeDatasets} labels={labels} yLabel="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
-          <SyncedChart title="Altitude & Vertical Speed" datasets={altDatasets} labels={labels} yLabel="m" y1Label="m/s" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
-          <SyncedChart title="Speed & Heading" datasets={speedDatasets} labels={labels} yLabel="km/h" y1Label="degrees" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
-          {batteryDatasets.length > 0 && (
-            <SyncedChart title="Battery" datasets={batteryDatasets} labels={labels} yLabel="V" y1Label="A" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
-          )}
-          <SyncedChart title="Signal" datasets={signalDatasets} labels={labels} yLabel="dBm" y1Label="%" cursorIndex={cursorIndex} onCursorChange={handleCursor} theme={theme} />
         </div>
       </div>
 
@@ -580,7 +618,7 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
           rows={rows}
           cursorIndex={cursorIndex}
           onCursorChange={idx => { handleCursor(idx); setPlaying(false) }}
-          events={[...events, ...debriefEvents]}
+          events={[...events, ...debriefEvents, ...highlightMarks]}
           onSegmentClick={mode => track('flight_mode_clicked', { mode })}
           onEventClick={type => track('event_marker_clicked', { type })}
         />
