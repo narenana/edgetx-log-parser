@@ -208,9 +208,18 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
       mode_count: log.flightModes?.length ?? 0,
       event_count: events?.length ?? 0,
     })
-    track('debrief_shown', { any_warning: !!log.debrief && !log.debrief.clean })
+    track('debrief_shown', { any_warning: !!log.debrief && !log.debrief.clean, outcome: log.debrief?.outcome })
     usageBeacon('log_summary', log.hasGPS ? 'gps' : 'nogps')
-    if (log.debrief) usageBeacon('debrief_shown', log.debrief.clean ? 'clean' : 'warning')
+    if (log.debrief) {
+      // outcome: clean | warning | critical ('critical' = crash-grade).
+      usageBeacon('debrief_shown', log.debrief.outcome || (log.debrief.clean ? 'clean' : 'warning'))
+      // Anonymous fleet dims — no GPS, no filename, no log content.
+      const fam = { INAV: 'inav', BETAFLIGHT: 'betaflight', EMUFLIGHT: 'emuflight', CLEANFLIGHT: 'inav' }[
+        String(log.debrief.context?.firmwareFamily || '').toUpperCase()
+      ]
+      if (fam) usageBeacon('fw_family', fam) // blackbox only; CSV has no FC firmware
+      if (log.debrief.craft) usageBeacon('craft', log.debrief.craft) // quad | wing | unknown
+    }
     if (log.debrief?.errors?.length) reportDebriefErrors(log.debrief.errors)
   }, [log.filename]) // eslint-disable-line react-hooks/exhaustive-deps
 

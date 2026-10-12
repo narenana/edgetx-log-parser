@@ -6,6 +6,7 @@
  * data), and the rest of the debrief still renders.
  */
 import { DETECTORS, runScenarios, detectChemistry, SEVERITY_RANK } from './detectors.js'
+import { classifyCraft } from './craft.js'
 
 export function runDebrief(ctx) {
   ctx.chem = ctx.chem || detectChemistry(ctx.rows)
@@ -47,7 +48,12 @@ export function runDebrief(ctx) {
     if (i >= 0) findings.splice(i, 1)
   }
 
-  const clean = !findings.some(f => SEVERITY_RANK[f.severity] >= SEVERITY_RANK.warning)
+  const maxSev = findings.reduce((m, f) => Math.max(m, SEVERITY_RANK[f.severity] || 0), 0)
+  const clean = maxSev < SEVERITY_RANK.warning
+  // Anonymous one-word verdict for the usage counter: 'critical' is the
+  // "crash / in-air power or link loss" bucket (E4, R1/R2), 'warning' is
+  // issues worth a look, 'clean' is a happy flight.
+  const outcome = maxSev >= SEVERITY_RANK.critical ? 'critical' : clean ? 'clean' : 'warning'
 
   // Meta findings: the clean-flight verdict and the coverage note.
   if (clean && ctx.stats.duration >= 10) {
@@ -84,11 +90,18 @@ export function runDebrief(ctx) {
     }
   }
 
+  // Best-effort craft type (quad | wing | unknown) for the anonymous usage
+  // counter. Never let a classifier edge case break the debrief.
+  let craft = 'unknown'
+  try { craft = classifyCraft(ctx) } catch (e) { errors.push({ id: 'craft', error_name: e?.name || 'Error' }) }
+
   return {
     v: 1,
     findings,
     coverage,
     clean,
+    outcome,
+    craft,
     context: {
       source: ctx.source,
       firmwareFamily: ctx.meta.firmwareFamily || null,
