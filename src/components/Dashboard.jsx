@@ -220,7 +220,20 @@ export default function Dashboard({ log, theme = 'light', viewMode = 2, autoPlay
       ]
       if (fam) usageBeacon('fw_family', fam) // blackbox only; CSV has no FC firmware
       if (log.debrief.craft) usageBeacon('craft', log.debrief.craft) // quad | wing | unknown
+      // Battery cell count + which debrief detectors fired (the "top issues" signal).
+      const cells = log.debrief.context?.cells
+      if (cells) usageBeacon('cells', cells >= 8 ? '8S+' : cells + 'S')
+      const fired = new Set((log.debrief.findings || [])
+        .filter((f) => (SEVERITY_RANK[f.severity] || 0) >= SEVERITY_RANK.notice && f.cls !== 'meta')
+        .map((f) => String(f.id).slice(0, 4)))
+      fired.forEach((id) => usageBeacon('detector', id))
     }
+    // Flight-envelope buckets — anonymous: duration, max AGL, speed magnitude (no coordinates).
+    const s = log.stats || {}
+    const bkt = (v, cuts, labels) => { for (let i = 0; i < cuts.length; i++) if (v < cuts[i]) return labels[i]; return labels[labels.length - 1] }
+    if (s.duration > 0) usageBeacon('log_duration', bkt(s.duration, [60, 180, 360, 900], ['<1m', '1-3m', '3-6m', '6-15m', '15m+']))
+    if (s.maxAlt > 0) usageBeacon('peak_alt', bkt(s.maxAlt, [10, 50, 120, 400], ['<10m', '10-50m', '50-120m', '120-400m', '400m+']))
+    if (s.maxSpeed > 0) usageBeacon('peak_speed', bkt(s.maxSpeed, [20, 60, 100, 150], ['<20', '20-60', '60-100', '100-150', '150+']))
     if (log.debrief?.errors?.length) reportDebriefErrors(log.debrief.errors)
   }, [log.filename]) // eslint-disable-line react-hooks/exhaustive-deps
 
