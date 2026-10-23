@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef, Suspense } from 'react'
 import { createPortal } from 'react-dom'
 import FlightMap from './FlightMap'
 import SyncedChart from './SyncedChart'
@@ -8,6 +8,7 @@ import DebriefPanel from './DebriefPanel'
 import InsightsPanel from './InsightsPanel'
 import HighlightChips from './HighlightChips'
 import { computeHighlights } from '../utils/flightHighlights'
+import { lazyWithReload } from '../utils/lazyWithReload'
 import { reportDebriefErrors } from '../utils/sentry'
 import { SEVERITY_RANK } from '../debrief/detectors.js'
 import FullscreenButton from './FullscreenButton'
@@ -22,15 +23,15 @@ import { track, usageBeacon } from '../utils/analytics'
 // Three.js GLB exporter. AltitudeAttitudeView pulls in the Three.js runtime.
 // Both are heavy and only needed for the active view mode — lazy chunks let
 // users on the alternate view skip the download entirely until they switch.
-const GlobeView = lazy(() => import('./GlobeView'))
-const AltitudeAttitudeView = lazy(() => import('./AltitudeAttitudeView'))
+const GlobeView = lazyWithReload(() => import('./GlobeView'), 'globeview')
+const AltitudeAttitudeView = lazyWithReload(() => import('./AltitudeAttitudeView'), 'altattview')
 // The READOUT/72 telemetry bar lives OUTSIDE the globe view (below it),
 // and OUTSIDE the view-mode branch so Classic-view and no-GPS logs get
 // telemetry too. It exposes an imperative `update(row)` method;
 // GlobeView's preRender callback drives it in 3D view (single-rAF UI, no
 // backdrop-filter over the WebGL canvas), and a cursor effect below
 // drives it everywhere else.
-const TelemetryBar = lazy(() => import('./telemetry/TelemetryBar'))
+const TelemetryBar = lazyWithReload(() => import('./telemetry/TelemetryBar'), 'telemetrybar')
 
 const SPEEDS = [0.1, 0.5, 1, 2, 5, 10, 30, 60]
 

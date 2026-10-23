@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useLayoutEffect, useRef, lazy, Suspen
 import { parseEdgeTXLog } from './utils/parseLog'
 import { parseBlackboxBuffer, looksLikeBlackbox, prewarmBlackboxParser } from './utils/parseBlackbox'
 import { loadLogFromUrl } from './utils/loadLogFromUrl'
+import { lazyWithReload } from './utils/lazyWithReload'
 import { initAnalytics, getConsent, track, usageBeacon } from './utils/analytics'
 import ConsentBanner from './components/ConsentBanner'
 import ThemeToggle from './components/ThemeToggle'
@@ -11,7 +12,7 @@ import FlightSummaryModal from './components/FlightSummaryModal'
 // Dashboard pulls in Chart.js, Leaflet, Three.js, plus its own lazy children
 // (GlobeView, AltitudeAttitudeView). Splitting it off keeps the empty-state
 // bundle small for first paint — empty state needs only React + the parser.
-const Dashboard = lazy(() => import('./components/Dashboard'))
+const Dashboard = lazyWithReload(() => import('./components/Dashboard'), 'dashboard')
 
 // PwaUpdate imports `virtual:pwa-register/react` which only exists when
 // vite-plugin-pwa is enabled (web builds). The lazy import keeps the

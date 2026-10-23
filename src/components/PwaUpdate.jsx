@@ -24,7 +24,10 @@ export default function PwaUpdate() {
       // Hourly check for a new build. Cheap (304 most of the time).
       if (typeof window === 'undefined') return
       setInterval(() => {
-        navigator.serviceWorker?.getRegistration(swUrl).then(reg => reg?.update())
+        // Swallow transient update failures (offline, or sw.js briefly
+        // unavailable mid-deploy) — they're not actionable and were surfacing
+        // as unhandled rejections in Sentry (RC-LOG-VIEWER-R).
+        navigator.serviceWorker?.getRegistration(swUrl).then(reg => reg?.update()).catch(() => {})
       }, 60 * 60 * 1000)
     },
   })

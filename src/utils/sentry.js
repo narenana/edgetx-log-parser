@@ -93,6 +93,19 @@ export function initSentry() {
     environment: import.meta.env.MODE,
     sendDefaultPii: false,
 
+    ignoreErrors: [
+      // PWA service-worker lifecycle failures are transient / environmental
+      // (a network blip, or sw.js swapping mid-deploy), not actionable bugs.
+      /Failed to (update|register|unregister) a ServiceWorker/i,
+      /ServiceWorker script .* encountered an error during (installation|activation)/i,
+      // Stale client after a deploy: the app reloads itself once to recover
+      // (see lazyWithReload). The benign first failure isn't worth a report; a
+      // persistent one is reported distinctly via reportChunkLoadFailed().
+      /error loading dynamically imported module/i,
+      /Failed to fetch dynamically imported module/i,
+      /Importing a module script failed/i,
+    ],
+
     // Default integrations include Breadcrumbs which records console logs,
     // clicks, and fetch — useful for debugging but recorded passively. In
     // degraded mode (pre-consent) we strip the user-action ones; we re-add
@@ -176,8 +189,15 @@ export function upgradeSentryConsent() {
  * @param {string[]} [ctx.fields]   frame schema field names (strings only)
  * @param {string} [ctx.parserChain] which parsers were tried (e.g. "rust→c")
  */
+// Messages that mean "this file isn't a (supported) blackbox log" — user input,
+// not a parser bug. They're already counted in usage logging (parse_failed), so
+// Sentry should keep only UNEXPECTED failures: a real log the parser choked on
+// (MalformedFrameDef…) or a stall. Keeps the error feed actionable.
+const EXPECTED_PARSE_REJECTION = /header|truncated|unsupported firmware|MissingHeader|UnsupportedFirmwareVersion|InvalidFirmware|no main frames|no data|\bempty\b/i
+
 export function captureParseError(err, ctx) {
   if (!initialized) return
+  if (EXPECTED_PARSE_REJECTION.test(String((err && err.message) || err || ''))) return
 
   Sentry.captureException(err, {
     tags: {
@@ -193,6 +213,20 @@ export function captureParseError(err, ctx) {
       firmware: ctx.firmware,
       schema_fields: ctx.fields,
     },
+  })
+}
+
+/**
+ * A dynamic import failed AGAIN after the one self-healing reload
+ * (lazyWithReload) — not just a stale client, a persistent chunk problem
+ * (deploy gap, broken cache). Reported with its own message so it bypasses the
+ * dynamic-import `ignoreErrors` entries and stays visible as a real signal.
+ */
+export function reportChunkLoadFailed(key) {
+  if (!isSentryAvailable() || !initialized) return
+  Sentry.captureMessage('chunk failed to load after reload: ' + String(key).slice(0, 40), {
+    level: 'error',
+    tags: { kind: 'chunk_persistent' },
   })
 }
 
