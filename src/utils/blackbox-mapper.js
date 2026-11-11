@@ -384,7 +384,10 @@ export function mapToViewerLog(parsed, filename, diag = () => {}, opts = {}) {
         t0Us: mainTimes[0],
       }
     }
-    const fw = parseFirmware(parsed.firmware)
+    // Prefer the header's revision line (family + version + target); the
+    // Rust decoder's own `firmware` is a Debug string with no target.
+    const fromHeader = parseFirmware(opts.revision)
+    const fw = fromHeader.firmwareFamily ? fromHeader : parseFirmware(parsed.firmware)
     const cadenceS = numMain > 1 ? totalSec / (numMain - 1) : 1
     log.debrief = runDebrief({
       source: 'blackbox',

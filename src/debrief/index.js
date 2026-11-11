@@ -145,22 +145,62 @@ export function scanLogTail(bytes) {
   return { endMarker, padBytes }
 }
 
+// Canonical spelling per family — payload.js's FW_FAMILIES allowlist is
+// case-sensitive, so 'inav' / 'BETAFLIGHT' must not leak through.
+const FAMILY_NORM = { inav: 'INAV', cleanflight: 'INAV', betaflight: 'Betaflight', emuflight: 'EmuFlight' }
+const HEADER_FW = /^(INAV|Betaflight|Cleanflight|EmuFlight)\s+(\d+\.\d+\.\d+)/i
+// The Rust decoder's FlightLog.firmware is its enum's Debug form, not the
+// header string: "Inav(FirmwareVersion { major: 9, minor: 0, patch: 0 })".
+const DEBUG_FW = /^(INAV|Betaflight|Cleanflight|EmuFlight)\s*\(\s*FirmwareVersion\s*\{\s*major:\s*(\d+),\s*minor:\s*(\d+),\s*patch:\s*(\d+)\s*\}\s*\)/i
+
 /**
  * Firmware header string → allowlisted parts. "INAV 9.0.0 (a7932b92)
  * SPEEDYBEEF405WING" → family INAV, version 9.0.0, target token. The
  * commit hash (fingerprints personal forks) and anything else is
- * dropped — design §3.2.
+ * dropped — design §3.2. Also accepts the Rust decoder's Debug form
+ * (family + version only; that form carries no target).
  */
 export function parseFirmware(str) {
   const out = { firmwareFamily: null, firmwareVersion: null, target: null }
   if (typeof str !== 'string') return out
-  const fam = str.match(/^(INAV|Betaflight|Cleanflight|EmuFlight)\s+(\d+\.\d+\.\d+)/i)
-  if (fam) {
-    out.firmwareFamily = fam[1].toUpperCase() === 'CLEANFLIGHT' ? 'INAV' : fam[1]
-    out.firmwareVersion = fam[2]
+  const s = str.trim()
+  const head = s.match(HEADER_FW)
+  const dbg = head ? null : s.match(DEBUG_FW)
+  if (head) {
+    out.firmwareFamily = FAMILY_NORM[head[1].toLowerCase()]
+    out.firmwareVersion = head[2]
+  } else if (dbg) {
+    out.firmwareFamily = FAMILY_NORM[dbg[1].toLowerCase()]
+    out.firmwareVersion = `${dbg[2]}.${dbg[3]}.${dbg[4]}`
   }
-  const tokens = str.trim().split(/\s+/)
+  const tokens = s.split(/\s+/)
   const last = tokens[tokens.length - 1]
   if (/^[A-Z0-9_]{4,30}$/.test(last) && !/^\d+\.\d+/.test(last)) out.target = last
   return out
+}
+
+/**
+ * Raw "H Firmware revision:" header value from the log's first 64 KB,
+ * e.g. "INAV 9.0.0 (a7932b92) SPEEDYBEEF405WING", or null. Only ever fed
+ * to parseFirmware (which drops the commit hash) — never stored. Runs
+ * where the buffer still exists, like scanLogTail.
+ */
+export function scanFirmwareRevision(bytes) {
+  if (!bytes || !bytes.length) return null
+  const KEY = 'H Firmware revision:'
+  const SCAN = Math.min(bytes.length, 64 * 1024)
+  outer: for (let i = 0; i + KEY.length <= SCAN; i++) {
+    for (let j = 0; j < KEY.length; j++) {
+      if (bytes[i + j] !== KEY.charCodeAt(j)) continue outer
+    }
+    let s = ''
+    const end = Math.min(bytes.length, i + KEY.length + 200)
+    for (let k = i + KEY.length; k < end; k++) {
+      const b = bytes[k]
+      if (b < 0x20 || b > 0x7e) break // \r, \n, NUL or binary frame data
+      s += String.fromCharCode(b)
+    }
+    return s.trim() || null
+  }
+  return null
 }

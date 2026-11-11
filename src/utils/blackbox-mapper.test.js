@@ -152,6 +152,41 @@ describe('mapToViewerLog — unterminated log (crash) end-to-end', () => {
   })
 })
 
+describe('mapToViewerLog — firmware context (fw_family / craft / board advice)', () => {
+  const parsedWith = firmware => {
+    const p = makeParsed(['time', 'vbat'], [[0, 1660], [1, 1650]], [0, 500000])
+    p.firmware = firmware
+    return p
+  }
+
+  it('takes family, version and target from the header revision line', () => {
+    const log = mapToViewerLog(
+      parsedWith('Inav(FirmwareVersion { major: 9, minor: 0, patch: 0 })'),
+      'fw.txt', undefined, { revision: 'INAV 9.0.0 (a7932b92) SPEEDYBEEF405WING' },
+    )
+    expect(log.debrief.context).toMatchObject({
+      firmwareFamily: 'INAV', firmwareVersion: '9.0.0', target: 'SPEEDYBEEF405WING',
+    })
+  })
+
+  it("falls back to the decoder's Debug string when the header line is missing", () => {
+    const log = mapToViewerLog(
+      parsedWith('Betaflight(FirmwareVersion { major: 4, minor: 5, patch: 1 })'),
+      'fw.txt', undefined, { revision: null },
+    )
+    expect(log.debrief.context).toMatchObject({
+      firmwareFamily: 'Betaflight', firmwareVersion: '4.5.1', target: null,
+    })
+  })
+
+  it('never carries the commit hash anywhere on the log', () => {
+    const log = mapToViewerLog(
+      parsedWith(undefined), 'fw.txt', undefined, { revision: 'INAV 9.0.0 (a7932b92) SPEEDYBEEF405WING' },
+    )
+    expect(JSON.stringify(log.debrief)).not.toContain('a7932b92')
+  })
+})
+
 describe('mapToViewerLog — other unit conventions', () => {
   it('inverts iNAV pitch to aviation convention (nose-up positive)', () => {
     // iNAV logs attitude in deci-degrees, positive = nose DOWN.

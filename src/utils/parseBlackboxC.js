@@ -16,6 +16,7 @@
 import wasmUrl from '../../vendor/blackbox-parser-c/blackbox.wasm?url'
 import wasmModuleFactory from '../../vendor/blackbox-parser-c/blackbox.mjs'
 import { mapToViewerLog } from './blackbox-mapper'
+import { scanLogTail, scanFirmwareRevision } from '../debrief/index.js'
 
 let modulePromise = null
 
@@ -89,7 +90,7 @@ export async function parseBlackboxBufferC(bytes, filename, onProgress, onDiag) 
   // worker uses, so downstream code (Dashboard, Globe, charts) sees an
   // identical row schema regardless of which parser ran.
   const tMap = performance.now()
-  const log = mapToViewerLog(parsed, filename, diag, scanLogTail(bytes))
+  const log = mapToViewerLog(parsed, filename, diag, { ...scanLogTail(bytes), revision: scanFirmwareRevision(bytes) })
   diag(`mapToViewerLog returned in ${(performance.now() - tMap).toFixed(0)}ms, rows=${log.rows.length}`)
 
   if (onProgress) onProgress('done', 100)

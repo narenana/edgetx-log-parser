@@ -38,6 +38,7 @@ import init, { parseBlackbox as wasmParseBlackbox } from 'blackbox-parser'
 import wasmUrl from 'blackbox-parser/blackbox_parser_bg.wasm?url'
 import { mapToViewerLog } from './blackbox-mapper'
 import { captureParseError } from './sentry'
+import { scanLogTail, scanFirmwareRevision } from '../debrief/index.js'
 
 /**
  * Extract privacy-safe metadata from a blackbox header. We use this to tag
@@ -415,7 +416,7 @@ async function parseOnMainThread(bytes, filename, onProgress, onDiag) {
   if (onProgress) onProgress('mapping', 60)
   await new Promise(r => setTimeout(r, 0))
 
-  const log = mapToViewerLog(parsed, filename, diag, scanLogTail(bytes))
+  const log = mapToViewerLog(parsed, filename, diag, { ...scanLogTail(bytes), revision: scanFirmwareRevision(bytes) })
   parsed.free()
   if (onProgress) onProgress('done', 100)
   return log

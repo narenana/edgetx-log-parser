@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runDebrief, parseFirmware, scanLogTail } from './index.js'
+import { runDebrief, parseFirmware, scanLogTail, scanFirmwareRevision } from './index.js'
 import { detectChemistry } from './detectors.js'
 
 /**
@@ -384,6 +384,28 @@ describe('parseFirmware + scanLogTail', () => {
   it('rejects a fork string that fits no allowlist', () => {
     const out = parseFirmware('MyCustomFork build-77 (deadbeef)')
     expect(out.firmwareFamily).toBeNull()
+  })
+  it("reads the Rust decoder's Debug form (family + version, no target)", () => {
+    expect(parseFirmware('Inav(FirmwareVersion { major: 9, minor: 0, patch: 0 })')).toEqual({
+      firmwareFamily: 'INAV', firmwareVersion: '9.0.0', target: null,
+    })
+    expect(parseFirmware('Betaflight(FirmwareVersion { major: 2025, minor: 12, patch: 1 })')).toEqual({
+      firmwareFamily: 'Betaflight', firmwareVersion: '2025.12.1', target: null,
+    })
+  })
+  it('normalises family casing to the payload allowlist spelling', () => {
+    expect(parseFirmware('betaflight 4.5.1 (77d01ba3b) STM32F7X2').firmwareFamily).toBe('Betaflight')
+    expect(parseFirmware('EMUFLIGHT 0.4.3 (abc) HELIOSPRING').firmwareFamily).toBe('EmuFlight')
+    expect(parseFirmware('Cleanflight 2.5.0 (abc) OMNIBUSF4').firmwareFamily).toBe('INAV')
+  })
+  it('scans the header revision line and stops at the line end', () => {
+    const enc = s => Uint8Array.from(s, c => c.charCodeAt(0))
+    const hdr = 'H Product:Blackbox flight data recorder by Nicholas Sherlock\n' +
+      'H Firmware type:Cleanflight\nH Firmware revision:INAV 9.0.0 (a7932b92) SPEEDYBEEF405WING\r\nH Firmware date:Jan  1 2026\n'
+    expect(scanFirmwareRevision(enc(hdr))).toBe('INAV 9.0.0 (a7932b92) SPEEDYBEEF405WING')
+    expect(scanFirmwareRevision(enc('H Firmware type:Cleanflight\n'))).toBeNull()
+    expect(scanFirmwareRevision(new Uint8Array(0))).toBeNull()
+    expect(scanFirmwareRevision(null)).toBeNull()
   })
   it('finds the end marker in a tail, counts padding', () => {
     const buf = new Uint8Array(4096).fill(0x41)
