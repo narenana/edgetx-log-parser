@@ -458,6 +458,24 @@ body {
 .landing-links-label { color: rgba(255,255,255,0.42); }
 .landing-links a { color: rgba(255,255,255,0.72); text-decoration: none; font-weight: 600; }
 .landing-links a:hover { color: #4ddcff; text-decoration: underline; }
+/* Feedback entry on the (always-dark) landing; the header is hidden here. */
+.landing-feedback {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 999px;
+  color: rgba(255,255,255,0.85);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.landing-feedback:hover { color: #fff; border-color: #4ddcff; background: rgba(77,220,255,0.08); }
+.landing-feedback:focus-visible { outline: 2px solid #4ddcff; outline-offset: 2px; }
 
 /* Tagline under the H1 (the old H1 text, kept as the one-line pitch). */
 .landing-lead {
@@ -2631,3 +2649,177 @@ body{font-family:'DM Sans',system-ui,sans-serif}.family-app-nav{flex:0 0 auto}.h
 .db-chart-key.muted i { background: var(--text3); opacity: 0.6; }
 .db-chart-line.muted { stroke: var(--text3); opacity: 0.45; stroke-width: 1.5; }
 .db-chart-band { font-size: 7.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; }
+
+/* ── Feedback: header button + dialog (rating 1–10 + optional comment) ── */
+/* Secondary header button, sized like the theme toggle; icon-only on phones. */
+.feedback-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.feedback-btn:hover { color: var(--text); border-color: var(--border-bright); background: var(--hover-bg); }
+@media (max-width: 640px) {
+  .feedback-btn { width: 36px; padding: 0; justify-content: center; }
+  .feedback-btn-label { display: none; }
+}
+
+.fb-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200; /* modal: above the family nav (101), consent banner (200) and the family Share button (1100) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--shadow-overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: summary-fade-in 0.18s ease-out;
+}
+.fb-card {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 26px 26px 22px;
+  box-shadow: 0 16px 48px var(--shadow-overlay);
+  animation: summary-scale-in 0.22s ease-out;
+}
+.fb-x {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text3);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fb-x:hover { color: var(--text); background: var(--bg3); }
+.fb-title {
+  margin: 0 32px 4px 0;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.fb-sub { margin: 0 0 14px; font-size: 14px; color: var(--text2); }
+.fb-scale { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+.fb-num {
+  min-width: 0;
+  height: 44px;
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.05s;
+}
+.fb-num:hover { background: var(--hover-bg); border-color: var(--border-bright); }
+.fb-num:active { transform: translateY(1px); }
+.fb-num.on { background: #ff8500; border-color: #ff8500; color: #15191c; }
+.fb-ends {
+  display: flex;
+  justify-content: space-between;
+  margin: 6px 2px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text3);
+}
+.fb-label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
+.fb-label span { font-weight: 400; color: var(--text3); }
+.fb-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.fb-text::placeholder { color: var(--text3); }
+.fb-text:focus { border-color: var(--border-bright); }
+.fb-count { margin-top: 4px; font-size: 12px; color: var(--text3); text-align: right; }
+.fb-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.fb-privacy { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text3); }
+.fb-error {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 13.5px;
+}
+.fb-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.fb-send, .fb-cancel {
+  padding: 10px 18px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fb-send { background: #ff8500; color: #15191c; border: 1px solid #ff8500; }
+.fb-send:hover { background: #e87800; border-color: #e87800; }
+.fb-send:disabled { opacity: 0.6; cursor: progress; }
+.fb-cancel { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+.fb-cancel:hover { color: var(--text); background: var(--bg3); }
+.fb-cancel:disabled { opacity: 0.5; cursor: default; }
+.feedback-btn:focus-visible, .fb-x:focus-visible, .fb-num:focus-visible, .fb-text:focus-visible,
+.fb-send:focus-visible, .fb-cancel:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.fb-done { padding: 8px 0 4px; text-align: center; }
+.fb-done-mark {
+  width: 52px;
+  height: 52px;
+  margin: 4px auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(166, 227, 106, 0.16);
+  color: var(--green);
+  font-size: 28px;
+  font-weight: 700;
+}
+.fb-done .fb-title { margin-right: 0; }
+.fb-done .fb-send { min-width: 140px; margin-top: 6px; }
+@media (max-width: 480px) {
+  .fb-card { padding: 22px 16px 16px; }
+  .fb-title { font-size: 23px; }
+  .fb-scale { grid-template-columns: repeat(5, 1fr); }
+}

@@ -5,6 +5,7 @@ import { parseBlackboxBuffer, looksLikeBlackbox, prewarmBlackboxParser } from '.
 import { loadLogFromUrl } from './utils/loadLogFromUrl'
 import { lazyWithReload } from './utils/lazyWithReload'
 import { initAnalytics, getConsent, track, usageBeacon } from './utils/analytics'
+import { feedbackContext } from './utils/feedback'
 import ConsentBanner from './components/ConsentBanner'
 import ThemeToggle from './components/ThemeToggle'
 import FlightSummaryModal from './components/FlightSummaryModal'
@@ -20,6 +21,11 @@ const Dashboard = lazyWithReload(() => import('./components/Dashboard'), 'dashbo
 const IS_WEB = import.meta.env.VITE_BUILD_TARGET === 'web'
 const PwaUpdate = IS_WEB
   ? lazy(() => import('./components/PwaUpdate'))
+  : null
+// Feedback posts to the narenana Worker, so it's web-only like the AI tier
+// (the desktop build stays fully offline). Loaded on first open.
+const FeedbackDialog = IS_WEB
+  ? lazyWithReload(() => import('./components/FeedbackDialog'), 'feedback')
   : null
 
 function modelName(filename) {
@@ -137,6 +143,12 @@ export default function App() {
   // view-toggle band into the top bar to give the globe that vertical space.
   const [viewMode, setViewMode] = useState(2) // 1 = classic, 2 = 3D globe
   const fileInputRef = useRef(null)
+  // Feedback dialog: mounted on first open, then kept (closed = renders
+  // nothing) so a half-written comment survives an accidental close.
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedbackMounted, setFeedbackMounted] = useState(false)
+  // Filenames of built-in sample flights, so feedback can say "sample open".
+  const sampleNamesRef = useRef(new Set())
 
   // Apply the theme to <html data-theme="..."> + persist. CSS variables
   // overridden under [data-theme="light"] / [data-theme="dark"] flip
@@ -266,6 +278,7 @@ export default function App() {
       const log = await loadLogFromUrl(sample.url, { displayName: sample.displayName })
       track('log_loaded', { source: 'sample', sample_type: kind })
       usageBeacon('log_loaded', 'sample')
+      sampleNamesRef.current.add(log.filename)
       appendLog(log)
     } catch (e) {
       setError(`Failed to load ${kind} sample: ${e.message}`)
@@ -305,6 +318,7 @@ export default function App() {
       loadLogFromUrl(SAMPLES[sampleKind].url, { displayName: SAMPLES[sampleKind].displayName })
         .then(log => {
           track('log_loaded', { source: 'sample', sample_type: sampleKind, deep_link: true })
+          sampleNamesRef.current.add(log.filename)
           arm(log)
         })
         .catch(e => setError(`Failed to load ${sampleKind} sample: ${e.message}`))
@@ -360,6 +374,13 @@ export default function App() {
 
   const activeLog = logs[activeIndex]
 
+  const openFeedback = () => {
+    setFeedbackMounted(true)
+    setFeedbackOpen(true)
+    usageBeacon('feedback_opened')
+    track('feedback_opened', { context: feedbackContext(activeLog, sampleNamesRef.current) })
+  }
+
   return (
     <div
       className="app"
@@ -413,6 +434,21 @@ export default function App() {
         )}
 
         {activeLog && <button type="button" className="open-btn" data-share-page data-share-inline aria-haspopup="dialog">Share</button>}
+        {FeedbackDialog && (
+          <button
+            type="button"
+            className="feedback-btn"
+            onClick={openFeedback}
+            aria-haspopup="dialog"
+            aria-label="Send feedback"
+            title="Send feedback"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span className="feedback-btn-label">Feedback</span>
+          </button>
+        )}
         <ThemeToggle theme={theme} onToggle={toggleTheme} />
 
         <button
@@ -588,6 +624,16 @@ export default function App() {
               <a href="https://www.narenana.com/log-viewer/betaflight-blackbox-viewer/">Betaflight blackbox viewer</a>
               <a href="https://www.narenana.com/log-viewer/open-bbl-file/">Open a .bbl file</a>
               <a href="https://www.narenana.com/log-viewer/guides/">All guides</a>
+              {/* The app header sits under this full-screen landing, so the
+                  landing carries its own way into the Feedback dialog. */}
+              {FeedbackDialog && (
+                <button type="button" className="landing-feedback" onClick={openFeedback} aria-haspopup="dialog">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  Send feedback
+                </button>
+              )}
             </div>
           </div>
           {/* Formats table + FAQ from index.html, below the fold. */}
@@ -620,6 +666,16 @@ export default function App() {
       })()}
 
       <ConsentBanner />
+
+      {FeedbackDialog && feedbackMounted && (
+        <Suspense fallback={null}>
+          <FeedbackDialog
+            open={feedbackOpen}
+            onClose={() => setFeedbackOpen(false)}
+            context={feedbackContext(activeLog, sampleNamesRef.current)}
+          />
+        </Suspense>
+      )}
 
       {PwaUpdate && (
         <Suspense fallback={null}>
